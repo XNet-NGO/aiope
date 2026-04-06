@@ -1,5 +1,6 @@
 package com.aiope2.feature.chat
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,15 +26,55 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
   val terminalVisible by viewModel.terminalVisible.collectAsStateWithLifecycle()
   val config = LocalConfiguration.current
   val isLandscape = config.screenWidthDp > config.screenHeightDp
+  var showModelPicker by remember { mutableStateOf(false) }
 
-  // Detect keyboard visibility
   @OptIn(ExperimentalLayoutApi::class)
   val imeVisible = WindowInsets.isImeVisible
 
   if (isLandscape) {
-    LandscapeLayout(messages, isStreaming, terminalVisible, imeVisible, viewModel::send, viewModel::toggleTerminal, onOpenSettings)
+    LandscapeLayout(messages, isStreaming, terminalVisible, imeVisible, viewModel::send, viewModel::toggleTerminal, onOpenSettings, { showModelPicker = true }, viewModel.modelLabel)
   } else {
-    PortraitLayout(messages, isStreaming, terminalVisible, imeVisible, viewModel::send, viewModel::toggleTerminal, onOpenSettings)
+    PortraitLayout(messages, isStreaming, terminalVisible, imeVisible, viewModel::send, viewModel::toggleTerminal, onOpenSettings, { showModelPicker = true }, viewModel.modelLabel)
+  }
+
+  if (showModelPicker) {
+    ModelPickerSheet(viewModel = viewModel, onDismiss = { showModelPicker = false })
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModelPickerSheet(viewModel: ChatViewModel, onDismiss: () -> Unit) {
+  val models = remember { viewModel.getModelList() }
+  val active = viewModel.providerStore.getActive()
+
+  ModalBottomSheet(onDismissRequest = onDismiss) {
+    Text(active.label, style = MaterialTheme.typography.labelMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+    models.forEach { m ->
+      val selected = m.id == active.selectedModelId
+      ListItem(
+        headlineContent = {
+          Text(
+            text = "${if (selected) "● " else "  "}${m.displayName}",
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+          )
+        },
+        supportingContent = if (m.contextWindow > 0) {{
+          Text("${m.contextWindow / 1000}k${if (m.supportsTools) " 🔧" else ""}${if (m.supportsVision) " 👁" else ""}",
+            style = MaterialTheme.typography.bodySmall)
+        }} else null,
+        modifier = Modifier.clickable {
+          viewModel.switchModel(m.id)
+          onDismiss()
+        }
+      )
+    }
+    if (models.isEmpty()) {
+      Text("No models. Fetch models in Settings.", modifier = Modifier.padding(16.dp))
+    }
+    Spacer(Modifier.height(32.dp))
   }
 }
 
@@ -46,12 +87,14 @@ private fun PortraitLayout(
   imeVisible: Boolean,
   onSend: (String) -> Unit,
   onToggleTerminal: () -> Unit,
-  onOpenSettings: () -> Unit
+  onOpenSettings: () -> Unit,
+  onModelPicker: () -> Unit,
+  modelLabel: String
 ) {
   Scaffold(
     topBar = {
       TopAppBar(
-        title = { Text("AIOPE") },
+        title = { TextButton(onClick = onModelPicker) { Text(modelLabel, style = MaterialTheme.typography.titleMedium) } },
         actions = {
           IconButton(onClick = onToggleTerminal) {
             Icon(
@@ -97,14 +140,16 @@ private fun LandscapeLayout(
   imeVisible: Boolean,
   onSend: (String) -> Unit,
   onToggleTerminal: () -> Unit,
-  onOpenSettings: () -> Unit
+  onOpenSettings: () -> Unit,
+  onModelPicker: () -> Unit,
+  modelLabel: String
 ) {
   Row(modifier = Modifier.fillMaxSize()) {
     Scaffold(
       modifier = Modifier.weight(1f),
       topBar = {
         TopAppBar(
-          title = { Text("AIOPE") },
+          title = { TextButton(onClick = onModelPicker) { Text(modelLabel, style = MaterialTheme.typography.titleMedium) } },
           actions = {
             IconButton(onClick = onToggleTerminal) {
               Icon(

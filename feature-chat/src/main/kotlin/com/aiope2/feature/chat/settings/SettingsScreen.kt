@@ -22,7 +22,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// Logarithmic steps matching AIOPE v1
 private val TOKEN_STEPS = listOf(0, 256, 512, 1024, 2048, 4096, 8192, 16000, 32000, 64000, 128000, 200000, 500000, 1000000)
 private val HISTORY_STEPS = listOf(2, 4, 6, 8, 10, 12, 16, 20, 30, 40, 50, 75, 100, 150, 200, 0)
 
@@ -46,15 +45,16 @@ fun SettingsScreen(providerStore: ProviderStore, onBack: () -> Unit) {
           apiBase = builtin.apiBase ?: "", selectedModelId = builtin.defaultModels.firstOrNull()?.id ?: "")
         providerStore.save(p); providerStore.setActive(p.id); editId = p.id; refresh(); screen = "edit"
       }, onBack = { screen = "list" })
-    "edit" -> {
-      val profile = editId?.let { providerStore.getById(it) }
-      if (profile != null) ProfileEditor(profile, providerStore,
+    "edit" -> editId?.let { providerStore.getById(it) }?.let { profile ->
+      ProfileEditor(profile, providerStore,
         onSave = { providerStore.save(it); providerStore.setActive(it.id); refresh(); screen = "list" },
         onDelete = { providerStore.delete(profile.id); refresh(); screen = "list" },
         onBack = { screen = "list" })
     }
   }
 }
+
+// ── Provider List ──
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -69,7 +69,7 @@ private fun ProfileList(profiles: List<ProviderProfile>, activeId: String,
         val builtin = ProviderTemplates.byId[p.builtinId]
         ListItem(
           headlineContent = { Text("${builtin?.icon ?: "⚙️"} ${p.label.ifBlank { builtin?.displayName ?: "Custom" }}") },
-          supportingContent = { Text("${p.selectedModelId} · ${p.effectiveApiBase().take(35)}", style = MaterialTheme.typography.bodySmall) },
+          supportingContent = { Text(p.selectedModelId.ifBlank { "no model" }, style = MaterialTheme.typography.bodySmall) },
           trailingContent = { if (p.id == activeId) Text("✓", color = MaterialTheme.colorScheme.primary) },
           modifier = Modifier.combinedClickable(onClick = { onSelect(p) }, onLongClick = { onEdit(p) })
         )
@@ -77,6 +77,8 @@ private fun ProfileList(profiles: List<ProviderProfile>, activeId: String,
     }
   }
 }
+
+// ── Template Picker ──
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,6 +96,8 @@ private fun TemplatePicker(onPick: (BuiltinProvider) -> Unit, onBack: () -> Unit
   }
 }
 
+// ── Profile Editor ──
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
@@ -104,13 +108,18 @@ private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
   var loading by remember { mutableStateOf(false) }
   var models by remember { mutableStateOf(
     store.getModelCache(p.builtinId) ?: store.getModelCacheStale(p.builtinId) ?: builtin?.defaultModels ?: emptyList()) }
+  // Model dropdown
+  var modelExpanded by remember { mutableStateOf(false) }
+  // Custom model input
+  var customModelText by remember { mutableStateOf("") }
 
   Scaffold(topBar = { TopAppBar(title = { Text(p.label.ifBlank { "Edit Provider" }) },
     navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
     actions = { IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete") } })
   }) { pad ->
     Column(Modifier.fillMaxSize().padding(pad).padding(16.dp).verticalScroll(rememberScrollState())) {
-      // ── Identity ──
+
+      // ── Profile ──
       Section("Profile")
       Field("Label", p.label) { p = p.copy(label = it) }
 
@@ -122,6 +131,8 @@ private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
 
       // ── Model ──
       Section("Model")
+
+      // Load models button
       Row(verticalAlignment = Alignment.CenterVertically) {
         Button(onClick = {
           loading = true
@@ -134,21 +145,58 @@ private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
         Spacer(Modifier.width(8.dp))
         Text("${models.size} models", style = MaterialTheme.typography.bodySmall)
       }
-      Spacer(Modifier.height(4.dp))
-      models.take(30).forEach { m ->
-        Row(Modifier.fillMaxWidth().clickable { p = p.copy(selectedModelId = m.id) }.padding(6.dp, 3.dp)) {
-          Text(if (m.id == p.selectedModelId) "● " else "○ ", color = MaterialTheme.colorScheme.primary)
-          Text(m.displayName, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-          val info = buildString {
-            if (m.contextWindow > 0) append("${m.contextWindow / 1000}k")
-            if (m.supportsTools) append(" 🔧")
-            if (m.supportsVision) append(" 👁")
+      Spacer(Modifier.height(8.dp))
+
+      // Model dropdown (like AIOPE v1 spinner)
+      ExposedDropdownMenuBox(expanded = modelExpanded, onExpandedChange = { modelExpanded = it }) {
+        OutlinedTextField(
+          value = models.firstOrNull { it.id == p.selectedModelId }?.let { m ->
+            buildString {
+              append(m.displayName)
+              if (m.contextWindow > 0) append("  ${m.contextWindow / 1000}k")
+              if (m.supportsTools) append(" 🔧")
+              if (m.supportsVision) append(" 👁")
+            }
+          } ?: p.selectedModelId.ifBlank { "Select model" },
+          onValueChange = {},
+          readOnly = true,
+          label = { Text("Selected Model") },
+          trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded) },
+          modifier = Modifier.fillMaxWidth().menuAnchor()
+        )
+        ExposedDropdownMenu(expanded = modelExpanded, onDismissRequest = { modelExpanded = false }) {
+          models.forEach { m ->
+            DropdownMenuItem(
+              text = {
+                Text(buildString {
+                  append(m.displayName)
+                  if (m.contextWindow > 0) append("  ${m.contextWindow / 1000}k")
+                  if (m.supportsTools) append(" 🔧")
+                  if (m.supportsVision) append(" 👁")
+                })
+              },
+              onClick = { p = p.copy(selectedModelId = m.id); modelExpanded = false }
+            )
           }
-          Text(info, style = MaterialTheme.typography.labelSmall)
         }
       }
-      Spacer(Modifier.height(4.dp))
-      Field("Custom Model (overrides)", p.selectedModelId) { p = p.copy(selectedModelId = it) }
+      Spacer(Modifier.height(8.dp))
+
+      // Add custom model (additive, not override)
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(value = customModelText, onValueChange = { customModelText = it },
+          label = { Text("Add Custom Model") }, modifier = Modifier.weight(1f), singleLine = true,
+          placeholder = { Text("model-id") })
+        Spacer(Modifier.width(8.dp))
+        IconButton(onClick = {
+          if (customModelText.isNotBlank()) {
+            val newModel = ModelDef(customModelText.trim(), customModelText.trim().substringAfterLast("/"), 128_000)
+            models = listOf(newModel) + models
+            p = p.copy(selectedModelId = newModel.id)
+            customModelText = ""
+          }
+        }) { Icon(Icons.Default.Add, "Add") }
+      }
 
       // ── Abilities ──
       Section("Abilities")
@@ -166,8 +214,8 @@ private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
 
       // ── Parameters ──
       Section("Parameters")
-      LogSlider("Temperature", p.temperature, 0f, 2f, 0.01f) { p = p.copy(temperature = if (it <= 0f) null else it) }
-      LogSlider("Top-P", p.topP, 0f, 1f, 0.01f) { p = p.copy(topP = if (it <= 0f) null else it) }
+      LogSlider("Temperature", p.temperature, 0f, 2f) { p = p.copy(temperature = if (it <= 0f) null else it) }
+      LogSlider("Top-P", p.topP, 0f, 1f) { p = p.copy(topP = if (it <= 0f) null else it) }
       StepSlider("Max Tokens", p.maxTokens, TOKEN_STEPS) { p = p.copy(maxTokens = if (it == 0) null else it) }
       IntField("Top-K (0=off)", p.topK ?: 0) { p = p.copy(topK = if (it == 0) null else it) }
 
@@ -185,7 +233,7 @@ private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
   }
 }
 
-// ── Reusable components ──
+// ── Components ──
 
 @Composable private fun Section(title: String) {
   Spacer(Modifier.height(16.dp))
@@ -213,15 +261,15 @@ private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
   }
 }
 
-@Composable private fun LogSlider(label: String, value: Float?, min: Float, max: Float, step: Float, onChange: (Float) -> Unit) {
+@Composable private fun LogSlider(label: String, value: Float?, min: Float, max: Float, onChange: (Float) -> Unit) {
   val v = value ?: 0f
   Text("$label: ${if (v <= 0f) "off" else "%.2f".format(v)}", style = MaterialTheme.typography.bodySmall)
-  Slider(value = v, onValueChange = onChange, valueRange = min..max, steps = ((max - min) / step).toInt() - 1)
+  Slider(value = v, onValueChange = onChange, valueRange = min..max)
 }
 
 @Composable private fun StepSlider(label: String, value: Int?, steps: List<Int>, onChange: (Int) -> Unit) {
   val idx = value?.let { v -> steps.indexOfFirst { it >= v }.takeIf { it >= 0 } } ?: (steps.size - 1)
-  val display = steps[idx].let { if (it == 0) "off" else if (it >= 1000) "${it / 1000}K" else it.toString() }
+  val display = steps[idx].let { if (it == 0) "∞" else if (it >= 1000) "${it / 1000}K" else it.toString() }
   Text("$label: $display", style = MaterialTheme.typography.bodySmall)
   Slider(value = idx.toFloat(), onValueChange = { onChange(steps[it.toInt().coerceIn(0, steps.size - 1)]) },
     valueRange = 0f..(steps.size - 1).toFloat(), steps = steps.size - 2)

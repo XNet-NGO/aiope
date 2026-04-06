@@ -15,6 +15,8 @@ import com.aiope2.feature.chat.db.ChatDao
 import com.aiope2.feature.chat.db.ConversationEntity
 import com.aiope2.feature.chat.db.MessageEntity
 import com.aiope2.feature.chat.settings.ProviderStore
+import com.aiope2.core.network.ModelDef
+import com.aiope2.core.network.ProviderTemplates
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +29,7 @@ import javax.inject.Inject
 class ChatViewModel @Inject constructor(
   application: Application,
   private val chatDao: ChatDao,
-  private val providerStore: ProviderStore
+  val providerStore: ProviderStore
 ) : AndroidViewModel(application) {
 
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -40,6 +42,24 @@ class ChatViewModel @Inject constructor(
   val terminalVisible = _terminalVisible.asStateFlow()
 
   private var conversationId = UUID.randomUUID().toString()
+
+  val modelLabel: String get() {
+    val p = providerStore.getActive()
+    val id = p.selectedModelId.substringAfterLast('/')
+    return id.ifBlank { p.label.ifBlank { "No model" } }
+  }
+
+  fun switchModel(modelId: String) {
+    val p = providerStore.getActive()
+    providerStore.save(p.copy(selectedModelId = modelId))
+  }
+
+  fun getModelList(): List<ModelDef> {
+    val p = providerStore.getActive()
+    return providerStore.getModelCache(p.builtinId)
+      ?: ProviderTemplates.byId[p.builtinId]?.defaultModels
+      ?: emptyList()
+  }
 
   // LLM client — reads from ProviderStore, recreated per send
   private fun createClient(): Pair<SingleLLMPromptExecutor, LLModel> {
