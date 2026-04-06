@@ -80,24 +80,26 @@ private fun ChatContent(
 ) {
   Column(modifier) {
     // ── Toolbar ──
-    Row(
-      Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-      verticalAlignment = Alignment.CenterVertically
-    ) {
-      TextButton(onClick = onChats, contentPadding = PaddingValues(horizontal = 8.dp)) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
+      // Left: Chats
+      TextButton(onClick = onChats, modifier = Modifier.align(Alignment.CenterStart),
+        contentPadding = PaddingValues(horizontal = 8.dp)) {
         Text("Chats", fontSize = 12.sp)
       }
-      Spacer(Modifier.weight(1f))
-      TextButton(onClick = onModelPicker, contentPadding = PaddingValues(horizontal = 8.dp)) {
+      // Center: Model
+      TextButton(onClick = onModelPicker, modifier = Modifier.align(Alignment.Center),
+        contentPadding = PaddingValues(horizontal = 8.dp)) {
         Text(modelLabel, fontSize = 12.sp, maxLines = 1)
       }
-      Spacer(Modifier.weight(1f))
-      IconButton(onClick = onToggleTerminal, modifier = Modifier.size(36.dp)) {
-        Icon(Icons.Default.Terminal, "Terminal", modifier = Modifier.size(18.dp),
-          tint = if (terminalVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-      }
-      IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
-        Icon(Icons.Default.Settings, "Settings", modifier = Modifier.size(18.dp))
+      // Right: Terminal + Settings
+      Row(modifier = Modifier.align(Alignment.CenterEnd)) {
+        IconButton(onClick = onToggleTerminal, modifier = Modifier.size(36.dp)) {
+          Icon(Icons.Default.Terminal, "Terminal", modifier = Modifier.size(18.dp),
+            tint = if (terminalVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+        }
+        IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
+          Icon(Icons.Default.Settings, "Settings", modifier = Modifier.size(18.dp))
+        }
       }
     }
     HorizontalDivider()
