@@ -1,6 +1,5 @@
 package com.aiope2.feature.chat
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -73,7 +72,7 @@ private fun PortraitLayout(
 
       // Terminal panel (fixed height)
       if (terminalVisible) {
-        TerminalPlaceholder(modifier = Modifier.fillMaxWidth().height(240.dp))
+        TerminalPanel(modifier = Modifier.fillMaxWidth().height(240.dp))
       }
     }
   }
@@ -119,7 +118,7 @@ private fun LandscapeLayout(
     }
 
     if (terminalVisible) {
-      TerminalPlaceholder(modifier = Modifier.width(360.dp).fillMaxHeight())
+      TerminalPanel(modifier = Modifier.width(360.dp).fillMaxHeight())
     }
   }
 }
@@ -169,17 +168,5 @@ private fun ChatInput(onSend: (String) -> Unit, isStreaming: Boolean) {
     ) {
       Icon(Icons.Default.Send, contentDescription = "Send")
     }
-  }
-}
-
-@Composable
-private fun TerminalPlaceholder(modifier: Modifier = Modifier) {
-  // TODO: Replace with real Termux TerminalView via AndroidView
-  // For now, show a placeholder that proves the panel works
-  Box(
-    modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp),
-    contentAlignment = Alignment.Center
-  ) {
-    Text("Terminal — TerminalView integration next", style = MaterialTheme.typography.bodySmall)
   }
 }
