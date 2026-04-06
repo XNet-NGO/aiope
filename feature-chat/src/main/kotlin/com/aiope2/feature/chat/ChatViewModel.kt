@@ -3,17 +3,19 @@ package com.aiope2.feature.chat
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.aallam.openai.api.chat.ChatCompletionRequest
-import com.aallam.openai.api.chat.ChatRole
-import com.aallam.openai.api.model.ModelId
-import com.aallam.openai.client.OpenAI
-import com.aallam.openai.client.OpenAIConfig
-import com.aallam.openai.client.OpenAIHost
-import com.aiope2.core.terminal.shell.ShellExecutor
+import ai.koog.agents.core.agent.AIAgent
+import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.prompt.executor.llms.SingleLLMPromptExecutor
+import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
+import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
+import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.llm.LLMProvider
+import com.aiope2.feature.chat.agent.AiopeTools
 import com.aiope2.feature.chat.db.ChatDao
 import com.aiope2.feature.chat.db.ConversationEntity
 import com.aiope2.feature.chat.db.MessageEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -37,15 +39,19 @@ class ChatViewModel @Inject constructor(
 
   private var conversationId = UUID.randomUUID().toString()
 
-  private val openai = OpenAI(OpenAIConfig(
-    token = "unused",
-    host = OpenAIHost("https://text.pollinations.ai/v1/")
-  ))
+  // Koog agent with Pollinations (OpenAI-compatible, free)
+  private val client = OpenAILLMClient(
+    apiKey = "unused",
+    settings = OpenAIClientSettings("https://text.pollinations.ai/v1")
+  )
+  private val executor = SingleLLMPromptExecutor(client)
+  private val tools = AiopeTools(application)
+  private val model = LLModel(LLMProvider.OpenAI, "openai-fast")
 
-  private val systemPrompt = """You are AIOPE, an AI coding assistant running on Android.
-You have access to tools: run_sh (Android shell).
-When the user asks you to run commands, use the run_sh tool.
-Be concise and helpful."""
+  private val systemPrompt = """You are AIOPE, an AI coding assistant running on an Android device.
+You have tools: run_sh (execute shell commands), read_file, write_file, list_directory.
+Use tools when the user asks you to run commands, read/write files, or explore the filesystem.
+Be concise. Show command output directly."""
 
   init {
     viewModelScope.launch {
@@ -57,58 +63,37 @@ Be concise and helpful."""
     val userMsg = ChatMessage(role = Role.USER, content = text)
     _messages.value = _messages.value + userMsg
 
-    viewModelScope.launch {
+    viewModelScope.launch(Dispatchers.IO) {
       chatDao.insertMessage(MessageEntity(
         id = userMsg.id, conversationId = conversationId,
         role = userMsg.role.value, content = userMsg.content
       ))
 
       _isStreaming.value = true
+      val assistantMsg = ChatMessage(role = Role.ASSISTANT, content = "")
+      _messages.value = _messages.value + assistantMsg
+
       try {
-        val assistantMsg = ChatMessage(role = Role.ASSISTANT, content = "")
-        _messages.value = _messages.value + assistantMsg
-
-        val apiMessages = buildList {
-          add(com.aallam.openai.api.chat.ChatMessage(role = ChatRole.System, content = systemPrompt))
-          _messages.value.dropLast(1).forEach { msg ->
-            add(com.aallam.openai.api.chat.ChatMessage(
-              role = when (msg.role) {
-                Role.USER -> ChatRole.User
-                Role.ASSISTANT -> ChatRole.Assistant
-                Role.SYSTEM -> ChatRole.System
-                Role.TOOL -> ChatRole.Tool
-              },
-              content = msg.content
-            ))
-          }
-        }
-
-        val request = ChatCompletionRequest(
-          model = ModelId("openai-fast"),
-          messages = apiMessages
+        val agent = AIAgent(
+          promptExecutor = executor,
+          systemPrompt = systemPrompt,
+          llmModel = model,
+          toolRegistry = ToolRegistry { tools(this@ChatViewModel.tools) }
         )
 
-        val sb = StringBuilder()
-        openai.chatCompletions(request).collect { chunk ->
-          chunk.choices.firstOrNull()?.delta?.content?.let { delta ->
-            sb.append(delta)
-            val updated = _messages.value.toMutableList()
-            updated[updated.lastIndex] = updated.last().copy(content = sb.toString())
-            _messages.value = updated
-          }
-        }
+        val result = agent.run(text)
 
-        // Persist final assistant message
-        val finalMsg = _messages.value.last()
+        val updated = _messages.value.toMutableList()
+        updated[updated.lastIndex] = updated.last().copy(content = result)
+        _messages.value = updated
+
+        // Persist
         chatDao.insertMessage(MessageEntity(
-          id = finalMsg.id, conversationId = conversationId,
-          role = finalMsg.role.value, content = finalMsg.content
+          id = updated.last().id, conversationId = conversationId,
+          role = Role.ASSISTANT.value, content = result
         ))
-
-        // Update conversation title from first user message
         if (_messages.value.size <= 2) {
-          val title = text.take(50)
-          chatDao.updateConversation(conversationId, title)
+          chatDao.updateConversation(conversationId, text.take(50))
         }
       } catch (e: Exception) {
         val updated = _messages.value.toMutableList()
