@@ -14,6 +14,7 @@ import com.aiope2.feature.chat.agent.AiopeTools
 import com.aiope2.feature.chat.db.ChatDao
 import com.aiope2.feature.chat.db.ConversationEntity
 import com.aiope2.feature.chat.db.MessageEntity
+import com.aiope2.feature.chat.settings.ProviderStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,8 @@ import javax.inject.Inject
 @HiltViewModel
 class ChatViewModel @Inject constructor(
   application: Application,
-  private val chatDao: ChatDao
+  private val chatDao: ChatDao,
+  private val providerStore: ProviderStore
 ) : AndroidViewModel(application) {
 
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -39,22 +41,25 @@ class ChatViewModel @Inject constructor(
 
   private var conversationId = UUID.randomUUID().toString()
 
-  // Koog agent with Pollinations (OpenAI-compatible, free)
-  private val client = OpenAILLMClient(
-    apiKey = "unused",
-    settings = OpenAIClientSettings("https://text.pollinations.ai/v1")
-  )
-  private val executor = SingleLLMPromptExecutor(client)
-  private val tools = AiopeTools(application)
-  private val model = LLModel(
-    LLMProvider.OpenAI, "openai-fast",
-    listOf(
-      ai.koog.prompt.llm.LLMCapability.Completion,
-      ai.koog.prompt.llm.LLMCapability.Tools,
-      ai.koog.prompt.llm.LLMCapability.Temperature,
-      ai.koog.prompt.llm.LLMCapability.OpenAIEndpoint.Completions,
+  // LLM client — reads from ProviderStore, recreated per send
+  private fun createClient(): Pair<SingleLLMPromptExecutor, LLModel> {
+    val provider = providerStore.getActiveProvider()
+    val client = OpenAILLMClient(
+      apiKey = provider.apiKey.ifBlank { "unused" },
+      settings = OpenAIClientSettings(provider.baseUrl)
     )
-  )
+    val model = LLModel(
+      LLMProvider.OpenAI, provider.defaultModel,
+      listOf(
+        ai.koog.prompt.llm.LLMCapability.Completion,
+        ai.koog.prompt.llm.LLMCapability.Tools,
+        ai.koog.prompt.llm.LLMCapability.Temperature,
+        ai.koog.prompt.llm.LLMCapability.OpenAIEndpoint.Completions,
+      )
+    )
+    return SingleLLMPromptExecutor(client) to model
+  }
+  private val tools = AiopeTools(application)
 
   private val systemPrompt = """You are AIOPE, an AI coding assistant running on an Android device.
 You have tools: run_sh (execute shell commands), read_file, write_file, list_directory.
@@ -82,6 +87,7 @@ Be concise. Show command output directly."""
       _messages.value = _messages.value + assistantMsg
 
       try {
+        val (executor, model) = createClient()
         val agent = AIAgent(
           promptExecutor = executor,
           systemPrompt = systemPrompt,

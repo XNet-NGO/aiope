@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,7 +19,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
+fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () -> Unit = {}) {
   val messages by viewModel.messages.collectAsStateWithLifecycle()
   val isStreaming by viewModel.isStreaming.collectAsStateWithLifecycle()
   val terminalVisible by viewModel.terminalVisible.collectAsStateWithLifecycle()
@@ -30,9 +31,9 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
   val imeVisible = WindowInsets.isImeVisible
 
   if (isLandscape) {
-    LandscapeLayout(messages, isStreaming, terminalVisible, imeVisible, viewModel::send, viewModel::toggleTerminal)
+    LandscapeLayout(messages, isStreaming, terminalVisible, imeVisible, viewModel::send, viewModel::toggleTerminal, onOpenSettings)
   } else {
-    PortraitLayout(messages, isStreaming, terminalVisible, imeVisible, viewModel::send, viewModel::toggleTerminal)
+    PortraitLayout(messages, isStreaming, terminalVisible, imeVisible, viewModel::send, viewModel::toggleTerminal, onOpenSettings)
   }
 }
 
@@ -44,7 +45,8 @@ private fun PortraitLayout(
   terminalVisible: Boolean,
   imeVisible: Boolean,
   onSend: (String) -> Unit,
-  onToggleTerminal: () -> Unit
+  onToggleTerminal: () -> Unit,
+  onOpenSettings: () -> Unit
 ) {
   Scaffold(
     topBar = {
@@ -58,6 +60,9 @@ private fun PortraitLayout(
               tint = if (terminalVisible) MaterialTheme.colorScheme.primary
                      else MaterialTheme.colorScheme.onSurface
             )
+          }
+          IconButton(onClick = onOpenSettings) {
+            Icon(Icons.Default.Settings, contentDescription = "Settings")
           }
         }
       )
@@ -91,7 +96,8 @@ private fun LandscapeLayout(
   terminalVisible: Boolean,
   imeVisible: Boolean,
   onSend: (String) -> Unit,
-  onToggleTerminal: () -> Unit
+  onToggleTerminal: () -> Unit,
+  onOpenSettings: () -> Unit
 ) {
   Row(modifier = Modifier.fillMaxSize()) {
     Scaffold(
@@ -107,6 +113,9 @@ private fun LandscapeLayout(
                 tint = if (terminalVisible) MaterialTheme.colorScheme.primary
                        else MaterialTheme.colorScheme.onSurface
               )
+            }
+            IconButton(onClick = onOpenSettings) {
+              Icon(Icons.Default.Settings, contentDescription = "Settings")
             }
           }
         )
