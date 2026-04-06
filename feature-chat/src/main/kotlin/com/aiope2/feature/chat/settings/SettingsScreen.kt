@@ -417,6 +417,62 @@ private suspend fun testConnection(p: ProviderProfile): String = withContext(Dis
       } catch (e: Exception) { results.add("✗ Tools: ${e.message?.take(60)}") }
     }
 
+    // Test vision if enabled
+    if (p.visionOverride == true) {
+      try {
+        val visMsg = org.json.JSONArray().put(org.json.JSONObject().apply {
+          put("role", "user")
+          put("content", org.json.JSONArray()
+            .put(org.json.JSONObject().put("type", "text").put("text", "Describe this image in one word."))
+            .put(org.json.JSONObject().put("type", "image_url").put("image_url",
+              org.json.JSONObject().put("url", "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="))))
+        })
+        val visBody = org.json.JSONObject().apply { put("model", model); put("messages", visMsg); put("max_tokens", 10) }
+        val vc = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        vc.requestMethod = "POST"; vc.setRequestProperty("Content-Type", "application/json")
+        if (p.apiKey.isNotBlank()) vc.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+        vc.connectTimeout = 15_000; vc.readTimeout = 30_000; vc.doOutput = true
+        vc.outputStream.write(visBody.toString().toByteArray())
+        results.add(if (vc.responseCode in 200..299) "✓ Vision: supported" else "✗ Vision: HTTP ${vc.responseCode}")
+      } catch (e: Exception) { results.add("✗ Vision: ${e.message?.take(60)}") }
+    }
+
+    // Test audio if enabled (TTS endpoint)
+    if (p.audioOverride == true) {
+      try {
+        val audioUrl = "$baseUrl/v1/audio/speech"
+        val audioBody = org.json.JSONObject().apply {
+          put("model", "tts-1"); put("input", "test"); put("voice", "alloy")
+        }
+        val ac = java.net.URL(audioUrl).openConnection() as java.net.HttpURLConnection
+        ac.requestMethod = "POST"; ac.setRequestProperty("Content-Type", "application/json")
+        if (p.apiKey.isNotBlank()) ac.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+        ac.connectTimeout = 10_000; ac.readTimeout = 15_000; ac.doOutput = true
+        ac.outputStream.write(audioBody.toString().toByteArray())
+        results.add(if (ac.responseCode in 200..299) "✓ Audio: supported" else "⚠ Audio: HTTP ${ac.responseCode}")
+      } catch (e: Exception) { results.add("⚠ Audio: ${e.message?.take(60)}") }
+    }
+
+    // Test video if enabled (check if model accepts video URL in content)
+    if (p.videoOverride == true) {
+      try {
+        val vidMsg = org.json.JSONArray().put(org.json.JSONObject().apply {
+          put("role", "user")
+          put("content", org.json.JSONArray()
+            .put(org.json.JSONObject().put("type", "text").put("text", "Reply OK."))
+            .put(org.json.JSONObject().put("type", "video_url").put("video_url",
+              org.json.JSONObject().put("url", "https://example.com/test.mp4"))))
+        })
+        val vidBody = org.json.JSONObject().apply { put("model", model); put("messages", vidMsg); put("max_tokens", 10) }
+        val vdc = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        vdc.requestMethod = "POST"; vdc.setRequestProperty("Content-Type", "application/json")
+        if (p.apiKey.isNotBlank()) vdc.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+        vdc.connectTimeout = 15_000; vdc.readTimeout = 30_000; vdc.doOutput = true
+        vdc.outputStream.write(vidBody.toString().toByteArray())
+        results.add(if (vdc.responseCode in 200..299) "✓ Video: supported" else "⚠ Video: HTTP ${vdc.responseCode}")
+      } catch (e: Exception) { results.add("⚠ Video: ${e.message?.take(60)}") }
+    }
+
     results.joinToString("\n")
   } catch (e: Exception) { "✗ ${e.message?.take(100)}" }
 }
