@@ -69,8 +69,8 @@ data class ProviderProfile(
   val visionOverride: Boolean? = null,
   val audioOverride: Boolean? = null,
   val videoOverride: Boolean? = null,
-  // Parameters (null = use defaults)
-  val temperature: Float? = null,
+  // Parameters (null = off/omit)
+  val temperature: Float? = 0.6f,
   val maxTokens: Int? = null,
   val topP: Float? = null,
   val topK: Int? = null,
