@@ -12,11 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
@@ -30,20 +26,13 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel()) {
   val isLandscape = config.screenWidthDp > config.screenHeightDp
 
   // Detect keyboard visibility
-  val view = LocalView.current
-  var keyboardVisible by remember { mutableStateOf(false) }
-  DisposableEffect(view) {
-    val listener = ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
-      keyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
-      insets
-    }
-    onDispose { ViewCompat.setOnApplyWindowInsetsListener(view, null) }
-  }
+  @OptIn(ExperimentalLayoutApi::class)
+  val imeVisible = WindowInsets.isImeVisible
 
   if (isLandscape) {
-    LandscapeLayout(messages, isStreaming, terminalVisible, keyboardVisible, viewModel::send, viewModel::toggleTerminal)
+    LandscapeLayout(messages, isStreaming, terminalVisible, imeVisible, viewModel::send, viewModel::toggleTerminal)
   } else {
-    PortraitLayout(messages, isStreaming, terminalVisible, keyboardVisible, viewModel::send, viewModel::toggleTerminal)
+    PortraitLayout(messages, isStreaming, terminalVisible, imeVisible, viewModel::send, viewModel::toggleTerminal)
   }
 }
 
@@ -53,7 +42,7 @@ private fun PortraitLayout(
   messages: List<ChatMessage>,
   isStreaming: Boolean,
   terminalVisible: Boolean,
-  keyboardVisible: Boolean,
+  imeVisible: Boolean,
   onSend: (String) -> Unit,
   onToggleTerminal: () -> Unit
 ) {
@@ -88,7 +77,7 @@ private fun PortraitLayout(
 
       // Terminal panel (fixed height)
       if (terminalVisible) {
-        TerminalPanel(keyboardVisible = keyboardVisible, modifier = Modifier.fillMaxWidth().height(240.dp))
+        TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.fillMaxWidth().height(240.dp))
       }
     }
   }
@@ -100,7 +89,7 @@ private fun LandscapeLayout(
   messages: List<ChatMessage>,
   isStreaming: Boolean,
   terminalVisible: Boolean,
-  keyboardVisible: Boolean,
+  imeVisible: Boolean,
   onSend: (String) -> Unit,
   onToggleTerminal: () -> Unit
 ) {
@@ -135,7 +124,7 @@ private fun LandscapeLayout(
     }
 
     if (terminalVisible) {
-      TerminalPanel(keyboardVisible = keyboardVisible, modifier = Modifier.width(360.dp).fillMaxHeight())
+      TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.width(360.dp).fillMaxHeight().imePadding())
     }
   }
 }

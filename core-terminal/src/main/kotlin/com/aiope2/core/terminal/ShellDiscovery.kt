@@ -27,13 +27,20 @@ object ShellDiscovery {
         File(filesDir, "home").mkdirs()
         File(filesDir, "tmp").mkdirs()
 
+        // Write mkshrc for nice prompt
+        val mkshrc = File(filesDir, "home/.mkshrc")
+        if (!mkshrc.exists()) {
+            val d = '$'
+            mkshrc.writeText("PS1=':${d}{PWD##*/}${d} '\n")
+        }
+
         // 1. Android sh
         shells.add(Shell(
             id = "sh", name = "Android Shell",
             command = "/system/bin/sh", args = arrayOf(),
-            env = arrayOf("TERM=xterm-256color", "HOME=/data/local/tmp", "TMPDIR=$filesDir/tmp",
-                "PATH=/system/bin:/system/xbin"),
-            cwd = "/data/local/tmp"
+            env = arrayOf("TERM=xterm-256color", "HOME=$filesDir/home", "TMPDIR=$filesDir/tmp",
+                "PATH=/system/bin:/system/xbin", "ENV=$filesDir/home/.mkshrc"),
+            cwd = "$filesDir/home"
         ))
 
         // 2. Ubuntu proot — always show, mark if needs setup
