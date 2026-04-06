@@ -3,7 +3,6 @@ package com.aiope2
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import com.aiope2.ui.AiopeMain
 import com.aiope2.core.navigation.AppComposeNavigator
 import dagger.hilt.android.AndroidEntryPoint
@@ -16,7 +15,6 @@ class MainActivity : ComponentActivity() {
   lateinit var composeNavigator: AppComposeNavigator
 
   override fun onCreate(savedInstanceState: Bundle?) {
-    enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     setContent { AiopeMain(composeNavigator = composeNavigator) }
   }

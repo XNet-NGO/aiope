@@ -67,7 +67,7 @@ private fun PortraitLayout(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding)
-        .imePadding()
+        
     ) {
       // Chat messages take remaining space
       MessageList(messages = messages, modifier = Modifier.weight(1f))
@@ -116,7 +116,7 @@ private fun LandscapeLayout(
         modifier = Modifier
           .fillMaxSize()
           .padding(padding)
-          .imePadding()
+          
       ) {
         MessageList(messages = messages, modifier = Modifier.weight(1f))
         ChatInput(onSend = onSend, isStreaming = isStreaming)
@@ -124,7 +124,7 @@ private fun LandscapeLayout(
     }
 
     if (terminalVisible) {
-      TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.width(360.dp).fillMaxHeight().imePadding())
+      TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.width(360.dp).fillMaxHeight())
     }
   }
 }
