@@ -1,5 +1,7 @@
 package com.aiope2.feature.chat
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -18,6 +20,21 @@ import com.aiope2.core.terminal.backend.TerminalSession
 import com.aiope2.core.terminal.view.TerminalView
 import com.aiope2.core.terminal.view.TerminalViewClient
 import com.aiope2.core.terminal.ShellDiscovery
+
+/** Holds terminal sessions so they survive recomposition/toggle */
+object TerminalSessionHolder {
+  private val sessions = mutableMapOf<String, TerminalSession>()
+
+  fun getOrCreate(
+    shellId: String,
+    shell: ShellDiscovery.Shell,
+    callback: TerminalSession.SessionChangedCallback
+  ): TerminalSession {
+    return sessions.getOrPut(shellId) {
+      TerminalSession(shell.command, shell.cwd, shell.args, shell.env, callback)
+    }
+  }
+}
 
 @Composable
 fun TerminalPanel(modifier: Modifier = Modifier) {
@@ -49,34 +66,44 @@ fun TerminalPanel(modifier: Modifier = Modifier) {
 
 @Composable
 private fun TerminalViewComposable(shell: ShellDiscovery.Shell, modifier: Modifier = Modifier) {
+  // Hold a ref to the view so the callback can call onScreenUpdated
+  var terminalViewRef by remember { mutableStateOf<TerminalView?>(null) }
+
   val session = remember(shell.id) {
-    TerminalSession(
-      shell.command, shell.cwd, shell.args, shell.env,
+    TerminalSessionHolder.getOrCreate(shell.id, shell,
       object : TerminalSession.SessionChangedCallback {
-        override fun onTextChanged(s: TerminalSession) {}
+        override fun onTextChanged(s: TerminalSession) {
+          terminalViewRef?.onScreenUpdated()
+        }
         override fun onTitleChanged(s: TerminalSession) {}
         override fun onSessionFinished(s: TerminalSession) {}
-        override fun onClipboardText(s: TerminalSession, text: String) {}
+        override fun onClipboardText(s: TerminalSession, text: String) {
+          terminalViewRef?.let { view ->
+            val cm = view.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("terminal", text))
+          }
+        }
         override fun onBell(s: TerminalSession) {}
         override fun onColorsChanged(s: TerminalSession) {}
       }
     )
   }
 
-  DisposableEffect(session) {
-    onDispose { session.finishIfRunning() }
-  }
-
   AndroidView(
     factory = { context ->
       TerminalView(context, null).apply {
+        terminalViewRef = this
         setTextSize(14)
+        isFocusable = true
+        isFocusableInTouchMode = true
+        setKeepScreenOn(true)
         attachSession(session)
         setTerminalViewClient(object : TerminalViewClient {
           override fun onScale(scale: Float) = scale
           override fun onSingleTapUp(e: MotionEvent?) {
+            requestFocus()
             val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(this@apply, 0)
+            imm.showSoftInput(this@apply, InputMethodManager.SHOW_IMPLICIT)
           }
           override fun shouldBackButtonBeMappedToEscape() = false
           override fun copyModeChanged(copyMode: Boolean) {}
@@ -89,6 +116,11 @@ private fun TerminalViewComposable(shell: ShellDiscovery.Shell, modifier: Modifi
         })
         requestFocus()
       }
+    },
+    update = { view ->
+      terminalViewRef = view
+      // attachSession returns false if already attached
+      view.attachSession(session)
     },
     modifier = modifier
   )
