@@ -209,18 +209,20 @@ private fun ModelPickerSheet(viewModel: ChatViewModel, onDismiss: () -> Unit) {
   val models = viewModel.getModelList()
   val active = viewModel.providerStore.getActive()
   ModalBottomSheet(onDismissRequest = onDismiss) {
-    Text(active.label, style = MaterialTheme.typography.labelMedium,
+    Text("${active.label} · ${models.size} models", style = MaterialTheme.typography.labelMedium,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-    models.forEach { m ->
-      val selected = m.id == active.selectedModelId
-      ListItem(
-        headlineContent = { Text("${if (selected) "● " else "  "}${m.displayName}",
-          color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface) },
-        supportingContent = if (m.contextWindow > 0) {{ Text("${m.contextWindow/1000}k${if (m.supportsTools) " 🔧" else ""}${if (m.supportsVision) " 👁" else ""}",
-          style = MaterialTheme.typography.bodySmall) }} else null,
-        modifier = Modifier.clickable { viewModel.switchModel(m.id); onDismiss() }
-      )
+    LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f, fill = false)) {
+      items(models, key = { it.id }) { m ->
+        val selected = m.id == active.selectedModelId
+        ListItem(
+          headlineContent = { Text("${if (selected) "● " else "  "}${m.displayName}",
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface) },
+          supportingContent = if (m.contextWindow > 0) {{ Text("${m.contextWindow/1000}k${if (m.supportsTools) " 🔧" else ""}${if (m.supportsVision) " 👁" else ""}",
+            style = MaterialTheme.typography.bodySmall) }} else null,
+          modifier = Modifier.clickable { viewModel.switchModel(m.id); onDismiss() }
+        )
+      }
     }
     if (models.isEmpty()) Text("No models. Fetch in Settings.", Modifier.padding(16.dp))
     Spacer(Modifier.height(32.dp))
