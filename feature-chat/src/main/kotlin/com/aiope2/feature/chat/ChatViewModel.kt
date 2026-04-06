@@ -43,14 +43,14 @@ class ChatViewModel @Inject constructor(
 
   // LLM client — reads from ProviderStore, recreated per send
   private fun createClient(): Pair<SingleLLMPromptExecutor, LLModel> {
-    val active = providerStore.getActive()
-    val baseUrl = active.baseUrl().trimEnd('/')
+    val p = providerStore.getActive()
+    val baseUrl = p.baseUrl.trimEnd('/')
     val client = OpenAILLMClient(
-      apiKey = active.apiKey.ifBlank { "unused" },
+      apiKey = p.apiKey.ifBlank { "unused" },
       settings = OpenAIClientSettings(baseUrl)
     )
     val model = LLModel(
-      LLMProvider.OpenAI, active.modelId,
+      LLMProvider.OpenAI, p.effectiveModel(),
       listOf(
         ai.koog.prompt.llm.LLMCapability.Completion,
         ai.koog.prompt.llm.LLMCapability.Tools,
@@ -62,10 +62,7 @@ class ChatViewModel @Inject constructor(
   }
   private val tools = AiopeTools(application)
 
-  private val systemPrompt = """You are AIOPE, an AI coding assistant running on an Android device.
-You have tools: run_sh (execute shell commands), read_file, write_file, list_directory.
-Use tools when the user asks you to run commands, read/write files, or explore the filesystem.
-Be concise. Show command output directly."""
+  private fun getSystemPrompt(): String = providerStore.getActive().systemPrompt
 
   init {
     viewModelScope.launch {
@@ -91,7 +88,7 @@ Be concise. Show command output directly."""
         val (executor, model) = createClient()
         val agent = AIAgent(
           promptExecutor = executor,
-          systemPrompt = systemPrompt,
+          systemPrompt = getSystemPrompt(),
           llmModel = model,
           toolRegistry = ToolRegistry { tools(this@ChatViewModel.tools) }
         )
