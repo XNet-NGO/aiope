@@ -92,9 +92,6 @@ private fun ChatContent(
         Text(modelLabel, fontSize = 12.sp, maxLines = 1,
           modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
       }
-      IconButton(onClick = onNewChat, modifier = Modifier.size(36.dp)) {
-        Icon(Icons.Default.Add, "New Chat", modifier = Modifier.size(18.dp))
-      }
       IconButton(onClick = onToggleTerminal, modifier = Modifier.size(36.dp)) {
         Icon(Icons.Default.Terminal, "Terminal", modifier = Modifier.size(18.dp),
           tint = if (terminalVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
