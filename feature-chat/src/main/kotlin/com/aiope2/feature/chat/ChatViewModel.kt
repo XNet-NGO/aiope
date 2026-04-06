@@ -44,9 +44,11 @@ class ChatViewModel @Inject constructor(
   // LLM client — reads from ProviderStore, recreated per send
   private fun createClient(): Pair<SingleLLMPromptExecutor, LLModel> {
     val provider = providerStore.getActiveProvider()
+    // Gateway server pattern: baseUrl is the root, path is /chat/completions
+    val baseUrl = provider.baseUrl.trimEnd('/')
     val client = OpenAILLMClient(
       apiKey = provider.apiKey.ifBlank { "unused" },
-      settings = OpenAIClientSettings(provider.baseUrl)
+      settings = OpenAIClientSettings(baseUrl)
     )
     val model = LLModel(
       LLMProvider.OpenAI, provider.defaultModel,

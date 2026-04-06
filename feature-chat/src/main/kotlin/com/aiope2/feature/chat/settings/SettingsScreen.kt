@@ -59,7 +59,14 @@ fun SettingsScreen(
         val isActive = provider.name == activeProvider.name
         ListItem(
           headlineContent = { Text(provider.name) },
-          supportingContent = { Text(provider.defaultModel, style = MaterialTheme.typography.bodySmall) },
+          supportingContent = {
+            val key = providerStore.getApiKey(provider.name)
+            val hasKey = key.isNotBlank() || provider.apiKey.isNotBlank() || provider.name == "pollinations" || provider.name == "cline"
+            Text(
+              "${provider.defaultModel}${if (hasKey) "" else " (needs key)"}",
+              style = MaterialTheme.typography.bodySmall
+            )
+          },
           trailingContent = {
             if (isActive) Text("✓", color = MaterialTheme.colorScheme.primary)
           },
