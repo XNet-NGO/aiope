@@ -16,6 +16,7 @@ import com.aiope2.feature.chat.db.ConversationEntity
 import com.aiope2.feature.chat.db.MessageEntity
 import com.aiope2.feature.chat.settings.ProviderStore
 import com.aiope2.core.network.ModelDef
+import com.aiope2.core.network.ModelConfig
 import com.aiope2.core.network.ProviderTemplates
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -103,10 +104,17 @@ class ChatViewModel @Inject constructor(
     _conversations.value = chatDao.getConversations()
   }
 
-  // LLM client — reads from ProviderStore, recreated per send
-  private fun createClient(): Pair<SingleLLMPromptExecutor, LLModel> {
-    val p = providerStore.getActive()
-    val mc = p.activeModelConfig()
+  // LLM client — resolves task model, then creates client
+  private fun createClient(task: com.aiope2.core.network.ModelTask = com.aiope2.core.network.ModelTask.CHAT): Triple<SingleLLMPromptExecutor, LLModel, Boolean> {
+    val taskStore = com.aiope2.core.network.TaskModelStore(getApplication())
+    val tc = taskStore.getTaskConfig(task)
+
+    // Resolve profile: task override → active profile
+    val p = tc.profileId?.let { providerStore.getById(it) } ?: providerStore.getActive()
+    // Resolve model: task override → profile's selected model
+    val modelId = tc.modelId ?: p.selectedModelId
+    val mc = p.modelConfigs[modelId] ?: ModelConfig(modelId = modelId)
+
     var baseUrl = p.effectiveApiBase().trimEnd('/')
     val eo = mc.endpointOverride.trim().removePrefix("/")
     val chatPath = if (eo.isNotBlank()) eo
@@ -120,7 +128,7 @@ class ChatViewModel @Inject constructor(
     )
     val client = OpenAILLMClient(apiKey = p.apiKey.ifBlank { "unused" }, settings = settings)
     val model = LLModel(
-      LLMProvider.OpenAI, p.effectiveModel(),
+      LLMProvider.OpenAI, modelId,
       listOf(
         ai.koog.prompt.llm.LLMCapability.Completion,
         ai.koog.prompt.llm.LLMCapability.Tools,
@@ -128,7 +136,8 @@ class ChatViewModel @Inject constructor(
         ai.koog.prompt.llm.LLMCapability.OpenAIEndpoint.Completions,
       )
     )
-    return SingleLLMPromptExecutor(client) to model
+    val toolsEnabled = mc.toolsOverride != false
+    return Triple(SingleLLMPromptExecutor(client), model, toolsEnabled)
   }
   private val tools = AiopeTools(application)
 
@@ -154,12 +163,12 @@ class ChatViewModel @Inject constructor(
       _messages.value = _messages.value + assistantMsg
 
       try {
-        val (executor, model) = createClient()
+        val (executor, model, toolsEnabled) = createClient(com.aiope2.core.network.ModelTask.CHAT)
         val agent = AIAgent(
           promptExecutor = executor,
           systemPrompt = getSystemPrompt(),
           llmModel = model,
-          toolRegistry = ToolRegistry { tools(this@ChatViewModel.tools) }
+          toolRegistry = if (toolsEnabled) ToolRegistry { tools(this@ChatViewModel.tools) } else ToolRegistry { }
         )
 
         val result = agent.run(text)
@@ -219,7 +228,7 @@ class ChatViewModel @Inject constructor(
     viewModelScope.launch(Dispatchers.IO) {
       _isStreaming.value = true
       try {
-        val (executor, model) = createClient()
+        val (executor, model, toolsEnabled) = createClient(com.aiope2.core.network.ModelTask.SUMMARY)
         val agent = AIAgent(
           promptExecutor = executor,
           systemPrompt = "Summarize this conversation concisely, preserving all key context needed to continue. Start with [Summary].",
@@ -256,10 +265,10 @@ class ChatViewModel @Inject constructor(
       val assistantMsg = ChatMessage(role = Role.ASSISTANT, content = "")
       _messages.value = _messages.value + assistantMsg
       try {
-        val (executor, model) = createClient()
+        val (executor, model, toolsEnabled) = createClient(com.aiope2.core.network.ModelTask.CHAT)
         val agent = AIAgent(
           promptExecutor = executor, systemPrompt = getSystemPrompt(),
-          llmModel = model, toolRegistry = ToolRegistry { tools(this@ChatViewModel.tools) }
+          llmModel = model, toolRegistry = if (toolsEnabled) ToolRegistry { tools(this@ChatViewModel.tools) } else ToolRegistry { }
         )
         val result = agent.run(text)
         val updated = _messages.value.toMutableList()
