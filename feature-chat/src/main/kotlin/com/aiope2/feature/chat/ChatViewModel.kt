@@ -17,6 +17,7 @@ import com.aiope2.feature.chat.db.MessageEntity
 import com.aiope2.feature.chat.settings.ProviderStore
 import com.aiope2.core.network.ModelDef
 import com.aiope2.core.network.ModelConfig
+import com.aiope2.core.network.ProviderProfile
 import com.aiope2.core.network.ProviderTemplates
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -109,10 +110,19 @@ class ChatViewModel @Inject constructor(
     val taskStore = com.aiope2.core.network.TaskModelStore(getApplication())
     val tc = taskStore.getTaskConfig(task)
 
-    // Resolve profile: task override → active profile
-    val p = tc.profileId?.let { providerStore.getById(it) } ?: providerStore.getActive()
-    // Resolve model: task override → profile's selected model
-    val modelId = tc.modelId ?: p.selectedModelId
+    // Chat task: always use active profile + its selected model (set by toolbar dropdown)
+    // Other tasks: resolve from TaskModelStore override → active profile fallback
+    val p: ProviderProfile
+    val modelId: String
+    if (task == com.aiope2.core.network.ModelTask.CHAT) {
+      p = providerStore.getActive()
+      modelId = p.selectedModelId
+    } else {
+      val tc2 = taskStore.getTaskConfig(task)
+      p = tc2.profileId?.let { providerStore.getById(it) } ?: providerStore.getActive()
+      modelId = tc2.modelId ?: p.selectedModelId
+    }
+    android.util.Log.d("AIOPE2", "Task=${task.id} resolved=${p.label}/$modelId")
     val mc = p.modelConfigs[modelId] ?: ModelConfig(modelId = modelId)
 
     var baseUrl = p.effectiveApiBase().trimEnd('/')

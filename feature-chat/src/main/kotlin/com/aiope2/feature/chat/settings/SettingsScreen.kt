@@ -406,7 +406,7 @@ private fun TaskModelScreen(providerStore: ProviderStore, onBack: () -> Unit) {
         }
       }
 
-      items(com.aiope2.core.network.ModelTask.entries.toList()) { task ->
+      items(com.aiope2.core.network.ModelTask.configurable) { task ->
         TaskCard(task, taskStore, providerStore, profiles)
         Spacer(Modifier.height(8.dp))
       }

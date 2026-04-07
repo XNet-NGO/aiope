@@ -8,7 +8,7 @@ import org.json.JSONObject
  * Falls back to the active profile if no task-specific override is set.
  */
 enum class ModelTask(val id: String, val label: String, val description: String) {
-  CHAT("chat", "Chat", "General conversation and coding assistance"),
+  CHAT("chat", "Chat", "Set by toolbar model selector"),  // Not shown in task settings
   AGENT("agent", "Agent / Tool Use", "Agentic tasks with tool calling"),
   SUMMARY("summary", "Summary", "Conversation summarization and compaction"),
   TITLE("title", "Title Generation", "Auto-generate conversation titles"),
@@ -16,6 +16,11 @@ enum class ModelTask(val id: String, val label: String, val description: String)
   IMAGE_RECOGNITION("image", "Image Recognition", "Describe and analyze images"),
   AUDIO_RECOGNITION("audio", "Audio Recognition", "Transcribe and understand audio"),
   VIDEO_RECOGNITION("video", "Video Recognition", "Analyze video content"),
+  ;
+  companion object {
+    /** Tasks shown in the settings UI (excludes CHAT) */
+    val configurable = entries.filter { it != CHAT }
+  }
 }
 
 data class TaskModelConfig(
