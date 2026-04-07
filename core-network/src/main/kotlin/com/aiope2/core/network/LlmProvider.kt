@@ -126,6 +126,8 @@ object ProviderTemplates {
   val ALL = listOf(
     BuiltinProvider("pollinations", "Pollinations", "🌸", "https://text.pollinations.ai/openai", "(no key)", false, listOf(
       ModelDef("openai-fast", "GPT-OSS Fast", 32_768), ModelDef("openai", "GPT-OSS", 32_768), ModelDef("openai-large", "GPT-OSS Large", 32_768))),
+    BuiltinProvider("aiope_gateway", "AIOPE Gateway", "A", "https://inf.xnet.ngo/v1", "aiope-gateway-key", defaultModels = listOf(
+      ModelDef("llama/qwen3.5-2b-heretic", "Qwen 3.5 2B Heretic", 32_768))),
     BuiltinProvider("openai", "OpenAI", "🤖", apiKeyHint = "sk-…", defaultModels = listOf(
       ModelDef("gpt-4o", "GPT-4o", 128_000, true, true), ModelDef("gpt-4o-mini", "GPT-4o mini", 128_000, true, true), ModelDef("o4-mini", "o4-mini", 200_000, true, true))),
     BuiltinProvider("anthropic", "Anthropic", "🧠", apiKeyHint = "sk-ant-…", defaultModels = listOf(
