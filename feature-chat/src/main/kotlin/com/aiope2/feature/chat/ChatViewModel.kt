@@ -175,7 +175,7 @@ class ChatViewModel @Inject constructor(
       chatPath, "v1/responses", "v1/embeddings", "v1/moderations", "v1/models"
     )
 
-    val toolsEnabled = mc.toolsOverride == true  // null/false = no tools, true = tools on
+    val toolsEnabled = mc.toolsOverride != false  // null/false = no tools, true = tools on
     val stripSystemPrompt = mc.systemPromptOverride.isNullOrBlank()
     val stripTools = !toolsEnabled
 
@@ -287,7 +287,7 @@ class ChatViewModel @Inject constructor(
       try {
         val p = providerStore.getActive()
         val mc = p.activeModelConfig()
-        val useTools = mc.toolsOverride == true
+        val useTools = mc.toolsOverride != false  // null=auto(send), true=send, false=dont send
         val sb = StringBuilder()
         val reasoningBlocks = mutableListOf<String>()
         val currentReasoning = StringBuilder()
@@ -506,7 +506,7 @@ class ChatViewModel @Inject constructor(
       try {
         val p = providerStore.getActive()
         val mc = p.activeModelConfig()
-        val useTools = mc.toolsOverride == true
+        val useTools = mc.toolsOverride != false  // null=auto(send), true=send, false=dont send
         val sb = StringBuilder()
         val reasoningBlocks = mutableListOf<String>()
         val currentReasoning = StringBuilder()
