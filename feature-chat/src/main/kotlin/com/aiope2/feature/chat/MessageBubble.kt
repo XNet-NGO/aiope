@@ -36,7 +36,12 @@ fun MessageBubble(
 ) {
   val isUser = message.role == Role.USER
   val ctx = LocalContext.current
-  val markwon = remember { Markwon.create(ctx) }
+  val markwon = remember {
+    Markwon.builder(ctx)
+      .usePlugin(io.noties.markwon.ext.strikethrough.StrikethroughPlugin.create())
+      .usePlugin(io.noties.markwon.ext.tables.TablePlugin.create(ctx))
+      .build()
+  }
   var showMenu by remember { mutableStateOf(false) }
 
   if (isUser) {
@@ -84,7 +89,16 @@ fun MessageBubble(
                   setTextIsSelectable(true); setPadding(32, 16, 32, 8)
                 }
               },
-              update = { tv -> markwon.setMarkdown(tv, message.content) },
+              update = { tv ->
+              // Strip LaTeX and render markdown
+              val cleaned = message.content
+                .replace(Regex("\\$\\\\checkmark\\$"), "✓")
+                .replace(Regex("\\$\\\\triangle\\$"), "△")
+                .replace(Regex("\\$\\\\text\\{([^}]*)\\}\\$"), "$1")
+                .replace(Regex("\\$\\\\approx\\s*([^$]*)\\$"), "≈$1")
+                .replace(Regex("\\$([^$]+)\\$"), "$1")
+              markwon.setMarkdown(tv, cleaned)
+            },
               modifier = Modifier.fillMaxWidth()
             )
           }

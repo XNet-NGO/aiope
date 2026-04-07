@@ -27,6 +27,8 @@ dependencies {
 
   // markdown
   implementation(libs.markwon.core)
+  implementation(libs.markwon.ext.strikethrough)
+  implementation("io.noties.markwon:ext-tables:4.6.2")
 
   // room
   implementation(libs.androidx.room.runtime)
