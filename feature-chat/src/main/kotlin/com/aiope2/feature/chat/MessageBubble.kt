@@ -191,10 +191,11 @@ private fun MessageMenu(
   onCompact: (() -> Unit)?, onFork: (() -> Unit)?
 ) {
   val isUser = message.role == Role.USER
+  val iconTint = if (isUser) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
+                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
   Box(Modifier.fillMaxWidth().padding(end = 4.dp), contentAlignment = Alignment.CenterEnd) {
     IconButton(onClick = { onShowMenu(true) }, modifier = Modifier.size(28.dp)) {
-      Icon(Icons.Default.MoreVert, "More", modifier = Modifier.size(16.dp),
-        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+      Icon(Icons.Default.MoreVert, "More", modifier = Modifier.size(16.dp), tint = iconTint)
     }
     DropdownMenu(expanded = showMenu, onDismissRequest = { onShowMenu(false) }) {
       DropdownMenuItem(text = { Text("Copy") }, onClick = {
