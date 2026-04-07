@@ -208,7 +208,9 @@ class ChatViewModel @Inject constructor(
         val mc = p.activeModelConfig()
         val useTools = mc.toolsOverride == true
         val sb = StringBuilder()
-        val reasoningSb = StringBuilder()
+        val reasoningBlocks = mutableListOf<String>()
+        val currentReasoning = StringBuilder()
+        var isReasoning = false
         val toolCallsList = mutableListOf<String>()
         val toolResultsList = mutableListOf<String>()
 
@@ -250,21 +252,55 @@ class ChatViewModel @Inject constructor(
         )
 
         orchestrator.stream(chatMessages).collect { chunk ->
-          chunk.reasoning?.let { reasoningSb.append(it) }
-          if (chunk.content.isNotEmpty()) sb.append(chunk.content)
+          // Reasoning — accumulate into current block
+          chunk.reasoning?.let { r ->
+            if (!isReasoning) { isReasoning = true; currentReasoning.clear() }
+            currentReasoning.append(r)
+          }
+
+          // Text content — if we were reasoning, close that block
+          if (chunk.content.isNotEmpty()) {
+            if (isReasoning && currentReasoning.isNotEmpty()) {
+              reasoningBlocks.add(currentReasoning.toString())
+              currentReasoning.clear()
+              isReasoning = false
+            }
+            sb.append(chunk.content)
+          }
+
+          // Tool calls — close any open reasoning block first
           chunk.toolCalls?.let { calls ->
+            if (isReasoning && currentReasoning.isNotEmpty()) {
+              reasoningBlocks.add(currentReasoning.toString())
+              currentReasoning.clear()
+              isReasoning = false
+            }
             for (c in calls) toolCallsList.add("${c.name}(${c.arguments.values.firstOrNull()?.toString()?.take(80) ?: ""})")
           }
+
           chunk.toolResults?.let { results ->
             for (r in results) toolResultsList.add(r.result.take(2000))
           }
+
           chunk.error?.let { sb.append("\nError: $it") }
+
+          // Done — close any remaining reasoning block
+          if (chunk.isDone && isReasoning && currentReasoning.isNotEmpty()) {
+            reasoningBlocks.add(currentReasoning.toString())
+            isReasoning = false
+          }
+
+          // Build current reasoning list (include in-progress block)
+          val allReasoning = if (isReasoning && currentReasoning.isNotEmpty())
+            reasoningBlocks + currentReasoning.toString()
+          else reasoningBlocks.toList()
 
           withContext(Dispatchers.Main) {
             _messages.value = _messages.value.toMutableList().also {
               it[it.lastIndex] = it.last().copy(
                 content = sb.toString(),
-                reasoning = reasoningSb.toString(),
+                reasoning = allReasoning,
+                isReasoningDone = !isReasoning,
                 toolCalls = toolCallsList.toList(),
                 toolResults = toolResultsList.toList()
               )

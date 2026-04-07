@@ -60,9 +60,13 @@ fun MessageBubble(
         modifier = Modifier.widthIn(max = 340.dp)) {
         Column(Modifier.padding(bottom = 4.dp)) {
 
-          // Reasoning (collapsible)
-          if (message.reasoning.isNotBlank()) {
-            ReasoningBlock(message.reasoning)
+          // Reasoning blocks (each collapsible)
+          if (message.reasoning.isNotEmpty()) {
+            message.reasoning.forEachIndexed { idx, block ->
+              val isLast = idx == message.reasoning.lastIndex
+              val isStreaming = isLast && !message.isReasoningDone
+              ReasoningBlock(block, isStreaming)
+            }
           }
 
           // Tool calls + results (interleaved)
@@ -93,8 +97,12 @@ fun MessageBubble(
 }
 
 @Composable
-private fun ReasoningBlock(reasoning: String) {
-  var expanded by remember { mutableStateOf(false) }
+private fun ReasoningBlock(reasoning: String, isStreaming: Boolean) {
+  var expanded by remember { mutableStateOf(isStreaming) }
+
+  // Auto-collapse when streaming finishes
+  LaunchedEffect(isStreaming) { if (!isStreaming) expanded = false }
+
   Surface(
     modifier = Modifier.fillMaxWidth().padding(8.dp, 8.dp, 8.dp, 0.dp).clickable { expanded = !expanded },
     shape = RoundedCornerShape(8.dp),
@@ -107,7 +115,7 @@ private fun ReasoningBlock(reasoning: String) {
           color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Thinking", style = MaterialTheme.typography.labelSmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LoadingDots()
+        if (isStreaming) LoadingDots()
       }
       AnimatedVisibility(visible = expanded) {
         Text(reasoning, fontSize = 12.sp, lineHeight = 16.sp,
@@ -178,7 +186,7 @@ private fun MessageMenu(
       DropdownMenuItem(text = { Text("Copy") }, onClick = {
         onShowMenu(false)
         val full = buildString {
-          if (message.reasoning.isNotBlank()) append("[Thinking]\n${message.reasoning}\n\n")
+          if (message.reasoning.isNotEmpty()) append("[Thinking]\n${message.reasoning.joinToString("\n\n")}\n\n")
           message.toolCalls.forEachIndexed { i, c ->
             append("$c\n")
             if (i < message.toolResults.size) append("${message.toolResults[i]}\n\n")
