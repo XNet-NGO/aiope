@@ -83,24 +83,36 @@ private fun ProfileList(profiles: List<ProviderProfile>, activeId: String,
       item {
         val ctx = androidx.compose.ui.platform.LocalContext.current
         val installed = remember { mutableStateOf(com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(ctx)) }
-        val installing = remember { mutableStateOf(false) }
+        val running = remember { mutableStateOf(false) }
+        val status = remember { mutableStateOf(if (installed.value) "Installed" else "Not installed") }
         val scope = rememberCoroutineScope()
         ListItem(
           headlineContent = { Text("Ubuntu (proot)") },
-          supportingContent = { Text(
-            if (installing.value) "Installing..."
-            else if (installed.value) "Installed — run_proot tool available"
-            else "Not installed — tap to set up",
-            style = MaterialTheme.typography.bodySmall
-          ) },
-          modifier = Modifier.clickable {
-            if (!installed.value && !installing.value) {
-              installing.value = true
-              scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                com.aiope2.core.terminal.shell.ProotBootstrap.setup(ctx) { }
-                installed.value = com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(ctx)
-                installing.value = false
-              }
+          supportingContent = { Text(status.value, style = MaterialTheme.typography.bodySmall,
+            color = if (installed.value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) },
+          trailingContent = {
+            TextButton(
+              onClick = {
+                if (!running.value) {
+                  running.value = true
+                  status.value = "Downloading..."
+                  scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                      com.aiope2.core.terminal.shell.ProotBootstrap.setup(ctx) { msg ->
+                        status.value = msg
+                      }
+                      installed.value = com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(ctx)
+                      status.value = if (installed.value) "Installed" else "Failed"
+                    } catch (e: Exception) {
+                      status.value = "Error: ${e.message?.take(40)}"
+                    }
+                    running.value = false
+                  }
+                }
+              },
+              enabled = !running.value
+            ) {
+              Text(if (running.value) "Deploying..." else if (installed.value) "Redeploy" else "Deploy")
             }
           }
         )
