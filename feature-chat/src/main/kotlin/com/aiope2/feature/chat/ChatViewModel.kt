@@ -192,18 +192,11 @@ class ChatViewModel @Inject constructor(
     // Models known to NOT support tools
     if (id.contains("gemma") || id.contains("embedding") || id.contains("whisper") ||
         id.contains("tts") || id.contains("dall-e") || id.contains("imagen")) return false
-    // Reasoning-only models
     if (id.startsWith("o1") || id.contains("deepseek-r1") || id.contains("-r1")) return false
-    // Models known to support tools
-    if (id.startsWith("gpt-") || id.startsWith("o3") || id.startsWith("o4") ||
-        id.startsWith("claude-") || id.startsWith("gemini") ||
-        id.startsWith("command-") || id.startsWith("mistral") ||
-        id.contains("llama-3") || id.contains("llama-4") ||
-        id.contains("deepseek-chat") || id.contains("deepseek-v3") ||
-        id.contains("grok") || id.contains("qwen")) return true
-    // Default: don't send tools for unknown models (safer)
-    return false
+    // Default: assume tools are supported
+    return true
   }
+
   private val tools = AiopeTools(application)
 
   fun send(text: String) {
