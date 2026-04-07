@@ -7,17 +7,22 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.aiope2.core.network.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -390,52 +395,142 @@ private fun TaskModelScreen(providerStore: ProviderStore, onBack: () -> Unit) {
   Scaffold(topBar = { TopAppBar(title = { Text("Default Models per Task") },
     navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
   }) { pad ->
-    LazyColumn(Modifier.fillMaxSize().padding(pad)) {
-      items(com.aiope2.core.network.ModelTask.entries.toList()) { task ->
-        var tc by remember { mutableStateOf(taskStore.getTaskConfig(task)) }
-        var expanded by remember { mutableStateOf(false) }
-        val assignedProfile = tc.profileId?.let { pid -> profiles.firstOrNull { it.id == pid } }
-        val display = if (assignedProfile != null) "${assignedProfile.label}: ${tc.modelId ?: assignedProfile.selectedModelId}" else "Use active profile"
+    LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 16.dp)) {
+      item {
+        Card(Modifier.fillMaxWidth().padding(vertical = 8.dp), shape = RoundedCornerShape(12.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))) {
+          Column(Modifier.padding(16.dp)) {
+            Text("Assign different models to different tasks. Each task falls back to the active profile if not configured.",
+              style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+        }
+      }
 
-        ListItem(
-          headlineContent = { Text(task.label) },
-          supportingContent = { Text("${task.description}\n$display", style = MaterialTheme.typography.bodySmall) },
-          trailingContent = {
-            Box {
-              IconButton(onClick = { expanded = true }) { Icon(Icons.Default.ArrowDropDown, "Select") }
-              DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                DropdownMenuItem(text = { Text("Use active profile (default)") }, onClick = {
-                  taskStore.clearTaskConfig(task); tc = TaskModelConfig(task.id); expanded = false
-                })
-                profiles.forEach { p ->
-                  val models = providerStore.getModelCache(p.builtinId)
-                    ?: providerStore.getModelCacheStale(p.builtinId)
-                    ?: com.aiope2.core.network.ProviderTemplates.byId[p.builtinId]?.defaultModels
-                    ?: emptyList()
-                  // Show profile with its selected model
-                  DropdownMenuItem(
-                    text = { Text("${p.label}: ${p.selectedModelId}") },
-                    onClick = {
-                      val newTc = TaskModelConfig(task.id, p.id, p.selectedModelId)
-                      taskStore.setTaskConfig(task, newTc); tc = newTc; expanded = false
+      items(com.aiope2.core.network.ModelTask.entries.toList()) { task ->
+        TaskCard(task, taskStore, providerStore, profiles)
+        Spacer(Modifier.height(8.dp))
+      }
+
+      item { Spacer(Modifier.height(32.dp)) }
+    }
+  }
+}
+
+@Composable
+private fun TaskCard(
+  task: com.aiope2.core.network.ModelTask,
+  taskStore: com.aiope2.core.network.TaskModelStore,
+  providerStore: ProviderStore,
+  profiles: List<ProviderProfile>
+) {
+  var tc by remember { mutableStateOf(taskStore.getTaskConfig(task)) }
+  var expanded by remember { mutableStateOf(false) }
+  val assignedProfile = tc.profileId?.let { pid -> profiles.firstOrNull { it.id == pid } }
+  val displayConfig = assignedProfile?.label ?: "Active profile"
+  val displayModel = tc.modelId ?: assignedProfile?.selectedModelId ?: "default"
+
+  Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+    border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
+    Column {
+      // Header — tap to expand
+      Surface(Modifier.fillMaxWidth().clickable { expanded = !expanded },
+        color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.padding(16.dp)) {
+          Text(task.label, style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+          Text(task.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Spacer(Modifier.height(8.dp))
+
+          // Current assignment
+          Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
+            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween) {
+              Column(Modifier.weight(1f)) {
+                Text("Config: $displayConfig", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                Text("Model: $displayModel", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+              Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                "Expand", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+        }
+      }
+
+      // Expanded: profile + model selection
+      androidx.compose.animation.AnimatedVisibility(visible = expanded) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+          Text("Select configuration", style = MaterialTheme.typography.labelMedium,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, modifier = Modifier.padding(bottom = 8.dp))
+
+          // "Use active profile" option
+          val isDefault = tc.profileId == null
+          Surface(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
+            taskStore.clearTaskConfig(task); tc = com.aiope2.core.network.TaskModelConfig(task.id); expanded = false
+          }, shape = RoundedCornerShape(8.dp),
+            color = if (isDefault) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+            border = androidx.compose.foundation.BorderStroke(if (isDefault) 0.dp else 0.5.dp,
+              if (isDefault) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
+            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+              if (isDefault) { Icon(Icons.Default.Check, "Selected", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)) }
+              Text("Use active profile (default)", fontWeight = if (isDefault) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
+                color = if (isDefault) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+            }
+          }
+
+          // Each profile with its models
+          profiles.forEach { profile ->
+            var profileExpanded by remember { mutableStateOf(false) }
+            val models = providerStore.getModelCache(profile.builtinId)
+              ?: providerStore.getModelCacheStale(profile.builtinId)
+              ?: com.aiope2.core.network.ProviderTemplates.byId[profile.builtinId]?.defaultModels ?: emptyList()
+            val isProfileSelected = tc.profileId == profile.id
+
+            Surface(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
+              if (models.size > 1) profileExpanded = !profileExpanded
+              else {
+                val newTc = com.aiope2.core.network.TaskModelConfig(task.id, profile.id, profile.selectedModelId)
+                taskStore.setTaskConfig(task, newTc); tc = newTc; expanded = false
+              }
+            }, shape = RoundedCornerShape(8.dp),
+              color = if (isProfileSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+              border = androidx.compose.foundation.BorderStroke(if (isProfileSelected) 0.dp else 0.5.dp,
+                if (isProfileSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))) {
+              Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (isProfileSelected && models.size <= 1) { Icon(Icons.Default.Check, "Selected", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)) }
+                Column(Modifier.weight(1f)) {
+                  Text(profile.label, fontWeight = if (isProfileSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
+                    color = if (isProfileSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                  if (models.size > 1) Text("${models.size} models", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  else Text(profile.selectedModelId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (models.size > 1) Icon(if (profileExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+            }
+
+            // Sub-expand: individual models
+            androidx.compose.animation.AnimatedVisibility(visible = profileExpanded && models.size > 1) {
+              Column(Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 8.dp)) {
+                models.forEach { m ->
+                  val isModelSelected = isProfileSelected && tc.modelId == m.id
+                  Surface(Modifier.fillMaxWidth().padding(vertical = 2.dp).clickable {
+                    val newTc = com.aiope2.core.network.TaskModelConfig(task.id, profile.id, m.id)
+                    taskStore.setTaskConfig(task, newTc); tc = newTc; expanded = false; profileExpanded = false
+                  }, shape = RoundedCornerShape(6.dp),
+                    color = if (isModelSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                      if (isModelSelected) { Icon(Icons.Default.Check, "Selected", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(6.dp)) }
+                      Text(m.displayName, fontSize = 13.sp, fontWeight = if (isModelSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal,
+                        color = if (isModelSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                     }
-                  )
-                  // Show other models from this profile
-                  models.filter { it.id != p.selectedModelId }.take(5).forEach { m ->
-                    DropdownMenuItem(
-                      text = { Text("  ${p.label}: ${m.displayName}", style = MaterialTheme.typography.bodySmall) },
-                      onClick = {
-                        val newTc = TaskModelConfig(task.id, p.id, m.id)
-                        taskStore.setTaskConfig(task, newTc); tc = newTc; expanded = false
-                      }
-                    )
                   }
                 }
               }
             }
           }
-        )
+        }
       }
+
+      HorizontalDivider(Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(0.3f))
     }
   }
 }
