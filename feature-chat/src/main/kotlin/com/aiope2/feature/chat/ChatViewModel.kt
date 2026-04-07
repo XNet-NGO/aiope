@@ -15,6 +15,7 @@ import com.aiope2.feature.chat.agent.AiopeTools
 import com.aiope2.feature.chat.db.ChatDao
 import com.aiope2.feature.chat.db.ConversationEntity
 import com.aiope2.feature.chat.db.MessageEntity
+import com.aiope2.feature.chat.engine.StreamingOrchestrator
 import com.aiope2.feature.chat.settings.ProviderStore
 import com.aiope2.core.network.ModelDef
 import com.aiope2.core.network.ModelConfig
@@ -207,51 +208,77 @@ class ChatViewModel @Inject constructor(
         val mc = p.activeModelConfig()
         val useTools = mc.toolsOverride == true
         val sb = StringBuilder()
+        val reasoningSb = StringBuilder()
 
-        if (useTools) {
-          // Koog agent for tool loop (non-streaming for now)
-          val agent = AIAgent(
-            promptExecutor = executor, systemPrompt = mc.systemPromptOverride ?: "",
-            llmModel = model, toolRegistry = ToolRegistry { tools(this@ChatViewModel.tools) }
-          )
-          val result = agent.run(text)
-          _messages.value = _messages.value.toMutableList().also {
-            it[it.lastIndex] = it.last().copy(content = result)
+        // Build tool definitions
+        val toolDefs = if (useTools) listOf(
+          StreamingOrchestrator.ToolDef("run_sh", "Execute Android shell command", org.json.JSONObject("""{"type":"object","properties":{"command":{"type":"string","description":"Shell command"}},"required":["command"]}""")),
+          StreamingOrchestrator.ToolDef("read_file", "Read file contents", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string","description":"File path"}},"required":["path"]}""")),
+          StreamingOrchestrator.ToolDef("write_file", "Write file", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string","description":"File path"},"content":{"type":"string","description":"Content"}},"required":["path","content"]}""")),
+          StreamingOrchestrator.ToolDef("list_directory", "List directory", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string","description":"Directory path"}},"required":["path"]}"""))
+        ) else emptyList()
+
+        // Build messages
+        val chatMessages = mutableListOf<Pair<String, String>>()
+        mc.systemPromptOverride?.let { if (it.isNotBlank()) chatMessages.add("system" to it) }
+        _messages.value.dropLast(1).forEach { msg ->
+          when (msg.role) {
+            Role.USER -> chatMessages.add("user" to msg.content)
+            Role.ASSISTANT -> chatMessages.add("assistant" to msg.content)
+            Role.SYSTEM -> chatMessages.add("system" to msg.content)
+            else -> {}
           }
-        } else {
-          // Direct SSE streaming via openai-kotlin (proven to work)
-          // openai-kotlin appends /chat/completions to the host baseUrl
-          // So baseUrl should be everything before /chat/completions
-          // e.g. https://api.openai.com/v1 → .../v1/chat/completions
-          // e.g. https://generativelanguage.googleapis.com/v1beta/openai → .../openai/chat/completions
-          val baseUrl = p.effectiveApiBase().trimEnd('/')
-          val openai = com.aallam.openai.client.OpenAI(com.aallam.openai.client.OpenAIConfig(
-            token = p.apiKey.ifBlank { "unused" },
-            host = com.aallam.openai.client.OpenAIHost(baseUrl = "$baseUrl/")
-          ))
-          val sysPrompt = mc.systemPromptOverride
-          val apiMessages = buildList {
-            if (!sysPrompt.isNullOrBlank()) add(com.aallam.openai.api.chat.ChatMessage(role = com.aallam.openai.api.chat.ChatRole.System, content = sysPrompt))
-            _messages.value.dropLast(1).forEach { msg ->
-              when (msg.role) {
-                Role.USER -> add(com.aallam.openai.api.chat.ChatMessage(role = com.aallam.openai.api.chat.ChatRole.User, content = msg.content))
-                Role.ASSISTANT -> add(com.aallam.openai.api.chat.ChatMessage(role = com.aallam.openai.api.chat.ChatRole.Assistant, content = msg.content))
-                else -> {}
-              }
+        }
+        chatMessages.add("user" to text)
+
+        val orchestrator = StreamingOrchestrator(
+          baseUrl = p.effectiveApiBase(),
+          apiKey = p.apiKey,
+          model = p.selectedModelId,
+          tools = toolDefs,
+          onToolCall = { name, args ->
+            when (name) {
+              "run_sh" -> com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "").let { if (it.length > 4000) it.take(4000) + "\n...(truncated)" else it }
+              "read_file" -> try { java.io.File(args["path"].toString()).readText().let { if (it.length > 50000) "File too large" else it } } catch (e: Exception) { "Error: ${e.message}" }
+              "write_file" -> try { val f = java.io.File(args["path"].toString()); f.parentFile?.mkdirs(); f.writeText(args["content"].toString()); "Written ${args["content"].toString().length} bytes" } catch (e: Exception) { "Error: ${e.message}" }
+              "list_directory" -> try { java.io.File(args["path"].toString()).listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" } ?: "Empty" } catch (e: Exception) { "Error: ${e.message}" }
+              else -> "Unknown tool: $name"
             }
           }
-          val request = com.aallam.openai.api.chat.ChatCompletionRequest(
-            model = com.aallam.openai.api.model.ModelId(p.selectedModelId),
-            messages = apiMessages
-          )
-          openai.chatCompletions(request).collect { chunk ->
-            chunk.choices.firstOrNull()?.delta?.content?.let { delta ->
-              sb.append(delta)
-              withContext(Dispatchers.Main) {
-                _messages.value = _messages.value.toMutableList().also {
-                  it[it.lastIndex] = it.last().copy(content = sb.toString())
-                }
-              }
+        )
+
+        orchestrator.stream(chatMessages).collect { chunk ->
+          // Reasoning
+          chunk.reasoning?.let { r ->
+            reasoningSb.append(r)
+          }
+
+          // Text content
+          if (chunk.content.isNotEmpty()) {
+            sb.append(chunk.content)
+          }
+
+          // Tool calls
+          chunk.toolCalls?.let { calls ->
+            for (c in calls) sb.append("\n\n🔧 **${c.name}**(${c.arguments.values.firstOrNull()?.toString()?.take(80) ?: ""})\n")
+          }
+
+          // Tool results
+          chunk.toolResults?.let { results ->
+            for (r in results) sb.append("```\n${r.result.take(2000)}\n```\n")
+          }
+
+          // Error
+          chunk.error?.let { sb.append("\n❌ $it") }
+
+          // Update UI
+          val display = buildString {
+            if (reasoningSb.isNotEmpty()) append("<details><summary>💭 Thinking...</summary>\n\n${reasoningSb}\n\n</details>\n\n")
+            append(sb)
+          }
+          withContext(Dispatchers.Main) {
+            _messages.value = _messages.value.toMutableList().also {
+              it[it.lastIndex] = it.last().copy(content = display)
             }
           }
         }
