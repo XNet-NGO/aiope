@@ -243,7 +243,19 @@ private fun ChatInput(onSend: (String) -> Unit, onStop: () -> Unit = {}, isStrea
       IconButton(onClick = { launcher.launch("*/*") }) {
         Icon(Icons.Default.AttachFile, "Attach")
       }
-      // Mic — launches Android speech recognizer
+      // Camera — capture photo
+      val cameraUri = remember { mutableStateOf<android.net.Uri?>(null) }
+      val photoLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.TakePicture()
+      ) { success -> if (success) cameraUri.value?.let { text = text + (if (text.isNotBlank()) "\n" else "") + "[Photo: $it]" } }
+      IconButton(onClick = {
+        val file = java.io.File(context.cacheDir, "photo_${System.currentTimeMillis()}.jpg")
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        cameraUri.value = uri
+        photoLauncher.launch(uri)
+      }) {
+        Icon(Icons.Default.CameraAlt, "Camera")
+      }      // Mic — launches Android speech recognizer
       val speechLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
       ) { result ->
