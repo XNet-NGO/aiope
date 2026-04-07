@@ -71,6 +71,9 @@ class MainActivity : ComponentActivity() {
       } catch (_: Exception) {}
     }
 
+    // Start foreground service
+    startForegroundService(Intent(this, AiopeForegroundService::class.java))
+
     setContent { AiopeMain(composeNavigator = composeNavigator, providerStore = providerStore) }
   }
 }
