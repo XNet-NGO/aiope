@@ -6,6 +6,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import org.ramani.compose.CameraPosition
 import org.ramani.compose.MapLibre
@@ -21,12 +25,18 @@ fun LocationCard(
   bearing: Double? = null,
   accuracy: Double? = null
 ) {
+  // Consume all scroll so LazyColumn doesn't steal single-finger gestures from the map
+  val consumeScroll = remember {
+    object : NestedScrollConnection {
+      override fun onPreScroll(available: Offset, source: NestedScrollSource) = available
+    }
+  }
   Card(
     modifier = Modifier.fillMaxWidth().padding(4.dp),
     shape = RoundedCornerShape(8.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
   ) {
-    Box(modifier = Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(8.dp))) {
+    Box(modifier = Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(8.dp)).nestedScroll(consumeScroll)) {
       val initialPos = remember {
         CameraPosition(
           target = org.maplibre.android.geometry.LatLng(latitude, longitude),
