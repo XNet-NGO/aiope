@@ -226,8 +226,16 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
     androidx.activity.result.contract.ActivityResultContracts.GetContent()
   ) { uri ->
     uri?.let {
-      // For now, append file path to message
-      pendingImages.add(uri.toString())
+      val mime = context.contentResolver.getType(it) ?: ""
+      if (mime.startsWith("image/")) {
+        pendingImages.add(it.toString())
+      } else {
+        try {
+          val content = context.contentResolver.openInputStream(it)?.bufferedReader()?.readText()?.take(10000) ?: ""
+          val name = it.lastPathSegment ?: "file"
+          text = text + (if (text.isNotBlank()) "\n" else "") + "[$name]\n$content"
+        } catch (_: Exception) { text = text + "\n[Attached: $it]" }
+      }
     }
   }
 
@@ -332,7 +340,10 @@ private fun ConversationSheet(viewModel: ChatViewModel, onDismiss: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
       horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
       Text("Conversations", style = MaterialTheme.typography.titleSmall)
-      TextButton(onClick = { viewModel.newConversation(); onDismiss() }) { Text("+ New Chat") }
+      Row {
+        TextButton(onClick = { viewModel.shareConversation(); onDismiss() }) { Text("Share") }
+        TextButton(onClick = { viewModel.newConversation(); onDismiss() }) { Text("+ New Chat") }
+      }
     }
     if (conversations.isEmpty()) {
       Text("No conversations yet.", Modifier.padding(16.dp))

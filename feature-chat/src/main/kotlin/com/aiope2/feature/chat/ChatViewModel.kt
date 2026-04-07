@@ -115,6 +115,22 @@ class ChatViewModel @Inject constructor(
     }
   }
 
+
+  fun shareConversation() {
+    val msgs = _messages.value
+    if (msgs.isEmpty()) return
+    val text = msgs.joinToString("\n\n") { msg ->
+      val prefix = when (msg.role) { Role.USER -> "User"; Role.ASSISTANT -> "Assistant"; else -> msg.role.value.replaceFirstChar { it.uppercase() } }
+      "$prefix:\n${msg.content}"
+    }
+    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+      type = "text/plain"
+      putExtra(android.content.Intent.EXTRA_TEXT, text)
+      putExtra(android.content.Intent.EXTRA_SUBJECT, "AIOPE 2 Conversation")
+    }
+    val ctx = getApplication<android.app.Application>()
+    ctx.startActivity(android.content.Intent.createChooser(intent, "Share conversation").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+  }
   fun deleteConversation(id: String) {
     viewModelScope.launch {
       chatDao.deleteConversation(id)
