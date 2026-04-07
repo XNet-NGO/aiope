@@ -62,6 +62,15 @@ class MainActivity : ComponentActivity() {
       } catch (_: Exception) {}
     }
 
+    // Request battery optimization exemption
+    val pm = getSystemService(android.os.PowerManager::class.java)
+    if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+      try {
+        startActivity(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+          Uri.parse("package:$packageName")))
+      } catch (_: Exception) {}
+    }
+
     setContent { AiopeMain(composeNavigator = composeNavigator, providerStore = providerStore) }
   }
 }
