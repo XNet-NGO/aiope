@@ -26,15 +26,9 @@ fun LocationCard(
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
   ) {
     Box(modifier = Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(8.dp))) {
-      val pos = remember { mutableStateOf(
+      // Initial position only — never overridden so user can freely pan/zoom
+      val initialPos = remember {
         CameraPosition(
-          target = org.maplibre.android.geometry.LatLng(latitude, longitude),
-          zoom = 15.5
-        )
-      ) }
-      // Update camera when coordinates change (animate)
-      LaunchedEffect(latitude, longitude) {
-        pos.value = CameraPosition(
           target = org.maplibre.android.geometry.LatLng(latitude, longitude),
           zoom = 15.5
         )
@@ -45,7 +39,7 @@ fun LocationCard(
       MapLibre(
         modifier = Modifier.fillMaxSize(),
         styleBuilder = style,
-        cameraPosition = pos.value
+        cameraPosition = initialPos
       ) {
         Symbol(
           center = org.maplibre.android.geometry.LatLng(latitude, longitude),
