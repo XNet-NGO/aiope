@@ -80,6 +80,32 @@ private fun ProfileList(profiles: List<ProviderProfile>, activeId: String,
         )
         HorizontalDivider()
       }
+      item {
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val installed = remember { mutableStateOf(com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(ctx)) }
+        val installing = remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
+        ListItem(
+          headlineContent = { Text("Ubuntu (proot)") },
+          supportingContent = { Text(
+            if (installing.value) "Installing..."
+            else if (installed.value) "Installed — run_proot tool available"
+            else "Not installed — tap to set up",
+            style = MaterialTheme.typography.bodySmall
+          ) },
+          modifier = Modifier.clickable {
+            if (!installed.value && !installing.value) {
+              installing.value = true
+              scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                com.aiope2.core.terminal.shell.ProotBootstrap.setup(ctx) { }
+                installed.value = com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(ctx)
+                installing.value = false
+              }
+            }
+          }
+        )
+        HorizontalDivider()
+      }
       items(profiles) { p ->
         val builtin = ProviderTemplates.byId[p.builtinId]
         ListItem(
