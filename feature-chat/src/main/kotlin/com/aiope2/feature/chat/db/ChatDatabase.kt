@@ -42,6 +42,9 @@ interface ChatDao {
   @Query("UPDATE conversations SET updatedAt = :time, title = :title WHERE id = :id")
   suspend fun updateConversation(id: String, title: String, time: Long = System.currentTimeMillis())
 
+  @Query("DELETE FROM messages WHERE conversationId = :convId AND timestamp >= :afterTimestamp")
+  suspend fun deleteMessagesAfter(convId: String, afterTimestamp: Long)
+
   @Query("DELETE FROM conversations WHERE id = :id")
   suspend fun deleteConversation(id: String)
 }
