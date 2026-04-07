@@ -5,7 +5,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.tools.ToolRegistry
-import ai.koog.agents.features.eventHandler.feature.handleEvents
 import ai.koog.prompt.executor.llms.SingleLLMPromptExecutor
 import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
@@ -209,34 +208,44 @@ class ChatViewModel @Inject constructor(
         val useTools = mc.toolsOverride == true
         val sb = StringBuilder()
 
-        val agent = AIAgent(
-          promptExecutor = executor,
-          systemPrompt = "",
-          llmModel = model,
-          toolRegistry = if (useTools) ToolRegistry { tools(this@ChatViewModel.tools) } else ToolRegistry { },
-          installFeatures = {
-            handleEvents {
-              onLLMStreamingFrameReceived { context ->
-                val frame = context.streamFrame
-                if (frame is StreamFrame.TextDelta) {
-                  sb.append(frame.text)
-                  val text = sb.toString()
-                  _messages.value = _messages.value.toMutableList().also {
-                    it[it.lastIndex] = it.last().copy(content = text)
-                  }
-                }
-              }
-              onToolCallStarting { context ->
-                sb.append("\n🔧 ${context.toolName}(${context.toolArgs.toString().take(100)})\n")
-                _messages.value = _messages.value.toMutableList().also {
-                  it[it.lastIndex] = it.last().copy(content = sb.toString())
-                }
+        if (useTools) {
+          // Koog agent for tool loop (non-streaming for now)
+          val agent = AIAgent(
+            promptExecutor = executor, systemPrompt = mc.systemPromptOverride ?: "",
+            llmModel = model, toolRegistry = ToolRegistry { tools(this@ChatViewModel.tools) }
+          )
+          val result = agent.run(text)
+          _messages.value = _messages.value.toMutableList().also {
+            it[it.lastIndex] = it.last().copy(content = result)
+          }
+        } else {
+          // Direct streaming via executor.executeStreaming()
+          val sysPrompt = mc.systemPromptOverride
+          val prompt = ai.koog.prompt.dsl.prompt("chat") {
+            if (!sysPrompt.isNullOrBlank()) system(sysPrompt)
+            _messages.value.dropLast(1).forEach { msg ->
+              when (msg.role) {
+                Role.USER -> user(msg.content)
+                Role.ASSISTANT -> assistant(msg.content)
+                else -> {}
               }
             }
           }
-        )
-
-        agent.run(text)
+          val stream = executor.executeStreaming(prompt, model, emptyList())
+          stream.collect { frame ->
+            when (frame) {
+              is StreamFrame.TextDelta -> {
+                sb.append(frame.text)
+                withContext(Dispatchers.Main) {
+                  _messages.value = _messages.value.toMutableList().also {
+                    it[it.lastIndex] = it.last().copy(content = sb.toString())
+                  }
+                }
+              }
+              else -> {}
+            }
+          }
+        }
 
         // Persist final message
         val finalMsg = _messages.value.last()
