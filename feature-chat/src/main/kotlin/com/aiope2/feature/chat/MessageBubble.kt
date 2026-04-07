@@ -95,13 +95,15 @@ fun MessageBubble(
             ToolCallsBlock(message.toolCalls, message.toolResults)
           }
 
-          // Location map card
-          message.locationData?.let { loc ->
-            com.aiope2.feature.chat.location.LocationCard(
-              latitude = loc.latitude, longitude = loc.longitude,
-              altitude = loc.altitude, speed = loc.speed,
-              bearing = loc.bearing, accuracy = loc.accuracy
-            )
+          // Location map card — only render when done streaming to avoid stutter
+          if (message.locationData != null && message.content.isNotBlank()) {
+            key(message.locationData) {
+              com.aiope2.feature.chat.location.LocationCard(
+                latitude = message.locationData.latitude, longitude = message.locationData.longitude,
+                altitude = message.locationData.altitude, speed = message.locationData.speed,
+                bearing = message.locationData.bearing, accuracy = message.locationData.accuracy
+              )
+            }
           }
 
           // Main content (markdown)
