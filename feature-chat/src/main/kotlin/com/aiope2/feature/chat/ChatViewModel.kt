@@ -220,12 +220,14 @@ class ChatViewModel @Inject constructor(
           }
         } else {
           // Direct SSE streaming via openai-kotlin (proven to work)
-          var baseUrl = p.effectiveApiBase().trimEnd('/')
-          if (baseUrl.endsWith("/v1")) baseUrl = baseUrl.removeSuffix("/v1")
-          if (baseUrl.endsWith("/openai")) baseUrl = baseUrl.removeSuffix("/openai")
+          // openai-kotlin appends /chat/completions to the host baseUrl
+          // So baseUrl should be everything before /chat/completions
+          // e.g. https://api.openai.com/v1 → .../v1/chat/completions
+          // e.g. https://generativelanguage.googleapis.com/v1beta/openai → .../openai/chat/completions
+          val baseUrl = p.effectiveApiBase().trimEnd('/')
           val openai = com.aallam.openai.client.OpenAI(com.aallam.openai.client.OpenAIConfig(
             token = p.apiKey.ifBlank { "unused" },
-            host = com.aallam.openai.client.OpenAIHost(baseUrl)
+            host = com.aallam.openai.client.OpenAIHost(baseUrl = "$baseUrl/")
           ))
           val sysPrompt = mc.systemPromptOverride
           val apiMessages = buildList {
