@@ -229,6 +229,36 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
       val mime = context.contentResolver.getType(it) ?: ""
       if (mime.startsWith("image/")) {
         pendingImages.add(it.toString())
+      } else if (mime == "application/pdf") {
+        try {
+          val fd = context.contentResolver.openFileDescriptor(it, "r") ?: return@let
+          val renderer = android.graphics.pdf.PdfRenderer(fd)
+          val sb = StringBuilder()
+          for (i in 0 until minOf(renderer.pageCount, 20)) {
+            val page = renderer.openPage(i)
+            // Render page to bitmap then extract via a simple approach
+            val bmp = android.graphics.Bitmap.createBitmap(page.width * 2, page.height * 2, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bmp)
+            canvas.drawColor(android.graphics.Color.WHITE)
+            page.render(bmp, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            page.close()
+            // For now, note the page — full OCR would need ML Kit
+            sb.append("[Page ${i + 1}/${renderer.pageCount}]\n")
+          }
+          renderer.close(); fd.close()
+          // Use Android's built-in text extraction if available
+          val textContent = try {
+            val input = context.contentResolver.openInputStream(it)
+            val bytes = input?.readBytes() ?: byteArrayOf()
+            input?.close()
+            // Extract raw text strings from PDF bytes (simple heuristic)
+            val raw = String(bytes, Charsets.ISO_8859_1)
+            val texts = Regex("\\(([^)]{2,})\\)").findAll(raw).map { m -> m.groupValues[1] }.joinToString(" ")
+            if (texts.length > 50) texts.take(10000) else ""
+          } catch (_: Exception) { "" }
+          val name = it.lastPathSegment ?: "document.pdf"
+          text = text + (if (text.isNotBlank()) "\n" else "") + "[$name - ${renderer.pageCount} pages]\n${textContent.ifBlank { sb.toString() }}"
+        } catch (e: Exception) { text = text + "\n[PDF error: ${e.message}]" }
       } else {
         try {
           val content = context.contentResolver.openInputStream(it)?.bufferedReader()?.readText()?.take(10000) ?: ""
