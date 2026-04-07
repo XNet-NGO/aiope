@@ -80,10 +80,10 @@ class StreamingOrchestrator(
             val finishReason = choice.optString("finish_reason", "")
 
             // Text content
-            var content = delta.optString("content", "")
+            var content = delta.optString("content", "").let { if (it == "null") "" else it }
             // Reasoning: separate field (DeepSeek, OpenAI o-series) or <think>/<thought> tags in content
-            var reasoning = delta.optString("reasoning_content", "").ifBlank {
-              delta.optString("reasoning", "")
+            var reasoning = delta.optString("reasoning_content", "").let { if (it == "null") "" else it }.ifBlank {
+              delta.optString("reasoning", "").let { if (it == "null") "" else it }
             }
 
             // Handle <think> and <thought> tags in content stream
