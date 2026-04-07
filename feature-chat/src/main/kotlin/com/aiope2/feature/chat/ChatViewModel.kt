@@ -142,8 +142,8 @@ class ChatViewModel @Inject constructor(
       chatPath, "v1/responses", "v1/embeddings", "v1/moderations", "v1/models"
     )
 
-    val toolsEnabled = mc.toolsOverride ?: isToolCapable(modelId)
-    val stripSystemPrompt = isSystemPromptBlocked(modelId) || mc.systemPromptOverride.isNullOrBlank()
+    val toolsEnabled = mc.toolsOverride ?: true  // null = send tools by default, user can toggle off in settings
+    val stripSystemPrompt = mc.systemPromptOverride.isNullOrBlank()
     val stripTools = !toolsEnabled
 
     // OkHttp interceptor strips unsupported fields before they reach the API
@@ -179,22 +179,6 @@ class ChatViewModel @Inject constructor(
       ai.koog.prompt.llm.LLMCapability.OpenAIEndpoint.Completions,
     ))
     return Pair(SingleLLMPromptExecutor(client), model)
-  }
-
-  private fun isSystemPromptBlocked(modelId: String): Boolean {
-    val id = modelId.lowercase()
-    return id.contains("gemma") || id.contains("embedding") || id.contains("tts")
-  }
-
-  /** Heuristic: does this model ID likely support tool/function calling? */
-  private fun isToolCapable(modelId: String): Boolean {
-    val id = modelId.lowercase()
-    // Models known to NOT support tools
-    if (id.contains("gemma") || id.contains("embedding") || id.contains("whisper") ||
-        id.contains("tts") || id.contains("dall-e") || id.contains("imagen")) return false
-    if (id.startsWith("o1") || id.contains("deepseek-r1") || id.contains("-r1")) return false
-    // Default: assume tools are supported
-    return true
   }
 
   private val tools = AiopeTools(application)
