@@ -29,6 +29,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
   val isLandscape = config.screenWidthDp > config.screenHeightDp
   var showModelPicker by remember { mutableStateOf(false) }
   var showConversations by remember { mutableStateOf(false) }
+  var editText by remember { mutableStateOf("") }
 
   @OptIn(ExperimentalLayoutApi::class)
   val imeVisible = WindowInsets.isImeVisible
@@ -43,10 +44,11 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
         onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
         onSwitchModel = { viewModel.switchModel(it) },
         onChats = { showConversations = true },
-        onEditMessage = { text, idx -> viewModel.editAndResend(text, idx) },
+        onEditMessage = { text, idx -> viewModel.truncateAt(idx); editText = text },
         onRetry = { idx -> viewModel.retry(idx) },
         onCompact = { idx -> viewModel.compact(idx) },
         onFork = { idx -> viewModel.fork(idx) },
+        editText = editText, onEditTextChange = { editText = it },
         modifier = Modifier.weight(1f)
       )
       if (terminalVisible) {
@@ -63,10 +65,11 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
         onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
         onSwitchModel = { viewModel.switchModel(it) },
         onChats = { showConversations = true },
-        onEditMessage = { text, idx -> viewModel.editAndResend(text, idx) },
+        onEditMessage = { text, idx -> viewModel.truncateAt(idx); editText = text },
         onRetry = { idx -> viewModel.retry(idx) },
         onCompact = { idx -> viewModel.compact(idx) },
         onFork = { idx -> viewModel.fork(idx) },
+        editText = editText, onEditTextChange = { editText = it },
         modifier = Modifier.weight(1f)
       )
       if (terminalVisible) {
@@ -94,6 +97,8 @@ private fun ChatContent(
   onRetry: (Int) -> Unit = {},
   onCompact: (Int) -> Unit = {},
   onFork: (Int) -> Unit = {},
+  editText: String = "",
+  onEditTextChange: (String) -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   var showModelPicker by remember { mutableStateOf(false) }
@@ -157,7 +162,7 @@ private fun ChatContent(
     HorizontalDivider()
 
     // ── Input ──
-    ChatInput(onSend = onSend, isStreaming = isStreaming)
+    ChatInput(onSend = onSend, isStreaming = isStreaming, editText = editText, onEditTextChange = onEditTextChange)
   }
 }
 
@@ -210,8 +215,11 @@ private fun MessageList(messages: List<ChatMessage>, onEdit: ((Int) -> Unit)? = 
 // ── Input bar ──
 
 @Composable
-private fun ChatInput(onSend: (String) -> Unit, isStreaming: Boolean) {
+private fun ChatInput(onSend: (String) -> Unit, isStreaming: Boolean, editText: String = "", onEditTextChange: (String) -> Unit = {}) {
   var text by remember { mutableStateOf("") }
+
+  // When editText changes externally (from Edit & Resend), update local state
+  LaunchedEffect(editText) { if (editText.isNotBlank()) { text = editText; onEditTextChange("") } }
   val context = androidx.compose.ui.platform.LocalContext.current
   val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
     androidx.activity.result.contract.ActivityResultContracts.GetContent()

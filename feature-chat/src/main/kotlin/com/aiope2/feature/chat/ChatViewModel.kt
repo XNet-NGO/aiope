@@ -333,13 +333,14 @@ class ChatViewModel @Inject constructor(
 
   /** Edit & Resend: truncate messages after index, resend with new text */
   fun editAndResend(text: String, atIndex: Int) {
-    val msgsToKeep = _messages.value.take(atIndex)
-    val cutTimestamp = if (atIndex < _messages.value.size) _messages.value[atIndex].timestamp else System.currentTimeMillis()
-    _messages.value = msgsToKeep
-    viewModelScope.launch {
-      chatDao.deleteMessagesAfter(conversationId, cutTimestamp)
-    }
+    truncateAt(atIndex)
     send(text)
+  }
+
+  fun truncateAt(atIndex: Int) {
+    val cutTimestamp = if (atIndex < _messages.value.size) _messages.value[atIndex].timestamp else System.currentTimeMillis()
+    _messages.value = _messages.value.take(atIndex)
+    viewModelScope.launch { chatDao.deleteMessagesAfter(conversationId, cutTimestamp) }
   }
 
   /** Retry: remove last assistant message and re-run the last user message */
