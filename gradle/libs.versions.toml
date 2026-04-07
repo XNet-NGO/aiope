@@ -20,9 +20,6 @@ kotlin = "2.3.0"
 kotlinxCoroutines = "1.10.1"
 ksp = "2.3.6"
 okhttp = "4.12.0"
-openaiKotlin = "4.1.0"
-ktor = "3.1.1"
-koog = "0.7.3"
 markwon = "4.6.2"
 spotless = "6.7.0"
 
@@ -56,12 +53,7 @@ hilt-worker = { group = "androidx.hilt", name = "hilt-work", version.ref = "hilt
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 
-# openai-kotlin
-openai-client = { group = "com.aallam.openai", name = "openai-client", version.ref = "openaiKotlin" }
-ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
 
-# koog
-koog-agents = { group = "ai.koog", name = "koog-agents", version.ref = "koog" }
 
 # markdown
 markwon-core = { group = "io.noties.markwon", name = "core", version.ref = "markwon" }

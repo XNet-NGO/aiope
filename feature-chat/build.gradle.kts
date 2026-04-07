@@ -18,13 +18,6 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtimeCompose)
   implementation(libs.androidx.lifecycle.viewModelCompose)
 
-  // openai-kotlin
-  implementation(libs.openai.client)
-  implementation(libs.ktor.client.okhttp)
-
-  // koog agents
-  implementation(libs.koog.agents)
-
   // markdown
   implementation(libs.markwon.core)
   implementation(libs.markwon.ext.strikethrough)

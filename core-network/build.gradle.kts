@@ -9,7 +9,5 @@ android {
 }
 
 dependencies {
-  api(libs.openai.client)
-  api(libs.ktor.client.okhttp)
   api(libs.kotlinx.coroutines.android)
 }

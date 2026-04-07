@@ -3,15 +3,6 @@ package com.aiope2.feature.chat
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import ai.koog.agents.core.agent.AIAgent
-import ai.koog.agents.core.tools.ToolRegistry
-import ai.koog.prompt.executor.llms.SingleLLMPromptExecutor
-import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
-import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
-import ai.koog.prompt.llm.LLModel
-import ai.koog.prompt.llm.LLMProvider
-import ai.koog.prompt.streaming.StreamFrame
-import com.aiope2.feature.chat.agent.AiopeTools
 import com.aiope2.feature.chat.db.ChatDao
 import com.aiope2.feature.chat.db.ConversationEntity
 import com.aiope2.feature.chat.db.MessageEntity
@@ -144,78 +135,6 @@ class ChatViewModel @Inject constructor(
   }
 
   // LLM client — resolves task model, then creates client
-  private fun createClient(task: com.aiope2.core.network.ModelTask = com.aiope2.core.network.ModelTask.CHAT): Pair<SingleLLMPromptExecutor, LLModel> {
-    val taskStore = com.aiope2.core.network.TaskModelStore(getApplication())
-    val tc = taskStore.getTaskConfig(task)
-
-    // Chat task: always use active profile + its selected model (set by toolbar dropdown)
-    // Other tasks: resolve from TaskModelStore override → active profile fallback
-    val p: ProviderProfile
-    val modelId: String
-    if (task == com.aiope2.core.network.ModelTask.CHAT) {
-      p = providerStore.getActive()
-      modelId = p.selectedModelId
-    } else {
-      val tc2 = taskStore.getTaskConfig(task)
-      p = tc2.profileId?.let { providerStore.getById(it) } ?: providerStore.getActive()
-      modelId = tc2.modelId ?: p.selectedModelId
-    }
-    android.util.Log.d("AIOPE2", "Task=${task.id} resolved=${p.label}/$modelId")
-    val mc = p.modelConfigs[modelId] ?: ModelConfig(modelId = modelId)
-
-    var baseUrl = p.effectiveApiBase().trimEnd('/')
-    val eo = mc.endpointOverride.trim().removePrefix("/")
-    val chatPath = if (eo.isNotBlank()) eo
-      else if (baseUrl.endsWith("/openai")) "chat/completions"
-      else if (baseUrl.endsWith("/v1")) { baseUrl = baseUrl.removeSuffix("/v1"); "v1/chat/completions" }
-      else "v1/chat/completions"
-    val settings = OpenAIClientSettings(
-      baseUrl,
-      ai.koog.prompt.executor.clients.ConnectionTimeoutConfig(),
-      chatPath, "v1/responses", "v1/embeddings", "v1/moderations", "v1/models"
-    )
-
-    val toolsEnabled = mc.toolsOverride != false  // null/false = no tools, true = tools on
-    val stripSystemPrompt = mc.systemPromptOverride.isNullOrBlank()
-    val stripTools = !toolsEnabled
-
-    // OkHttp interceptor strips unsupported fields before they reach the API
-    val ktorClient = io.ktor.client.HttpClient(io.ktor.client.engine.okhttp.OkHttp) {
-      engine {
-        addInterceptor { chain ->
-          val req = chain.request()
-          if (req.method == "POST" && req.body != null) {
-            val buf = okio.Buffer(); req.body!!.writeTo(buf)
-            try {
-              val obj = org.json.JSONObject(buf.readUtf8())
-              if (stripTools) { obj.remove("tools"); obj.remove("tool_choice") }
-              if (stripSystemPrompt) {
-                val msgs = obj.optJSONArray("messages")
-                if (msgs != null && msgs.length() > 0 &&
-                    msgs.getJSONObject(0).optString("role").let { it == "system" || it == "developer" }) {
-                  msgs.remove(0)
-                }
-              }
-              // Add reasoning_effort if set
-              mc.reasoningEffort?.let { obj.put("reasoning_effort", it) }
-              val body = okhttp3.RequestBody.create(req.body!!.contentType(), obj.toString())
-              chain.proceed(req.newBuilder().method(req.method, body).build())
-            } catch (_: Exception) { chain.proceed(req) }
-          } else chain.proceed(req)
-        }
-      }
-    }
-
-    val client = OpenAILLMClient(p.apiKey.ifBlank { "unused" }, settings, ktorClient)
-    val model = LLModel(LLMProvider.OpenAI, modelId, listOf(
-      ai.koog.prompt.llm.LLMCapability.Completion,
-      ai.koog.prompt.llm.LLMCapability.Tools,
-      ai.koog.prompt.llm.LLMCapability.Temperature,
-      ai.koog.prompt.llm.LLMCapability.OpenAIEndpoint.Completions,
-    ))
-    return Pair(SingleLLMPromptExecutor(client), model)
-  }
-
   /** Resolve provider + model for a given task. Falls back to active profile. */
   private fun resolveTaskModel(task: com.aiope2.core.network.ModelTask): Pair<ProviderProfile, String> {
     val taskStore = com.aiope2.core.network.TaskModelStore(getApplication())
@@ -247,7 +166,6 @@ class ChatViewModel @Inject constructor(
     }
   }
 
-  private val tools = AiopeTools(application)
 
   /** Save content:// URIs to disk as JPEG, return comma-separated relative paths */
   private fun saveImagesToDisk(msgId: String, uris: List<String>): String {
