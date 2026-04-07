@@ -209,6 +209,8 @@ class ChatViewModel @Inject constructor(
         val useTools = mc.toolsOverride == true
         val sb = StringBuilder()
         val reasoningSb = StringBuilder()
+        val toolCallsList = mutableListOf<String>()
+        val toolResultsList = mutableListOf<String>()
 
         // Build tool definitions
         val toolDefs = if (useTools) listOf(
@@ -248,37 +250,24 @@ class ChatViewModel @Inject constructor(
         )
 
         orchestrator.stream(chatMessages).collect { chunk ->
-          // Reasoning
-          chunk.reasoning?.let { r ->
-            reasoningSb.append(r)
-          }
-
-          // Text content
-          if (chunk.content.isNotEmpty()) {
-            sb.append(chunk.content)
-          }
-
-          // Tool calls
+          chunk.reasoning?.let { reasoningSb.append(it) }
+          if (chunk.content.isNotEmpty()) sb.append(chunk.content)
           chunk.toolCalls?.let { calls ->
-            for (c in calls) sb.append("\n\n🔧 **${c.name}**(${c.arguments.values.firstOrNull()?.toString()?.take(80) ?: ""})\n")
+            for (c in calls) toolCallsList.add("${c.name}(${c.arguments.values.firstOrNull()?.toString()?.take(80) ?: ""})")
           }
-
-          // Tool results
           chunk.toolResults?.let { results ->
-            for (r in results) sb.append("```\n${r.result.take(2000)}\n```\n")
+            for (r in results) toolResultsList.add(r.result.take(2000))
           }
-
-          // Error
           chunk.error?.let { sb.append("\n❌ $it") }
 
-          // Update UI
-          val display = buildString {
-            if (reasoningSb.isNotEmpty()) append("<details><summary>💭 Thinking...</summary>\n\n${reasoningSb}\n\n</details>\n\n")
-            append(sb)
-          }
           withContext(Dispatchers.Main) {
             _messages.value = _messages.value.toMutableList().also {
-              it[it.lastIndex] = it.last().copy(content = display)
+              it[it.lastIndex] = it.last().copy(
+                content = sb.toString(),
+                reasoning = reasoningSb.toString(),
+                toolCalls = toolCallsList.toList(),
+                toolResults = toolResultsList.toList()
+              )
             }
           }
         }

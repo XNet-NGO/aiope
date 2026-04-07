@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.TextView
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -14,9 +16,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.noties.markwon.Markwon
 
@@ -29,75 +34,152 @@ fun MessageBubble(
   onFork: (() -> Unit)? = null
 ) {
   val isUser = message.role == Role.USER
-  val alignment = if (isUser) Arrangement.End else Arrangement.Start
-  val bgColor = if (isUser) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceVariant
-  val textColor = if (isUser) MaterialTheme.colorScheme.onPrimary
-                  else MaterialTheme.colorScheme.onSurface
-  val textColorArgb = textColor.toArgb()
   val ctx = LocalContext.current
   val markwon = remember { Markwon.create(ctx) }
   var showMenu by remember { mutableStateOf(false) }
 
-  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = alignment) {
-    Surface(
-      shape = RoundedCornerShape(12.dp),
-      color = bgColor,
-      modifier = Modifier.widthIn(max = 320.dp)
-    ) {
-      Column {
-        if (isUser) {
+  if (isUser) {
+    // User bubble — right aligned, simple
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+      Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.widthIn(max = 320.dp)) {
+        Column {
           SelectionContainer {
-            Text(
-              text = message.content,
-              color = textColor,
-              modifier = Modifier.padding(12.dp),
-              style = MaterialTheme.typography.bodyMedium
-            )
+            Text(message.content, color = MaterialTheme.colorScheme.onPrimary,
+              modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
           }
-        } else {
-          AndroidView(
-            factory = { context ->
-              TextView(context).apply {
-                setTextColor(textColorArgb)
-                textSize = 14f
-                setTextIsSelectable(true)
-                setPadding(32, 24, 32, 8)
-              }
-            },
-            update = { tv -> markwon.setMarkdown(tv, message.content) },
-            modifier = Modifier.fillMaxWidth()
-          )
-        }
-
-        // ··· menu button
-        Box(Modifier.fillMaxWidth().padding(end = 4.dp, bottom = 2.dp), contentAlignment = Alignment.CenterEnd) {
-          IconButton(onClick = { showMenu = true }, modifier = Modifier.size(24.dp)) {
-            Icon(Icons.Default.MoreVert, "More", modifier = Modifier.size(14.dp),
-              tint = textColor.copy(alpha = 0.5f))
-          }
-          DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-            DropdownMenuItem(text = { Text("Copy") }, onClick = {
-              showMenu = false
-              val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-              cm.setPrimaryClip(ClipData.newPlainText("message", message.content))
-              Toast.makeText(ctx, "Copied", Toast.LENGTH_SHORT).show()
-            })
-            if (isUser && onEdit != null) {
-              DropdownMenuItem(text = { Text("Edit & Resend") }, onClick = { showMenu = false; onEdit() })
-            }
-            if (!isUser && onRetry != null) {
-              DropdownMenuItem(text = { Text("Retry") }, onClick = { showMenu = false; onRetry() })
-            }
-            if (onCompact != null) {
-              DropdownMenuItem(text = { Text("Compact") }, onClick = { showMenu = false; onCompact() })
-            }
-            if (onFork != null) {
-              DropdownMenuItem(text = { Text("Fork") }, onClick = { showMenu = false; onFork() })
-            }
-          }
+          MessageMenu(message, showMenu, { showMenu = it }, ctx, onEdit, onRetry, onCompact, onFork)
         }
       }
+    }
+  } else {
+    // Assistant bubble — left aligned, with reasoning + tool calls + content
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+      Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.widthIn(max = 340.dp)) {
+        Column(Modifier.padding(bottom = 4.dp)) {
+
+          // Reasoning (collapsible)
+          if (message.reasoning.isNotBlank()) {
+            ReasoningBlock(message.reasoning)
+          }
+
+          // Tool calls + results (interleaved)
+          if (message.toolCalls.isNotEmpty()) {
+            ToolCallsBlock(message.toolCalls, message.toolResults)
+          }
+
+          // Main content (markdown)
+          if (message.content.isNotBlank()) {
+            val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+            AndroidView(
+              factory = { context ->
+                TextView(context).apply {
+                  setTextColor(textColor); textSize = 14f
+                  setTextIsSelectable(true); setPadding(32, 16, 32, 8)
+                }
+              },
+              update = { tv -> markwon.setMarkdown(tv, message.content) },
+              modifier = Modifier.fillMaxWidth()
+            )
+          }
+
+          MessageMenu(message, showMenu, { showMenu = it }, ctx, onEdit, onRetry, onCompact, onFork)
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ReasoningBlock(reasoning: String) {
+  var expanded by remember { mutableStateOf(false) }
+  Surface(
+    modifier = Modifier.fillMaxWidth().padding(8.dp, 8.dp, 8.dp, 0.dp).clickable { expanded = !expanded },
+    shape = RoundedCornerShape(8.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant,
+    tonalElevation = 2.dp
+  ) {
+    Column(Modifier.padding(10.dp)) {
+      Text(
+        "${if (expanded) "▼" else "▶"} 💭 Thinking...",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+      )
+      AnimatedVisibility(visible = expanded) {
+        Text(
+          reasoning, fontSize = 12.sp, lineHeight = 16.sp,
+          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+          modifier = Modifier.padding(top = 6.dp)
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun ToolCallsBlock(calls: List<String>, results: List<String>) {
+  Column(Modifier.fillMaxWidth().padding(8.dp, 4.dp, 8.dp, 0.dp)) {
+    for (i in calls.indices) {
+      // Tool call chip
+      Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = Color(0xFF1A3A1A),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+      ) {
+        Text("🔧 ${calls[i]}", fontSize = 12.sp, color = Color(0xFF88FF88),
+          modifier = Modifier.padding(8.dp, 4.dp), fontFamily = FontFamily.Monospace)
+      }
+      // Tool result (if available)
+      if (i < results.size) {
+        var resultExpanded by remember { mutableStateOf(false) }
+        val result = results[i]
+        val preview = if (result.length > 120 && !resultExpanded) result.take(120) + "..." else result
+        Surface(
+          shape = RoundedCornerShape(6.dp),
+          color = Color(0xFF1C1B1F),
+          modifier = Modifier.fillMaxWidth().padding(start = 8.dp, top = 1.dp, bottom = 4.dp)
+            .clickable { resultExpanded = !resultExpanded }
+        ) {
+          Text(preview, fontSize = 11.sp, color = Color(0xFFB0B0B0),
+            modifier = Modifier.padding(8.dp, 4.dp), fontFamily = FontFamily.Monospace, lineHeight = 14.sp)
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun MessageMenu(
+  message: ChatMessage, showMenu: Boolean, onShowMenu: (Boolean) -> Unit,
+  ctx: Context, onEdit: (() -> Unit)?, onRetry: (() -> Unit)?,
+  onCompact: (() -> Unit)?, onFork: (() -> Unit)?
+) {
+  val isUser = message.role == Role.USER
+  Box(Modifier.fillMaxWidth().padding(end = 4.dp, bottom = 2.dp), contentAlignment = Alignment.CenterEnd) {
+    IconButton(onClick = { onShowMenu(true) }, modifier = Modifier.size(24.dp)) {
+      Icon(Icons.Default.MoreVert, "More", modifier = Modifier.size(14.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+    }
+    DropdownMenu(expanded = showMenu, onDismissRequest = { onShowMenu(false) }) {
+      DropdownMenuItem(text = { Text("Copy") }, onClick = {
+        onShowMenu(false)
+        val full = buildString {
+          if (message.reasoning.isNotBlank()) append("[Thinking]\n${message.reasoning}\n\n")
+          message.toolCalls.forEachIndexed { i, c ->
+            append("🔧 $c\n")
+            if (i < message.toolResults.size) append("${message.toolResults[i]}\n\n")
+          }
+          append(message.content)
+        }
+        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("message", full))
+        Toast.makeText(ctx, "Copied", Toast.LENGTH_SHORT).show()
+      })
+      if (isUser && onEdit != null) DropdownMenuItem(text = { Text("Edit & Resend") }, onClick = { onShowMenu(false); onEdit() })
+      if (!isUser && onRetry != null) DropdownMenuItem(text = { Text("Retry") }, onClick = { onShowMenu(false); onRetry() })
+      if (onCompact != null) DropdownMenuItem(text = { Text("Compact") }, onClick = { onShowMenu(false); onCompact() })
+      if (onFork != null) DropdownMenuItem(text = { Text("Fork") }, onClick = { onShowMenu(false); onFork() })
     }
   }
 }
