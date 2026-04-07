@@ -325,7 +325,7 @@ class ChatViewModel @Inject constructor(
         if (_messages.value.size <= 2) {
           chatDao.updateConversation(conversationId, text.take(50))
         }
-      } catch (e: Exception) {
+      } catch (_: kotlinx.coroutines.CancellationException) { /* stopped */ } catch (e: Exception) {
         val updated = _messages.value.toMutableList()
         updated[updated.lastIndex] = updated.last().copy(content = "Error: ${e.message}")
         _messages.value = updated
@@ -384,7 +384,7 @@ class ChatViewModel @Inject constructor(
         val summary = agent.run(transcript)
         val summaryMsg = ChatMessage(role = Role.SYSTEM, content = summary)
         _messages.value = listOf(summaryMsg) + remaining
-      } catch (e: Exception) {
+      } catch (_: kotlinx.coroutines.CancellationException) { /* stopped */ } catch (e: Exception) {
         // Don't lose messages on failure
       } finally { _isStreaming.value = false }
     }
@@ -426,7 +426,7 @@ class ChatViewModel @Inject constructor(
           id = updated.last().id, conversationId = conversationId,
           role = Role.ASSISTANT.value, content = result
         ))
-      } catch (e: Exception) {
+      } catch (_: kotlinx.coroutines.CancellationException) { /* stopped */ } catch (e: Exception) {
         val updated = _messages.value.toMutableList()
         updated[updated.lastIndex] = updated.last().copy(content = "Error: ${e.message}")
         _messages.value = updated
