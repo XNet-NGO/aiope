@@ -241,16 +241,17 @@ class ChatViewModel @Inject constructor(
           onToolCall = { name, args -> executeToolCall(name, args) }
         )
 
-        // Encode images to base64 — pad to square, resize to 448x448, JPEG compress
-        val imageBase64s = imageUris.mapNotNull { uriStr ->
+        // Encode images to base64 — use saved disk paths (content URIs may expire)
+        val filesDir = getApplication<android.app.Application>().filesDir
+        val imageBase64s = savedPaths.split(",").filter { it.isNotBlank() }.mapNotNull { relPath ->
           try {
-            val uri = android.net.Uri.parse(uriStr)
-            val input = getApplication<android.app.Application>().contentResolver.openInputStream(uri) ?: return@mapNotNull null
-            val bytes = input.readBytes(); input.close()
-            val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@mapNotNull null
+            val file = java.io.File(filesDir, relPath)
+            if (!file.exists()) return@mapNotNull null
+            val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return@mapNotNull null
             val padded = padToSquare(bmp)
             val scaled = android.graphics.Bitmap.createScaledBitmap(padded, 448, 448, true)
             if (padded != bmp) padded.recycle()
+            bmp.recycle()
             val out = java.io.ByteArrayOutputStream()
             scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
             scaled.recycle()
