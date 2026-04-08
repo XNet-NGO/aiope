@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private val TOKEN_STEPS = listOf(0, 256, 512, 1024, 2048, 4096, 8192, 16000, 32000, 64000, 128000, 200000, 500000, 1000000)
-private val HISTORY_STEPS = listOf(2, 4, 6, 8, 10, 12, 16, 20, 30, 40, 50, 75, 100, 150, 200, 0)
+private val HISTORY_STEPS = listOf(1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 500000, 1000000, 2000000, 5000000, 10000000)
 private val ENDPOINT_PRESETS = listOf("/chat/completions", "/completions", "/responses", "/embeddings", "/rerank",
   "/audio/speech", "/audio/transcriptions", "/images/generations", "/moderations")
 
@@ -305,7 +305,7 @@ private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
 
         // Context
         Text("Context", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
-        HistorySlider("History Messages", mc.maxContextMessages) { mc = mc.copy(maxContextMessages = if (it == 0) null else it); saveModelConfig() }
+        HistorySlider("Context Tokens", mc.contextTokens) { mc = mc.copy(contextTokens = it); saveModelConfig() }
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(value = mc.systemPromptOverride ?: "", onValueChange = { mc = mc.copy(systemPromptOverride = it.ifBlank { null }); saveModelConfig() },
           label = { Text("System Prompt") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6)
@@ -362,9 +362,10 @@ private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
   Text("$label: ${if (v == 0) "off" else v.toString()}", style = MaterialTheme.typography.bodySmall)
   Slider(value = v.toFloat(), onValueChange = { onChange(it.toInt()) }, valueRange = 0f..200f)
 }
-@Composable private fun HistorySlider(label: String, value: Int?, onChange: (Int) -> Unit) {
-  val idx = if (value == null || value == 0) HISTORY_STEPS.size - 1 else HISTORY_STEPS.indexOfFirst { it >= value }.takeIf { it >= 0 } ?: (HISTORY_STEPS.size - 1)
-  val sv = HISTORY_STEPS[idx]; val display = if (sv == 0) "∞" else sv.toString()
+@Composable private fun HistorySlider(label: String, value: Int, onChange: (Int) -> Unit) {
+  val idx = HISTORY_STEPS.indexOfFirst { it >= value }.takeIf { it >= 0 } ?: (HISTORY_STEPS.size - 1)
+  val sv = HISTORY_STEPS[idx]
+  val display = if (sv >= 1_000_000) "${sv / 1_000_000}M" else if (sv >= 1000) "${sv / 1000}K" else sv.toString()
   Text("$label: $display", style = MaterialTheme.typography.bodySmall)
   Slider(value = idx.toFloat(), onValueChange = { onChange(HISTORY_STEPS[it.toInt().coerceIn(0, HISTORY_STEPS.size - 1)]) }, valueRange = 0f..(HISTORY_STEPS.size - 1).toFloat())
 }

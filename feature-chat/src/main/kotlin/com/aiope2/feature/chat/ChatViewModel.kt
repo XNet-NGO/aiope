@@ -216,17 +216,21 @@ class ChatViewModel @Inject constructor(
 
         val toolDefs = if (useTools) buildToolDefs() else emptyList()
 
-        // Build messages
+        // Build messages (trim to contextTokens limit, ~4 chars/token)
         val chatMessages = mutableListOf<Pair<String, String>>()
         mc.systemPromptOverride?.let { if (it.isNotBlank()) chatMessages.add("system" to it) }
-        _messages.value.dropLast(1).forEach { msg ->
-          when (msg.role) {
-            Role.USER -> chatMessages.add("user" to msg.content)
-            Role.ASSISTANT -> chatMessages.add("assistant" to msg.content)
-            Role.SYSTEM -> chatMessages.add("system" to msg.content)
-            else -> {}
-          }
+        val maxChars = mc.contextTokens * 4L
+        var charCount = 0L
+        val history = _messages.value.dropLast(1).reversed()
+        val trimmed = mutableListOf<Pair<String, String>>()
+        for (msg in history) {
+          val len = msg.content.length
+          if (charCount + len > maxChars) break
+          charCount += len
+          val role = when (msg.role) { Role.USER -> "user"; Role.ASSISTANT -> "assistant"; Role.SYSTEM -> "system"; else -> null }
+          if (role != null) trimmed.add(0, role to msg.content)
         }
+        chatMessages.addAll(trimmed)
         chatMessages.add("user" to text)
 
         val orchestrator = StreamingOrchestrator(
