@@ -84,6 +84,7 @@ class ChatViewModel @Inject constructor(
   fun newConversation() {
     conversationId = UUID.randomUUID().toString()
     _messages.value = emptyList()
+    lastLocationData = null
     viewModelScope.launch {
       chatDao.insertConversation(ConversationEntity(id = conversationId))
       refreshConversations()
@@ -92,6 +93,7 @@ class ChatViewModel @Inject constructor(
 
   fun loadConversation(id: String) {
     conversationId = id
+    lastLocationData = null
     viewModelScope.launch {
       val msgs = chatDao.getMessages(id).map {
         val uris = if (it.imagePaths.isNotBlank()) {

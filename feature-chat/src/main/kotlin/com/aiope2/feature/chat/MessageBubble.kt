@@ -117,13 +117,16 @@ fun MessageBubble(
                 val prev = tv.tag as? String ?: ""
                 if (content != prev) {
                   tv.tag = content
+                  android.util.Log.d("AIOPE2_MD", "setMarkdownText len=${content.length} first100=${content.take(100)}")
                   try {
                     tv.setMarkdownText(content)
-                    // If markwon produced empty/truncated output, fallback to plain text
+                    val rendered = tv.text?.length ?: 0
+                    android.util.Log.d("AIOPE2_MD", "rendered len=$rendered")
                     if (tv.text.isNullOrEmpty() && content.isNotEmpty()) {
                       tv.text = content
                     }
-                  } catch (_: Exception) {
+                  } catch (e: Exception) {
+                    android.util.Log.e("AIOPE2_MD", "setMarkdownText failed", e)
                     tv.text = content
                   }
                 }

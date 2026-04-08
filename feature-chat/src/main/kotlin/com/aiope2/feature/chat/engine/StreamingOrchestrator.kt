@@ -44,9 +44,27 @@ class StreamingOrchestrator(
         msg.put("content", contentArr)
       }
     }
+    // After first request, flatten multimodal content arrays to strings for compatibility
+    var firstRequest = true
     var maxRounds = 6
 
     while (maxRounds-- > 0) {
+      if (!firstRequest) {
+        // Strip image arrays from messages — follow-up requests don't need images
+        for (msg in rawMessages) {
+          val c = msg.opt("content")
+          if (c is org.json.JSONArray) {
+            // Extract text from multimodal array
+            val sb = StringBuilder()
+            for (i in 0 until c.length()) {
+              val obj = c.optJSONObject(i)
+              if (obj?.optString("type") == "text") sb.append(obj.optString("text", ""))
+            }
+            msg.put("content", sb.toString())
+          }
+        }
+      }
+      firstRequest = false
       val body = buildRequestBody(rawMessages)
       val conn = openConnection(body)
 
