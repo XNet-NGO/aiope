@@ -232,6 +232,12 @@ private fun MessageMenu(
       if (!isUser && onRetry != null) DropdownMenuItem(text = { Text("Retry") }, onClick = { onShowMenu(false); onRetry() })
       if (onCompact != null) DropdownMenuItem(text = { Text("Compact") }, onClick = { onShowMenu(false); onCompact() })
       if (onFork != null) DropdownMenuItem(text = { Text("Fork") }, onClick = { onShowMenu(false); onFork() })
+      if (message.content.contains("\\documentclass") || message.content.contains("\\begin{document}")) {
+        DropdownMenuItem(text = { Text("Export PDF") }, onClick = {
+          onShowMenu(false)
+          LatexPdfExporter.export(ctx, message.content)
+        })
+      }
     }
   }
 }
