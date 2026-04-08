@@ -117,7 +117,15 @@ fun MessageBubble(
                 val prev = tv.tag as? String ?: ""
                 if (content != prev) {
                   tv.tag = content
-                  tv.setMarkdownText(content)
+                  try {
+                    tv.setMarkdownText(content)
+                    // If markwon produced empty/truncated output, fallback to plain text
+                    if (tv.text.isNullOrEmpty() && content.isNotEmpty()) {
+                      tv.text = content
+                    }
+                  } catch (_: Exception) {
+                    tv.text = content
+                  }
                 }
               },
               modifier = Modifier.fillMaxWidth()
