@@ -306,6 +306,10 @@ private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
         // Context
         Text("Context", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
         HistorySlider("Context Tokens", mc.contextTokens) { mc = mc.copy(contextTokens = it); saveModelConfig() }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Text("Auto-compact at 95%", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+          Switch(checked = mc.autoCompact, onCheckedChange = { mc = mc.copy(autoCompact = it); saveModelConfig() })
+        }
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(value = mc.systemPromptOverride ?: "", onValueChange = { mc = mc.copy(systemPromptOverride = it.ifBlank { null }); saveModelConfig() },
           label = { Text("System Prompt") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6)

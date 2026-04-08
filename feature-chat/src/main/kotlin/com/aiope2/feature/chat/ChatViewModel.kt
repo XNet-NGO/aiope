@@ -202,9 +202,9 @@ class ChatViewModel @Inject constructor(
       val assistantMsg = ChatMessage(role = Role.ASSISTANT, content = "")
       _messages.value = _messages.value + assistantMsg
 
+      val p = providerStore.getActive()
+      val mc = p.activeModelConfig()
       try {
-        val p = providerStore.getActive()
-        val mc = p.activeModelConfig()
         val useTools = mc.toolsOverride != false  // null=auto(send), true=send, false=dont send
         val sb = StringBuilder()
         val reasoningBlocks = mutableListOf<String>()
@@ -330,6 +330,7 @@ class ChatViewModel @Inject constructor(
         _messages.value = updated
       } finally {
         _isStreaming.value = false
+        maybeAutoCompact(mc)
       }
     }
   }
@@ -364,6 +365,17 @@ class ChatViewModel @Inject constructor(
   }
 
   /** Compact: summarize messages 0..atIndex into a single context message */
+  private fun maybeAutoCompact(mc: ModelConfig) {
+    if (!mc.autoCompact) return
+    val msgs = _messages.value
+    val totalChars = msgs.sumOf { it.content.length }
+    val threshold = mc.contextTokens * 4L * 95 / 100  // 95% of token limit in chars
+    if (totalChars > threshold && msgs.size > 2) {
+      // Compact first half of conversation
+      compact(msgs.size / 2)
+    }
+  }
+
   fun compact(atIndex: Int) {
     val msgs = _messages.value
     if (atIndex < 1) return

@@ -20,6 +20,7 @@ data class ModelConfig(
   val reasoningEffort: String? = null,
   // Context
   val contextTokens: Int = 10_000_000,
+  val autoCompact: Boolean = false,
   val systemPromptOverride: String? = null
 ) {
   fun toJson() = JSONObject().apply {
@@ -35,6 +36,7 @@ data class ModelConfig(
     maxTokens?.let { put("maxTokens", it) }
     reasoningEffort?.let { put("reasoningEffort", it) }
     put("contextTokens", contextTokens)
+    put("autoCompact", autoCompact)
     systemPromptOverride?.let { put("systemPromptOverride", it) }
   }
   companion object {
@@ -51,6 +53,7 @@ data class ModelConfig(
       maxTokens = if (j.has("maxTokens")) j.getInt("maxTokens") else null,
       reasoningEffort = if (j.has("reasoningEffort")) j.getString("reasoningEffort") else null,
       contextTokens = j.optInt("contextTokens", 10_000_000),
+      autoCompact = j.optBoolean("autoCompact", false),
       systemPromptOverride = if (j.has("systemPromptOverride")) j.getString("systemPromptOverride") else null,
     )
   }
