@@ -18,9 +18,13 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtimeCompose)
   implementation(libs.androidx.lifecycle.viewModelCompose)
 
-  // markdown
-  implementation(libs.markdown.renderer.m3)
-  implementation(libs.markdown.renderer.code)
+  // FluidMarkdown (streaming markdown renderer)
+  implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+  implementation("com.atlassian.commonmark:commonmark:0.13.0")
+  implementation("com.atlassian.commonmark:commonmark-ext-gfm-tables:0.13.0")
+  implementation("com.vdurmont:emoji-java:5.1.1")
+  implementation("androidx.recyclerview:recyclerview:1.3.2")
+  implementation(libs.androidx.appcompat)
 
   // location
   implementation("com.google.android.gms:play-services-location:21.3.0")

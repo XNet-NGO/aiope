@@ -18,12 +18,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.mikepenz.markdown.m3.Markdown
+import com.fluid.afm.AFMInitializer
+import com.fluid.afm.markdown.widget.PrinterMarkDownTextView
+import com.fluid.afm.styles.MarkdownStyles
 
 @Composable
 fun MessageBubble(
@@ -96,13 +99,33 @@ fun MessageBubble(
           }
 
           if (message.content.isNotBlank()) {
-            val displayContent = if (isLastStreaming) sanitizeStreamingMarkdown(message.content) else message.content
-            SelectionContainer {
-              Markdown(
-                content = displayContent,
-                modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp)
-              )
-            }
+            val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
+            AndroidView(
+              factory = { context ->
+                AFMInitializer.init(context, null, null, null)
+                PrinterMarkDownTextView(context).apply {
+                  init(MarkdownStyles(), null)
+                  setTextColor(textColor)
+                  textSize = 14f
+                  setTextIsSelectable(true)
+                  setPadding(32, 16, 32, 8)
+                }
+              },
+              update = { tv ->
+                if (isLastStreaming) {
+                  if (tv.tag == null) {
+                    tv.tag = "streaming"
+                    tv.startPrinting(message.content)
+                  } else {
+                    tv.appendPrinting(message.content, false)
+                  }
+                } else {
+                  tv.tag = null
+                  tv.setMarkdownText(message.content)
+                }
+              },
+              modifier = Modifier.fillMaxWidth()
+            )
           }
 
           MessageMenu(message, showMenu, { showMenu = it }, ctx, onEdit, onRetry, onCompact, onFork)
@@ -217,20 +240,3 @@ private fun MessageMenu(
   }
 }
 
-/** Hide unclosed markdown tokens during streaming to prevent flicker */
-private fun sanitizeStreamingMarkdown(text: String): String {
-  var s = text
-  // Close unclosed code fences
-  val fenceCount = Regex("```").findAll(s).count()
-  if (fenceCount % 2 != 0) s += "\n```"
-  // Close unclosed bold
-  val boldCount = Regex("(?<!\\*)\\*\\*(?!\\*)").findAll(s).count()
-  if (boldCount % 2 != 0) s += "**"
-  // Close unclosed italic (single *)
-  val italicCount = Regex("(?<!\\*)\\*(?!\\*)").findAll(s).count()
-  if (italicCount % 2 != 0) s += "*"
-  // Close unclosed inline code
-  val codeCount = Regex("(?<!`)``(?!`)").findAll(s).count() + Regex("(?<!`)`(?!`)").findAll(s).count()
-  if (codeCount % 2 != 0) s += "`"
-  return s
-}
