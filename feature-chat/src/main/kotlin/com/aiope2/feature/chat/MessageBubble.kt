@@ -127,6 +127,9 @@ fun MessageBubble(
                 .replace("\u00B0", " deg")
                 .replace("\u00B1", "+/-")
                 .let { s -> s.filter { c -> c == '\n' || c == '\r' || c == '\t' || (c.code in 0x20..0x024F) || (c.code in 0x2000..0x206F) || (c.code in 0x2190..0x21FF) || (c.code in 0x2200..0x22FF) || c == '\u2248' || c == '\u2713' || c == '\u25B3' } }
+                .replace(Regex("\\*\\*\\s*\\*\\*"), "")  // empty bold
+                .replace(Regex("\\*\\s*\\*"), "")  // empty italic
+                .replace(Regex("^\\s*\n"), "\n")  // blank lines from stripped content
               markwon.setMarkdown(tv, cleaned)
             },
               modifier = Modifier.fillMaxWidth()
