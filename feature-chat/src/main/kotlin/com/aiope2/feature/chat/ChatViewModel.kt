@@ -259,6 +259,7 @@ class ChatViewModel @Inject constructor(
           } catch (_: Exception) { null }
         }
 
+        var lastUiUpdate = 0L
         orchestrator.stream(chatMessages, imageBase64s).collect { chunk ->
           // Reasoning — accumulate into current block
           chunk.reasoning?.let { r ->
@@ -303,7 +304,10 @@ class ChatViewModel @Inject constructor(
             reasoningBlocks + currentReasoning.toString()
           else reasoningBlocks.toList()
 
-          withContext(Dispatchers.Main) {
+          val now = System.currentTimeMillis()
+          if (chunk.isDone || chunk.error != null || now - lastUiUpdate > 60) {
+            lastUiUpdate = now
+            withContext(Dispatchers.Main) {
             _messages.value = _messages.value.toMutableList().also {
               it[it.lastIndex] = it.last().copy(
                 content = sb.toString(),
@@ -313,6 +317,7 @@ class ChatViewModel @Inject constructor(
                 toolResults = toolResultsList.toList(), locationData = lastLocationData
               )
             }
+          }
           }
         }
 
