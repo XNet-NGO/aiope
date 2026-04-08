@@ -484,7 +484,7 @@ class ChatViewModel @Inject constructor(
     StreamingOrchestrator.ToolDef("write_file", "Write file", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""")),
     StreamingOrchestrator.ToolDef("list_directory", "List directory", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""")),
     StreamingOrchestrator.ToolDef("get_location", "Get the device's current GPS location. Call this FIRST when the user asks about nearby places or 'closest' anything, then use the coordinates with search_location.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
-    StreamingOrchestrator.ToolDef("search_location", "Search for a place by address or location name. NOT a business search — cannot find restaurants, stores, etc. by brand name. Works with: street addresses ('123 Main St, Boise, ID'), landmarks ('Eiffel Tower'), cities ('Meridian, Idaho'), coordinates. For 'nearest' queries, call get_location first, then search with address/area context.", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"Address, landmark, or place name (NOT business names like 'McDonald's'). Examples: '1600 Pennsylvania Ave, Washington DC', 'Times Square, New York', 'Meridian, Idaho'"}},"required":["query"]}"""))
+    StreamingOrchestrator.ToolDef("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}"""))
   )
 
   private val locationProvider by lazy { com.aiope2.feature.chat.location.LocationProvider(getApplication()) }
@@ -518,20 +518,107 @@ class ChatViewModel @Inject constructor(
     "search_location" -> {
       val query = args["query"]?.toString() ?: ""
       try {
+        // 1. Try Geocoder first (addresses, landmarks, cities)
         val geocoder = android.location.Geocoder(getApplication(), java.util.Locale.US)
-        val results = geocoder.getFromLocationName(query, 5)
-        if (results.isNullOrEmpty()) "No results found for: $query"
-        else {
-          // Store first result for map card
-          val first = results[0]
+        val geoResults = geocoder.getFromLocationName(query, 5)
+        if (!geoResults.isNullOrEmpty()) {
+          val first = geoResults[0]
           lastLocationData = LocationData(latitude = first.latitude, longitude = first.longitude)
-          results.mapIndexed { i, addr ->
+          geoResults.mapIndexed { i, addr ->
             val line = addr.getAddressLine(0) ?: "${addr.locality ?: ""}, ${addr.adminArea ?: ""}, ${addr.countryName ?: ""}"
             "${i + 1}. $line\n   Lat: ${addr.latitude}, Lng: ${addr.longitude}"
           }.joinToString("\n")
+        } else {
+          // 2. Geocoder failed — try Overpass API for business/amenity search
+          searchOverpass(query)
         }
-      } catch (e: Exception) { "Error: ${e.message}" }
+      } catch (e: Exception) {
+        // Geocoder threw — try Overpass
+        try { searchOverpass(query) } catch (e2: Exception) { "Error: ${e2.message}" }
+      }
     }
     else -> "Unknown tool: $name"
+  }
+
+  private fun searchOverpass(query: String): String {
+    // Use last known location as center, or default to a wide search
+    val lat = lastLocationData?.latitude
+    val lng = lastLocationData?.longitude
+    val radius = 3000 // 3km
+
+    // Map common terms to OSM tags
+    val q = query.lowercase().trim()
+    val tagFilter = when {
+      q.contains("gas") || q.contains("fuel") -> """["amenity"="fuel"]"""
+      q.contains("pharmacy") || q.contains("drug") -> """["amenity"="pharmacy"]"""
+      q.contains("hospital") || q.contains("emergency") -> """["amenity"="hospital"]"""
+      q.contains("school") -> """["amenity"="school"]"""
+      q.contains("bank") || q.contains("atm") -> """["amenity"="bank"]"""
+      q.contains("parking") -> """["amenity"="parking"]"""
+      q.contains("hotel") || q.contains("motel") -> """["tourism"="hotel"]"""
+      q.contains("grocery") || q.contains("supermarket") -> """["shop"="supermarket"]"""
+      q.contains("coffee") || q.contains("cafe") -> """["amenity"="cafe"]"""
+      q.contains("pizza") -> """["amenity"="restaurant"]["cuisine"~"pizza",i]"""
+      q.contains("restaurant") || q.contains("food") || q.contains("eat") -> """["amenity"="restaurant"]"""
+      q.contains("bar") || q.contains("pub") -> """["amenity"="bar"]"""
+      q.contains("park") -> """["leisure"="park"]"""
+      q.contains("gym") || q.contains("fitness") -> """["leisure"="fitness_centre"]"""
+      q.contains("library") -> """["amenity"="library"]"""
+      q.contains("church") -> """["amenity"="place_of_worship"]"""
+      q.contains("police") -> """["amenity"="police"]"""
+      q.contains("post office") || q.contains("mail") -> """["amenity"="post_office"]"""
+      else -> {
+        // Try name search — works for brand names like "Starbucks", "McDonald's"
+        val escaped = q.replace("'", "").replace("\"", "")
+        """["name"~"$escaped",i]"""
+      }
+    }
+
+    val areaFilter = if (lat != null && lng != null) "(around:$radius,$lat,$lng)" else ""
+    if (areaFilter.isEmpty()) return "No results. Call get_location first to set search area, then try again."
+
+    val overpassQuery = """[out:json][timeout:10];(node${tagFilter}${areaFilter};way${tagFilter}${areaFilter};);out center 5;"""
+    val url = "https://overpass-api.de/api/interpreter"
+    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    conn.requestMethod = "POST"
+    conn.doOutput = true
+    conn.connectTimeout = 10000
+    conn.readTimeout = 10000
+    conn.outputStream.write("data=$overpassQuery".toByteArray(Charsets.UTF_8))
+
+    if (conn.responseCode !in 200..299) return "Overpass API error: HTTP ${conn.responseCode}"
+    val json = org.json.JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).readText())
+    val elements = json.optJSONArray("elements") ?: return "No results found for: $query"
+    if (elements.length() == 0) return "No results found for: $query"
+
+    val results = (0 until minOf(elements.length(), 5)).map { i ->
+      val el = elements.getJSONObject(i)
+      val tags = el.optJSONObject("tags") ?: org.json.JSONObject()
+      val elLat = el.optDouble("lat", el.optJSONObject("center")?.optDouble("lat") ?: 0.0)
+      val elLng = el.optDouble("lon", el.optJSONObject("center")?.optDouble("lon") ?: 0.0)
+      val name = tags.optString("name", "Unnamed")
+      val addr = listOfNotNull(
+        tags.optString("addr:housenumber", "").ifBlank { null },
+        tags.optString("addr:street", "").ifBlank { null },
+        tags.optString("addr:city", "").ifBlank { null }
+      ).joinToString(" ").ifBlank { null }
+      val phone = tags.optString("phone", "").ifBlank { null }
+      val hours = tags.optString("opening_hours", "").ifBlank { null }
+      buildString {
+        append("${i + 1}. $name")
+        addr?.let { append("\n   Address: $it") }
+        phone?.let { append("\n   Phone: $it") }
+        hours?.let { append("\n   Hours: $it") }
+        append("\n   Lat: $elLat, Lng: $elLng")
+      }
+    }
+
+    // Store first result for map
+    val first = elements.getJSONObject(0)
+    val fLat = first.optDouble("lat", first.optJSONObject("center")?.optDouble("lat") ?: 0.0)
+    val fLng = first.optDouble("lon", first.optJSONObject("center")?.optDouble("lon") ?: 0.0)
+    lastLocationData = LocationData(latitude = fLat, longitude = fLng)
+
+    return results.joinToString("\n")
   }
 }
