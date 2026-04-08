@@ -517,23 +517,29 @@ class ChatViewModel @Inject constructor(
     }
     "search_location" -> {
       val query = args["query"]?.toString() ?: ""
+      val q = query.lowercase()
+      // Skip Geocoder for business/amenity/brand queries — go straight to Overpass
+      val businessTerms = listOf("near", "closest", "nearest", "nearby",
+        "restaurant", "food", "eat", "coffee", "cafe", "pizza", "burger",
+        "gas", "fuel", "pharmacy", "hotel", "motel", "grocery", "supermarket",
+        "bar", "pub", "gym", "bank", "atm", "parking", "hospital",
+        "mcdonald", "starbucks", "walmart", "target", "costco", "wendy",
+        "subway", "taco bell", "burger king", "chick-fil", "dunkin")
+      val isBusinessQuery = businessTerms.any { q.contains(it) }
       try {
-        // 1. Try Geocoder first (addresses, landmarks, cities)
-        val geocoder = android.location.Geocoder(getApplication(), java.util.Locale.US)
-        val geoResults = geocoder.getFromLocationName(query, 5)
-        if (!geoResults.isNullOrEmpty()) {
-          val first = geoResults[0]
-          lastLocationData = LocationData(latitude = first.latitude, longitude = first.longitude)
-          geoResults.mapIndexed { i, addr ->
-            val line = addr.getAddressLine(0) ?: "${addr.locality ?: ""}, ${addr.adminArea ?: ""}, ${addr.countryName ?: ""}"
-            "${i + 1}. $line\n   Lat: ${addr.latitude}, Lng: ${addr.longitude}"
-          }.joinToString("\n")
-        } else {
-          // 2. Geocoder failed — try Overpass API for business/amenity search
-          searchOverpass(query)
-        }
+        if (!isBusinessQuery) {
+          val geocoder = android.location.Geocoder(getApplication(), java.util.Locale.US)
+          val geoResults = geocoder.getFromLocationName(query, 5)
+          if (!geoResults.isNullOrEmpty()) {
+            val first = geoResults[0]
+            lastLocationData = LocationData(latitude = first.latitude, longitude = first.longitude)
+            geoResults.mapIndexed { i, addr ->
+              val line = addr.getAddressLine(0) ?: "${addr.locality ?: ""}, ${addr.adminArea ?: ""}, ${addr.countryName ?: ""}"
+              "${i + 1}. $line\n   Lat: ${addr.latitude}, Lng: ${addr.longitude}"
+            }.joinToString("\n")
+          } else searchOverpass(query)
+        } else searchOverpass(query)
       } catch (e: Exception) {
-        // Geocoder threw — try Overpass
         try { searchOverpass(query) } catch (e2: Exception) { "Error: ${e2.message}" }
       }
     }
@@ -548,6 +554,7 @@ class ChatViewModel @Inject constructor(
 
     // Map common terms to OSM tags
     val q = query.lowercase().trim()
+      .replace(Regex("\\s*(near|in|around|close to|closest to|nearest to)\\s+.*$"), "").trim()
     val tagFilter = when {
       q.contains("gas") || q.contains("fuel") -> """["amenity"="fuel"]"""
       q.contains("pharmacy") || q.contains("drug") -> """["amenity"="pharmacy"]"""
