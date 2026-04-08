@@ -212,7 +212,7 @@ class ChatViewModel @Inject constructor(
         var isReasoning = false
         val toolCallsList = mutableListOf<String>()
         val toolResultsList = mutableListOf<String>()
-        lastLocationData = null
+        
 
         val toolDefs = if (useTools) buildToolDefs() else emptyList()
 
@@ -450,7 +450,7 @@ class ChatViewModel @Inject constructor(
         var isReasoning = false
         val toolCallsList = mutableListOf<String>()
         val toolResultsList = mutableListOf<String>()
-        lastLocationData = null
+        
 
         val chatMessages = mutableListOf<Pair<String, String>>()
         mc.systemPromptOverride?.let { if (it.isNotBlank()) chatMessages.add("system" to it) }
@@ -569,9 +569,16 @@ class ChatViewModel @Inject constructor(
     val apiKey = providerStore.getGeoapifyKey()
     if (apiKey.isBlank()) return "Geoapify API key not set. Add it in Settings to enable place search."
 
-    val lat = lastLocationData?.latitude
-    val lng = lastLocationData?.longitude
-    if (lat == null || lng == null) return "No location set. Call get_location first, then try again."
+    var lat = lastLocationData?.latitude
+    var lng = lastLocationData?.longitude
+    // Auto-fetch location if not set
+    if (lat == null || lng == null) {
+      val loc = kotlinx.coroutines.runBlocking { locationProvider.getFreshLocation() ?: locationProvider.getLastLocation() }
+      if (loc != null) {
+        lastLocationData = LocationData(latitude = loc.latitude, longitude = loc.longitude)
+        lat = loc.latitude; lng = loc.longitude
+      } else return "Location unavailable. Enable GPS and try again."
+    }
 
     val q = query.trim().replace(Regex("\\s*(near|in|around|close to|closest to|nearest to)\\s+.*$", RegexOption.IGNORE_CASE), "").trim()
     val encoded = java.net.URLEncoder.encode(q, "UTF-8")
