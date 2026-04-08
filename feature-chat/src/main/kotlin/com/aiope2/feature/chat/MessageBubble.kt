@@ -126,7 +126,7 @@ fun MessageBubble(
                 .replace(Regex("\\$([^$]+)\\$"), "$1")
                 .replace("\u00B0", " deg")
                 .replace("\u00B1", "+/-")
-                .let { s -> String(s.toCharArray().filter { c -> !c.isSurrogate() && c.code !in 0x2600..0x27BF && c.code !in 0xFE00..0xFE0F && c.code != 0x200D }.toCharArray()) }
+                .let { s -> s.filter { c -> c == '\n' || c == '\r' || c == '\t' || (c.code in 0x20..0x024F) || (c.code in 0x2000..0x206F) || (c.code in 0x2190..0x21FF) || (c.code in 0x2200..0x22FF) || c == '\u2248' || c == '\u2713' || c == '\u25B3' } }
               markwon.setMarkdown(tv, cleaned)
             },
               modifier = Modifier.fillMaxWidth()
