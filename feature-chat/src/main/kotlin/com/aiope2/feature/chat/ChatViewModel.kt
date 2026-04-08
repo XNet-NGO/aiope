@@ -259,7 +259,8 @@ class ChatViewModel @Inject constructor(
           } catch (_: Exception) { null }
         }
 
-        var lastUiUpdate = 0L
+        var lastUiLength = 0
+        val charsPerLine = 55
         orchestrator.stream(chatMessages, imageBase64s).collect { chunk ->
           // Reasoning — accumulate into current block
           chunk.reasoning?.let { r ->
@@ -304,9 +305,11 @@ class ChatViewModel @Inject constructor(
             reasoningBlocks + currentReasoning.toString()
           else reasoningBlocks.toList()
 
-          val now = System.currentTimeMillis()
-          if (chunk.isDone || chunk.error != null || now - lastUiUpdate > 60) {
-            lastUiUpdate = now
+          val currentLen = sb.length
+          val hasNewLine = chunk.content.contains('\n')
+          val lineWorth = currentLen - lastUiLength >= charsPerLine
+          if (chunk.isDone || chunk.error != null || hasNewLine || lineWorth || chunk.toolCalls != null || chunk.toolResults != null) {
+            lastUiLength = currentLen
             withContext(Dispatchers.Main) {
             _messages.value = _messages.value.toMutableList().also {
               it[it.lastIndex] = it.last().copy(
