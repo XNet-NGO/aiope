@@ -578,17 +578,21 @@ class ChatViewModel @Inject constructor(
     val features = json.optJSONArray("features")
     if (features == null || features.length() == 0) return "No results found for: $query"
 
+    val userLat = lastLocationData?.latitude
+    val userLng = lastLocationData?.longitude
+
     val results = (0 until minOf(features.length(), 5)).map { i ->
       val props = features.getJSONObject(i).getJSONObject("properties")
       val name = props.optString("name", "").ifBlank { props.optString("formatted", "Unnamed") }
       val addr = props.optString("formatted", "").ifBlank { null }
       val phone = props.optString("contact:phone", "").ifBlank { props.optString("phone", "").ifBlank { null } }
       val hours = props.optString("opening_hours", "").ifBlank { null }
-      val cat = props.optString("categories", "").ifBlank { null }
       val pLat = props.optDouble("lat", 0.0)
       val pLng = props.optDouble("lon", 0.0)
+      val dist = if (userLat != null && userLng != null) haversineKm(userLat, userLng, pLat, pLng) else null
       buildString {
         append("${i + 1}. $name")
+        dist?.let { append(" (${"%.1f".format(it)} km)") }
         if (addr != null && addr != name) append("\n   Address: $addr")
         phone?.let { append("\n   Phone: $it") }
         hours?.let { append("\n   Hours: $it") }
@@ -599,5 +603,13 @@ class ChatViewModel @Inject constructor(
     val firstProps = features.getJSONObject(0).getJSONObject("properties")
     lastLocationData = LocationData(latitude = firstProps.optDouble("lat", 0.0), longitude = firstProps.optDouble("lon", 0.0))
     return results.joinToString("\n")
+  }
+
+  private fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val r = 6371.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = Math.sin(dLat / 2).let { it * it } + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.sin(dLon / 2).let { it * it }
+    return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   }
 }

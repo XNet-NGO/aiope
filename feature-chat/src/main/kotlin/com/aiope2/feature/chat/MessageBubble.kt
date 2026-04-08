@@ -124,9 +124,9 @@ fun MessageBubble(
                 .replace(Regex("\\$\\\\text\\{([^}]*)\\}\\$"), "$1")
                 .replace(Regex("\\$\\\\approx\\s*([^$]*)\\$"), "\u2248$1")
                 .replace(Regex("\\$([^$]+)\\$"), "$1")
-                .replace("\u00B0", " deg")  // degree sign → text (font-safe)
-                .replace("\u00B1", "+/-")  // plus-minus → text (font-safe)
-                .replace(Regex("[\u2700-\u27BF\u2600-\u26FF\uD83C-\uDBFF\uDC00-\uDFFF]"), "")  // strip emojis that can't render
+                .replace("\u00B0", " deg")
+                .replace("\u00B1", "+/-")
+                .replace(Regex("[\\x{1F000}-\\x{1FFFF}\\x{2600}-\\x{27BF}\\x{FE00}-\\x{FE0F}\\x{200D}]"), "")
               markwon.setMarkdown(tv, cleaned)
             },
               modifier = Modifier.fillMaxWidth()
