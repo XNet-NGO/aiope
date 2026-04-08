@@ -36,6 +36,7 @@ android {
 }
 
 dependencies {
+  implementation(platform(libs.androidx.compose.bom))
   // core modules
   implementation(project(":core-designsystem"))
   implementation(project(":core-navigation"))
