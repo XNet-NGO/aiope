@@ -96,9 +96,10 @@ fun MessageBubble(
           }
 
           if (message.content.isNotBlank()) {
+            val displayContent = if (isLastStreaming) sanitizeStreamingMarkdown(message.content) else message.content
             SelectionContainer {
               Markdown(
-                content = message.content,
+                content = displayContent,
                 modifier = Modifier.padding(12.dp, 8.dp, 12.dp, 4.dp)
               )
             }
@@ -214,4 +215,22 @@ private fun MessageMenu(
       if (onFork != null) DropdownMenuItem(text = { Text("Fork") }, onClick = { onShowMenu(false); onFork() })
     }
   }
+}
+
+/** Hide unclosed markdown tokens during streaming to prevent flicker */
+private fun sanitizeStreamingMarkdown(text: String): String {
+  var s = text
+  // Close unclosed code fences
+  val fenceCount = Regex("```").findAll(s).count()
+  if (fenceCount % 2 != 0) s += "\n```"
+  // Close unclosed bold
+  val boldCount = Regex("(?<!\\*)\\*\\*(?!\\*)").findAll(s).count()
+  if (boldCount % 2 != 0) s += "**"
+  // Close unclosed italic (single *)
+  val italicCount = Regex("(?<!\\*)\\*(?!\\*)").findAll(s).count()
+  if (italicCount % 2 != 0) s += "*"
+  // Close unclosed inline code
+  val codeCount = Regex("(?<!`)``(?!`)").findAll(s).count() + Regex("(?<!`)`(?!`)").findAll(s).count()
+  if (codeCount % 2 != 0) s += "`"
+  return s
 }
