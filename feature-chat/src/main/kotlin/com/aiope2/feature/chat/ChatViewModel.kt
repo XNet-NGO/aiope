@@ -537,6 +537,7 @@ class ChatViewModel @Inject constructor(
     StreamingOrchestrator.ToolDef("get_location", "Get the device's current GPS location. Call this FIRST when the user asks about nearby places or 'closest' anything, then use the coordinates with search_location.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
     StreamingOrchestrator.ToolDef("open_intent", "Open a URL, app, or navigation intent from the device. Use for opening maps, web pages, dialing, etc. Examples: 'https://google.com', 'geo:43.6,-116.3', 'google.navigation:q=123+Main+St', 'tel:5551234567'", org.json.JSONObject("""{"type":"object","properties":{"uri":{"type":"string","description":"URI to open. Supports https://, geo:, google.navigation:q=, tel:, mailto:, etc."}},"required":["uri"]}""")),
     StreamingOrchestrator.ToolDef("fetch_url", "Fetch content from a URL. Returns raw text for txt/md/json/css/xml, or extracted readable text for HTML pages. Use for reading web pages, APIs, raw files, documentation, etc.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text from HTML"}},"required":["url"]}""")),
+    StreamingOrchestrator.ToolDef("query_data", "Query live real-time data from satellites, sensors, and public APIs. Categories: weather, weather_hourly, alerts, air_quality, uv, solar (weather/atmosphere), iss, astronauts, apod, asteroids, solar_flares, cme, geomagnetic, earth_events, mars_photos, sunrise_sunset (space/astronomy), earthquakes, earthquakes_significant (geology), tides, ocean_temp (ocean — need station ID in extra), flights, flights_global (aviation), fires, impact_risk (hazards), ip_location, time (geolocation). Most categories need lat/lon.", org.json.JSONObject("""{"type":"object","properties":{"category":{"type":"string","description":"Data category (e.g. weather, earthquakes, iss, flights, fires)"},"lat":{"type":"string","description":"Latitude (required for weather, flights, alerts, etc.)"},"lon":{"type":"string","description":"Longitude"},"extra":{"type":"string","description":"Extra param: station ID for tides/ocean_temp, bounding box for flights"}},"required":["category"]}""")),
     StreamingOrchestrator.ToolDef("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}"""))
   )
 
@@ -571,6 +572,21 @@ class ChatViewModel @Inject constructor(
       val result = if (mode == "raw" || !ct.contains("html")) body
         else android.text.Html.fromHtml(body.replace(Regex("<(script|style|nav|footer|header)[^>]*>[\\s\\S]*?</\\1>", RegexOption.IGNORE_CASE), ""), android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
       if (result.length > 8000) result.take(8000) + "\n...(truncated)" else result
+    } catch (e: Exception) { "Error: ${e.message}" }
+    "query_data" -> try {
+      val cat = args["category"]?.toString() ?: ""
+      val lat = args["lat"]?.toString() ?: ""
+      val lon = args["lon"]?.toString() ?: ""
+      val extra = args["extra"]?.toString() ?: ""
+      val p = providerStore.getActive()
+      val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
+      val u = java.net.URL("$gwBase/v1/data?q=$cat&lat=$lat&lon=$lon&extra=$extra")
+      val conn = u.openConnection() as java.net.HttpURLConnection
+      if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+      conn.connectTimeout = 15_000; conn.readTimeout = 15_000
+      val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+      conn.disconnect()
+      if (body.length > 8000) body.take(8000) + "\n...(truncated)" else body
     } catch (e: Exception) { "Error: ${e.message}" }
     "get_location" -> kotlinx.coroutines.runBlocking {
       val loc = locationProvider.getFreshLocation() ?: locationProvider.getLastLocation()
