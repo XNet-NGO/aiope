@@ -76,7 +76,28 @@ class ChatViewModel @Inject constructor(
   init {
     refreshModelLabel()
     viewModelScope.launch {
-      chatDao.insertConversation(ConversationEntity(id = conversationId))
+      // Reuse last conversation if it exists, or find an empty one
+      val all = chatDao.getConversations()
+      val empty = all.firstOrNull { chatDao.getMessages(it.id).isEmpty() }
+      if (empty != null) {
+        conversationId = empty.id
+      } else if (all.isNotEmpty()) {
+        // Load the most recent conversation
+        val last = all.first()
+        conversationId = last.id
+        val msgs = chatDao.getMessages(last.id).map {
+          val uris = if (it.imagePaths.isNotBlank()) {
+            it.imagePaths.split(",").mapNotNull { relPath ->
+              val file = java.io.File(getApplication<android.app.Application>().filesDir, relPath.trim())
+              if (file.exists()) android.net.Uri.fromFile(file).toString() else null
+            }
+          } else emptyList()
+          ChatMessage(id = it.id, role = Role.from(it.role), content = it.content, imageUris = uris, timestamp = it.timestamp)
+        }
+        _messages.value = msgs
+      } else {
+        chatDao.insertConversation(ConversationEntity(id = conversationId))
+      }
       refreshConversations()
     }
   }
