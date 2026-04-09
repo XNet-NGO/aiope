@@ -104,6 +104,7 @@ fun MessageBubble(
             AndroidView(
               factory = { context ->
                 AFMInitializer.init(context, null, null, null)
+                val density = context.resources.displayMetrics.density
                 val styles = MarkdownStyles.getDefaultStyles()
                   .codeStyle(com.fluid.afm.styles.CodeStyle.create()
                     .codeFontColor(0xFFE0E0E0.toInt())
@@ -112,10 +113,17 @@ fun MessageBubble(
                     .borderColor(0xFF3C3C3C.toInt())
                     .inlineFontColor(0xFFCE9178.toInt())
                     .inlineCodeBackgroundColor(0xFF2D2D2D.toInt()))
-                  .tableStyle(com.fluid.afm.styles.TableStyle.create()
-                    .bodyFontSize(13f * context.resources.displayMetrics.density)
-                    .headerFontSize(13f * context.resources.displayMetrics.density)
-                    .titleFontSize(13f * context.resources.displayMetrics.density))
+                val ts = styles.tableStyle()
+                  .bodyFontSize(13f * density)
+                  .headerFontSize(13f * density)
+                  .titleFontSize(13f * density)
+                  .fontColor(0xFFE0E0E0.toInt())
+                  .titleFontColor(0xFFAAAAAA.toInt())
+                  .titleBackgroundColor(0xFF2A2A2A.toInt())
+                  .headerBackgroundColor(0xFF252525.toInt())
+                  .bodyBackgroundColor(0xFF1E1E1E.toInt())
+                  .borderColor(0xFF3C3C3C.toInt())
+                styles.tableStyle(ts)
                 PrinterMarkDownTextView(context).apply {
                   init(styles, null)
                   setTextColor(textColor)
