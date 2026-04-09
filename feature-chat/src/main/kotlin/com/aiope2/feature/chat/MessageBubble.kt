@@ -74,7 +74,7 @@ fun MessageBubble(
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
       Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.widthIn(max = 480.dp)) {
-        Column(Modifier.padding(bottom = 4.dp)) {
+        Column(Modifier.padding(bottom = 4.dp).animateContentSize()) {
 
           if (message.reasoning.isNotEmpty()) {
             message.reasoning.forEachIndexed { idx, block ->

@@ -349,6 +349,7 @@ class ChatViewModel @Inject constructor(
 
         // Persist final message
         val finalMsg = _messages.value.last()
+        android.util.Log.d("AIOPE2", "Final content len=${finalMsg.content.length} last100=${finalMsg.content.takeLast(100)}")
         chatDao.insertMessage(MessageEntity(
           id = finalMsg.id, conversationId = conversationId,
           role = Role.ASSISTANT.value, content = finalMsg.content
