@@ -645,12 +645,8 @@ class ChatViewModel @Inject constructor(
   }
 
   private fun searchPlaces(query: String): String {
-    val apiKey = providerStore.getGeoapifyKey()
-    if (apiKey.isBlank()) return "Geoapify API key not set. Add it in Settings to enable place search."
-
     var lat = lastLocationData?.latitude
     var lng = lastLocationData?.longitude
-    // Auto-fetch location if not set
     if (lat == null || lng == null) {
       val loc = kotlinx.coroutines.runBlocking { locationProvider.getFreshLocation() ?: locationProvider.getLastLocation() }
       if (loc != null) {
@@ -661,17 +657,33 @@ class ChatViewModel @Inject constructor(
 
     val q = query.trim().replace(Regex("\\s*(near|in|around|close to|closest to|nearest to)\\s+.*$", RegexOption.IGNORE_CASE), "").trim()
     val encoded = java.net.URLEncoder.encode(q, "UTF-8")
-    val url = "https://api.geoapify.com/v2/places?categories=commercial,catering,service,entertainment,leisure,sport,tourism,accommodation,education,healthcare&conditions=named&filter=circle:$lng,$lat,5000&bias=proximity:$lng,$lat&limit=5&name=$encoded&apiKey=$apiKey"
 
+    // Try gateway first (has centralized Geoapify key)
+    try {
+      val p = providerStore.getActive()
+      val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
+      val gwUrl = "$gwBase/v1/data?q=places&query=$encoded&lat=$lat&lon=$lng"
+      val conn = java.net.URL(gwUrl).openConnection() as java.net.HttpURLConnection
+      if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+      conn.connectTimeout = 10_000; conn.readTimeout = 15_000
+      if (conn.responseCode in 200..299) {
+        val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+        val wrapper = org.json.JSONObject(body)
+        val data = wrapper.optJSONObject("data")
+        if (data != null) return parseGeoapifyResults(data.toString(), query)
+      }
+    } catch (_: Exception) {}
+
+    // Fallback: direct Geoapify with local key
+    val apiKey = providerStore.getGeoapifyKey()
+    if (apiKey.isBlank()) return "Place search unavailable. Set Geoapify key in Settings or configure it on the gateway."
+    val url = "https://api.geoapify.com/v2/places?categories=commercial,catering,service,entertainment,leisure,sport,tourism,accommodation,education,healthcare&conditions=named&filter=circle:$lng,$lat,5000&bias=proximity:$lng,$lat&limit=5&name=$encoded&apiKey=$apiKey"
     val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-    conn.connectTimeout = 15000
-    conn.readTimeout = 15000
+    conn.connectTimeout = 15000; conn.readTimeout = 15000
     if (conn.responseCode !in 200..299) {
-      // Fallback: try text search endpoint
       val url2 = "https://api.geoapify.com/v1/geocode/search?text=${java.net.URLEncoder.encode(query, "UTF-8")}&bias=proximity:$lng,$lat&limit=5&apiKey=$apiKey"
       val conn2 = java.net.URL(url2).openConnection() as java.net.HttpURLConnection
-      conn2.connectTimeout = 15000
-      conn2.readTimeout = 15000
+      conn2.connectTimeout = 15000; conn2.readTimeout = 15000
       if (conn2.responseCode !in 200..299) return "Search error: HTTP ${conn2.responseCode}"
       return parseGeoapifyResults(conn2.inputStream.bufferedReader(Charsets.UTF_8).readText(), query)
     }
