@@ -213,22 +213,24 @@ private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = fals
         Spacer(Modifier.height(8.dp))
       }
     }
-    // Scroll nav: < o >
+    // Scroll nav: vertical on right side
     if (messages.size > 2) {
-      Row(
-        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
+      Column(
+        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
       ) {
-        val btnMod = Modifier.size(32.dp)
-        val btnColors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f))
+        val btnMod = Modifier.size(28.dp)
+        val btnColors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
         IconButton(onClick = { scope.launch { listState.animateScrollToItem(0) } }, modifier = btnMod, colors = btnColors) {
-          Icon(Icons.Default.KeyboardArrowUp, "Top", modifier = Modifier.size(18.dp))
+          Text("\u25B2", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Spacer(Modifier.height(6.dp))
         IconButton(onClick = { scope.launch { listState.animateScrollToItem(messages.size / 2) } }, modifier = btnMod, colors = btnColors) {
-          Icon(Icons.Default.FiberManualRecord, "Center", modifier = Modifier.size(10.dp))
+          Icon(Icons.Default.FiberManualRecord, "Center", modifier = Modifier.size(8.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Spacer(Modifier.height(6.dp))
         IconButton(onClick = { scope.launch { listState.animateScrollToItem(messages.size - 1) } }, modifier = btnMod, colors = btnColors) {
-          Icon(Icons.Default.KeyboardArrowDown, "Bottom", modifier = Modifier.size(18.dp))
+          Text("\u25BC", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
       }
     }
