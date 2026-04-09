@@ -224,11 +224,11 @@ private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = fals
         IconButton(onClick = { scope.launch { listState.animateScrollToItem(0) } }, modifier = btnMod, colors = btnColors) {
           Text("\u25B2", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(14.dp))
         IconButton(onClick = { scope.launch { listState.animateScrollToItem(messages.size / 2) } }, modifier = btnMod, colors = btnColors) {
           Icon(Icons.Default.FiberManualRecord, "Center", modifier = Modifier.size(8.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(14.dp))
         IconButton(onClick = { scope.launch { listState.animateScrollToItem(messages.size - 1) } }, modifier = btnMod, colors = btnColors) {
           Text("\u25BC", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
