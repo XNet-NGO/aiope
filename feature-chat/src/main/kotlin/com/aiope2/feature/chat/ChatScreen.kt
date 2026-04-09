@@ -199,7 +199,7 @@ private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = fals
     if (messages.isNotEmpty()) scope.launch { listState.animateScrollToItem(messages.size - 1) }
   }
   Box(modifier = modifier) {
-    LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+    LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 60.dp)) {
       items(messages.size, key = { messages[it].id }) { idx ->
         val msg = messages[idx]
         MessageBubble(
@@ -216,7 +216,7 @@ private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = fals
     // Scroll nav: vertical on right side
     if (messages.size > 2) {
       Column(
-        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp),
+        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 48.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
       ) {
         val btnMod = Modifier.size(28.dp)
