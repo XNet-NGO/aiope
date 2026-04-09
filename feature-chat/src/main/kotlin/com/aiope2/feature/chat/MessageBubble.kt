@@ -128,7 +128,15 @@ fun MessageBubble(
                   .bodyBackgroundColor(0xFF1E1E1E.toInt())
                   .borderColor(0xFF3C3C3C.toInt())
                 styles.tableStyle(ts)
-                PrinterMarkDownTextView(context).apply {
+                val wrapper = object : android.widget.FrameLayout(context) {
+                  override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+                    if (ev.action == android.view.MotionEvent.ACTION_DOWN) {
+                      parent?.requestDisallowInterceptTouchEvent(true)
+                    }
+                    return super.dispatchTouchEvent(ev)
+                  }
+                }
+                val tv = PrinterMarkDownTextView(context).apply {
                   init(styles, null)
                   setTextColor(textColor)
                   textSize = 14f
@@ -145,13 +153,18 @@ fun MessageBubble(
                     setTextSelectHandleRight(handleDrawable)
                   }
                   setPadding(32, 16, 32, 8)
-                  tag = ""
                 }
+                wrapper.addView(tv, android.view.ViewGroup.LayoutParams(
+                  android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                  android.view.ViewGroup.LayoutParams.WRAP_CONTENT))
+                wrapper.tag = ""
+                wrapper
               },
-              update = { tv ->
-                val prev = tv.tag as? String ?: ""
+              update = { w ->
+                val tv = (w as android.view.ViewGroup).getChildAt(0) as PrinterMarkDownTextView
+                val prev = w.tag as? String ?: ""
                 if (content != prev) {
-                  tv.tag = content
+                  w.tag = content
                   android.util.Log.d("AIOPE2_MD", "setMarkdownText len=${content.length} first100=${content.take(100)}")
                   try {
                     tv.setMarkdownText(content)
