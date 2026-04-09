@@ -118,9 +118,9 @@ fun MessageBubble(
                     .inlineFontColor(0xFFCE9178.toInt())
                     .inlineCodeBackgroundColor(0xFF2D2D2D.toInt()))
                 val ts = styles.tableStyle()
-                  .bodyFontSize(13f * density)
-                  .headerFontSize(13f * density)
-                  .titleFontSize(13f * density)
+                  .bodyFontSize(11f * density)
+                  .headerFontSize(11f * density)
+                  .titleFontSize(11f * density)
                   .fontColor(0xFFE0E0E0.toInt())
                   .titleFontColor(0xFFAAAAAA.toInt())
                   .titleBackgroundColor(0xFF2A2A2A.toInt())
@@ -128,12 +128,7 @@ fun MessageBubble(
                   .bodyBackgroundColor(0xFF1E1E1E.toInt())
                   .borderColor(0xFF3C3C3C.toInt())
                 styles.tableStyle(ts)
-                val hsv = android.widget.HorizontalScrollView(context).apply {
-                  isHorizontalScrollBarEnabled = true
-                  isFillViewport = true
-                  setHorizontalScrollBarEnabled(true)
-                }
-                val tv = PrinterMarkDownTextView(context).apply {
+                PrinterMarkDownTextView(context).apply {
                   init(styles, null)
                   setTextColor(textColor)
                   textSize = 14f
@@ -150,18 +145,13 @@ fun MessageBubble(
                     setTextSelectHandleRight(handleDrawable)
                   }
                   setPadding(32, 16, 32, 8)
+                  tag = ""
                 }
-                hsv.addView(tv, android.view.ViewGroup.LayoutParams(
-                  android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                  android.view.ViewGroup.LayoutParams.WRAP_CONTENT))
-                hsv.tag = ""
-                hsv
               },
-              update = { hsv ->
-                val tv = (hsv as android.widget.HorizontalScrollView).getChildAt(0) as PrinterMarkDownTextView
-                val prev = hsv.tag as? String ?: ""
+              update = { tv ->
+                val prev = tv.tag as? String ?: ""
                 if (content != prev) {
-                  hsv.tag = content
+                  tv.tag = content
                   android.util.Log.d("AIOPE2_MD", "setMarkdownText len=${content.length} first100=${content.take(100)}")
                   try {
                     tv.setMarkdownText(content)
