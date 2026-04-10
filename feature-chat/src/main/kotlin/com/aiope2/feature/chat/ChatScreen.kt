@@ -200,12 +200,16 @@ private fun EmptyState(onSend: (String, List<String>) -> Unit, modifier: Modifie
 private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = false, onEdit: ((Int) -> Unit)? = null, onRetry: ((Int) -> Unit)? = null, onCompact: ((Int) -> Unit)? = null, onFork: ((Int) -> Unit)? = null, modifier: Modifier = Modifier) {
   val listState = rememberLazyListState()
   val scope = rememberCoroutineScope()
-  val prevCount = remember { mutableIntStateOf(messages.size) }
+  val prevCount = remember { mutableIntStateOf(0) }
   LaunchedEffect(messages.size) {
-    if (messages.size > prevCount.intValue) {
-      // Only auto-scroll if user is near the bottom (within last 3 items)
+    if (prevCount.intValue == 0 && messages.isNotEmpty()) {
+      // Initial load — jump to bottom without animation
+      scope.launch { listState.scrollToItem(messages.size) }
+    } else if (messages.size > prevCount.intValue) {
+      // New message added — only auto-scroll if near bottom
       val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-      if (lastVisible >= messages.size - 3) {
+      val totalItems = listState.layoutInfo.totalItemsCount
+      if (totalItems - lastVisible <= 3) {
         scope.launch { listState.animateScrollToItem(messages.size) }
       }
     }
