@@ -392,9 +392,12 @@ class ChatViewModel @Inject constructor(
   fun retry(atIndex: Int) {
     val msgs = _messages.value.toMutableList()
     if (atIndex < msgs.size && msgs[atIndex].role == Role.ASSISTANT) {
-      val removedMsg = msgs.removeAt(atIndex)
+      // Remove this message and everything after it
+      val removedTimestamp = msgs[atIndex].timestamp
+      while (msgs.size > atIndex) msgs.removeAt(msgs.lastIndex)
       _messages.value = msgs
-      viewModelScope.launch { chatDao.deleteMessagesAfter(conversationId, removedMsg.timestamp) }
+      viewModelScope.launch { chatDao.deleteMessagesAfter(conversationId, removedTimestamp) }
+      // Find the last user message (now the one right before atIndex)
       val lastUser = msgs.lastOrNull { it.role == Role.USER }
       if (lastUser != null) resend(lastUser.content)
     }
