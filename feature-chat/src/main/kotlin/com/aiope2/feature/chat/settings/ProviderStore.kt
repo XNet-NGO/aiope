@@ -1,6 +1,7 @@
 package com.aiope2.feature.chat.settings
 
 import android.content.Context
+import com.aiope2.core.network.ModelConfig
 import com.aiope2.core.network.ModelDef
 import com.aiope2.core.network.ProviderProfile
 import com.aiope2.core.network.ProviderTemplates
