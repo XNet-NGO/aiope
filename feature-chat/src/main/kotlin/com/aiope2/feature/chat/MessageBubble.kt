@@ -184,13 +184,6 @@ private fun AssistantBubble(
             setLineSpacing(0f, 1.5f)
             setPadding(0, 8, 0, 8)
             tag = ""
-            viewTreeObserver.addOnGlobalLayoutListener {
-              val l = layout ?: return@addOnGlobalLayoutListener
-              val contentH = l.getLineBottom(l.lineCount - 1) + paddingTop + paddingBottom
-              if (measuredHeight > contentH + 50) {
-                layoutParams?.let { lp -> lp.height = contentH; layoutParams = lp }
-              }
-            }
           }
         },
         update = { tv ->
