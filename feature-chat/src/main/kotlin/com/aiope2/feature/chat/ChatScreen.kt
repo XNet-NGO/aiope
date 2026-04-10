@@ -198,7 +198,7 @@ private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = fals
   val scope = rememberCoroutineScope()
   LaunchedEffect(messages.size) {
     if (messages.isNotEmpty()) scope.launch {
-      listState.animateScrollToItem(messages.size - 1)
+      listState.animateScrollToItem(messages.size)
     }
   }
   Box(modifier = modifier) {
@@ -215,6 +215,7 @@ private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = fals
         )
         Spacer(Modifier.height(8.dp))
       }
+      item(key = "bottom_anchor") { Spacer(Modifier.height(1.dp)) }
     }
     // Scroll nav: right center of screen
     if (messages.size > 2) {
@@ -233,7 +234,7 @@ private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = fals
         }
         Spacer(Modifier.height(14.dp))
         IconButton(onClick = { scope.launch {
-          listState.animateScrollToItem(messages.size - 1)
+          listState.animateScrollToItem(messages.size)
         } }, modifier = btnMod, colors = btnColors) {
           Text("\u25BC", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
