@@ -532,6 +532,26 @@ class ChatViewModel @Inject constructor(
     }
   }
 
+  private var cachedDataCategories: String? = null
+
+  private fun fetchDataCategories(): String {
+    cachedDataCategories?.let { return it }
+    return try {
+      val p = providerStore.getActive()
+      val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
+      val u = java.net.URL("$gwBase/v1/data")
+      val conn = u.openConnection() as java.net.HttpURLConnection
+      if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+      conn.connectTimeout = 5_000; conn.readTimeout = 5_000
+      val body = conn.inputStream.bufferedReader().readText()
+      conn.disconnect()
+      val cats = org.json.JSONObject(body).getJSONArray("categories")
+      val list = (0 until cats.length()).joinToString(", ") { cats.getString(it) }
+      cachedDataCategories = list
+      list
+    } catch (_: Exception) { "weather, earthquakes, cat, iss, apod" }
+  }
+
   private fun buildToolDefs() = listOf(
     StreamingOrchestrator.ToolDef("run_sh", "Execute Android shell command", org.json.JSONObject("""{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}""")),
     StreamingOrchestrator.ToolDef("run_proot", "Execute a command in the Ubuntu proot Linux environment. Use for apt, python, gcc, etc.", org.json.JSONObject("""{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}""")),
@@ -541,7 +561,7 @@ class ChatViewModel @Inject constructor(
     StreamingOrchestrator.ToolDef("get_location", "Get the device's current GPS location. Call this FIRST when the user asks about nearby places or 'closest' anything, then use the coordinates with search_location.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
     StreamingOrchestrator.ToolDef("open_intent", "Open a URL, app, or navigation intent from the device. Use for opening maps, web pages, dialing, etc. Examples: 'https://google.com', 'geo:43.6,-116.3', 'google.navigation:q=123+Main+St', 'tel:5551234567'", org.json.JSONObject("""{"type":"object","properties":{"uri":{"type":"string","description":"URI to open. Supports https://, geo:, google.navigation:q=, tel:, mailto:, etc."}},"required":["uri"]}""")),
     StreamingOrchestrator.ToolDef("fetch_url", "Fetch content from a URL. Returns raw text for txt/md/json/css/xml, or extracted readable text for HTML pages. Use for reading web pages, APIs, raw files, documentation, etc.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text from HTML"}},"required":["url"]}""")),
-    StreamingOrchestrator.ToolDef("query_data", "Query live real-time data. Automatically uses device GPS location. Categories: weather, weather_hourly, alerts, air_quality, uv, solar, iss, astronauts, apod, asteroids, solar_flares, cme, geomagnetic, earth_events, epic (daily Earth photos from space), nasa_media (search NASA images, pass query in extra), nasa_tech (NASA patents, pass query in extra), sunrise_sunset, earthquakes, earthquakes_significant, fires, impact_risk, ip_location, time, cat (random cat images), cat_breeds (all breeds info), cat_breed (images of specific breed, pass breed id in extra e.g. 'beng' for Bengal). For tides/ocean_temp pass station ID in 'extra'.", org.json.JSONObject("""{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query for nasa_media/nasa_tech, station ID for tides/ocean_temp"}},"required":["category"]}""")),
+    StreamingOrchestrator.ToolDef("query_data", "Query live real-time data. Automatically uses device GPS location. Pass 'extra' for searches (nasa_media, nasa_tech) or station IDs (tides, ocean_temp) or breed IDs (cat_breed). Available categories: ${fetchDataCategories()}", org.json.JSONObject("""{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query, station ID, or breed ID depending on category"}},"required":["category"]}""")),
     StreamingOrchestrator.ToolDef("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}"""))
   )
 
