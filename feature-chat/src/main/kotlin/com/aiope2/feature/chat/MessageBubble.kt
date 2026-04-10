@@ -106,6 +106,7 @@ fun MessageBubble(
           if (message.content.isNotBlank()) {
             val textColor = MaterialTheme.colorScheme.onSurface.toArgb()
             val content = message.content.trimEnd()
+            key(message.id) {
             AndroidView(
               factory = { context ->
                 AFMInitializer.init(context, null, null, null)
@@ -145,8 +146,8 @@ fun MessageBubble(
                     tv.setMarkdownText(content)
                     if (tv.text.isNullOrEmpty() && content.isNotEmpty()) tv.text = content
                   } catch (_: Exception) { tv.text = content }
+                  tv.post { tv.requestLayout() }
                 }
-                tv.requestLayout()
               },
               modifier = Modifier.fillMaxWidth().wrapContentHeight()
             )
@@ -161,6 +162,7 @@ fun MessageBubble(
                   tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
               }
             }
+            } // key(message.id)
           }
 
           MessageMenu(message, showMenu, { showMenu = it }, ctx, onEdit, onRetry, onCompact, onFork)
