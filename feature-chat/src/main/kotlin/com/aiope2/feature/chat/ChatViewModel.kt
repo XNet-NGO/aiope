@@ -549,7 +549,7 @@ class ChatViewModel @Inject constructor(
       val list = (0 until cats.length()).joinToString(", ") { cats.getString(it) }
       cachedDataCategories = list
       list
-    } catch (_: Exception) { "weather, earthquakes, cat, iss, apod" }
+    } catch (_: Exception) { "air_quality, alerts, apod, asteroids, astronauts, cat, cat_breed, cat_breeds, cme, earth_events, earth_image, earthquakes, earthquakes_significant, epic, fires, geomagnetic, impact_risk, ip_location, iss, nasa_media, nasa_tech, ocean_temp, solar, solar_flares, sunrise_sunset, tides, time, uv, weather, weather_hourly" }
   }
 
   private fun buildToolDefs() = listOf(
