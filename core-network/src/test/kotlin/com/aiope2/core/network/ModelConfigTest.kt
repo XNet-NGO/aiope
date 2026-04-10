@@ -150,7 +150,7 @@ class ModelConfigTest {
   }
 
   @Test
-  fun `default temperature is 0_6`() {
+  fun `default temperature is zero point six`() {
     val config = ModelConfig(modelId = "m")
     assertEquals(0.6f, config.temperature)
   }
