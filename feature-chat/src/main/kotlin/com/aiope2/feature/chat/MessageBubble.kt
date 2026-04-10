@@ -220,15 +220,17 @@ private fun ReasoningBlock(reasoning: String, isStreaming: Boolean) {
       }
       AnimatedVisibility(visible = showContent || isPartial) {
         Box {
-          SelectionContainer {
-            val lines = reasoning.lines()
-            val displayText = if (isPartial && lines.size > 3) lines.takeLast(3).joinToString("\n") else reasoning
-            Text(displayText, fontSize = 12.5.sp, lineHeight = 16.5.sp,
-              color = cs.onSurfaceVariant.copy(alpha = 0.7f),
-              maxLines = if (isPartial) 3 else Int.MAX_VALUE,
-              overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-              modifier = Modifier.padding(top = 6.dp))
-          }
+          val lines = reasoning.lines()
+          val displayText = if (isPartial && lines.size > 3) lines.takeLast(3).joinToString("\n") else reasoning
+          val reasoningTheme = rememberMarkdownTheme(cs).copy(
+            textColor = cs.onSurfaceVariant.copy(alpha = 0.7f),
+            headingColor = cs.onSurfaceVariant.copy(alpha = 0.7f),
+          )
+          FluidMarkdown(
+            content = displayText,
+            theme = reasoningTheme,
+            modifier = Modifier.padding(top = 6.dp)
+          )
           // Fade mask at top when partially collapsed
           if (isPartial) {
             Box(Modifier.matchParentSize().align(Alignment.TopCenter)
