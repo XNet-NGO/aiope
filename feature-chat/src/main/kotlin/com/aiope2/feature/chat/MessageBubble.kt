@@ -181,9 +181,12 @@ private fun AssistantBubble(
             init { init(styles, null); setTextColor(textColor); textSize = 15.5f; setLineSpacing(0f, 1.5f); setPadding(0, 8, 0, 8); tag = "" }
             override fun onMeasure(wSpec: Int, hSpec: Int) {
               super.onMeasure(wSpec, hSpec)
-              layout?.let { l ->
-                val h = l.getLineBottom(l.lineCount - 1) + paddingTop + paddingBottom
-                if (measuredHeight > h + 20) setMeasuredDimension(measuredWidth, h)
+              val l = layout ?: return
+              if (l.lineCount == 0) return
+              val contentH = l.getLineBottom(l.lineCount - 1) + paddingTop + paddingBottom
+              // Only clamp if measured height is more than double the content
+              if (contentH > 0 && measuredHeight > contentH * 2) {
+                setMeasuredDimension(measuredWidth, contentH)
               }
             }
           }
