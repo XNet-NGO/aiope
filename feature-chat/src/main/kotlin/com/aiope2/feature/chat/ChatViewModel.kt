@@ -687,20 +687,7 @@ class ChatViewModel @Inject constructor(
         try { searchPlaces(query) } catch (e2: Exception) { "Error: ${e2.message}" }
       }
     }
-    "search_web" -> try {
-      val query = args["query"]?.toString() ?: ""
-      val p = providerStore.getActive()
-      val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
-      val encoded = java.net.URLEncoder.encode(query, "UTF-8")
-      val u = java.net.URL("$gwBase/v1/data?q=search_web&query=$encoded")
-      val conn = u.openConnection() as java.net.HttpURLConnection
-      if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
-      conn.connectTimeout = 15_000; conn.readTimeout = 15_000
-      val body = (if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream)
-        ?.bufferedReader(Charsets.UTF_8)?.readText() ?: "Error: HTTP ${conn.responseCode}"
-      conn.disconnect()
-      if (body.length > 12000) body.take(12000) + "\n...(truncated)" else body
-    } catch (e: Exception) { "Error: ${e.message}" }
+    "search_web" -> executeToolCall("query_data", mapOf("category" to "search_web", "extra" to (args["query"]?.toString() ?: "")))
     else -> "Unknown tool: $name"
   }
 
