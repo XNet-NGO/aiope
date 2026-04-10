@@ -53,3 +53,4 @@ google-services.json
 
 # Temporary API docs
 docs/api
+secrets.properties
