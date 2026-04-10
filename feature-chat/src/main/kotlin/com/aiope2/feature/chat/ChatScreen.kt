@@ -177,18 +177,23 @@ private fun ChatContent(
 @Composable
 private fun EmptyState(onSend: (String, List<String>) -> Unit, modifier: Modifier = Modifier) {
   val suggestions = listOf(
-    "Explain this error", "Write a Python script to...",
-    "List files in /sdcard", "What's my Android version?"
+    "What's the weather like right now?",
+    "Find the closest coffee shop",
+    "Run apt install python3 in proot",
+    "Fetch and summarize https://news.ycombinator.com",
+    "Show me today's NASA astronomy photo",
+    "List files in /sdcard/Download"
   )
+  val purple = Color(0xFF7B2FBE)
   Column(modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.Center) {
-    Text("AIOPE", fontSize = 24.sp, color = MaterialTheme.colorScheme.primary)
+    Text("AIOPE", fontSize = 24.sp, color = purple)
     Text("What can I help you with?", fontSize = 14.sp,
       color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
     Spacer(Modifier.height(16.dp))
     suggestions.forEach { s ->
       TextButton(onClick = { onSend(s, emptyList()) }, modifier = Modifier.fillMaxWidth()) {
-        Text(s, fontSize = 13.sp, color = MaterialTheme.colorScheme.tertiary)
+        Text(s, fontSize = 13.sp, color = purple)
       }
     }
   }

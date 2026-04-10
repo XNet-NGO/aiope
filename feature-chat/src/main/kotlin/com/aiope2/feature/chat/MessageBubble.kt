@@ -33,9 +33,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.fluid.afm.AFMInitializer
-import com.fluid.afm.markdown.widget.PrinterMarkDownTextView
-import com.fluid.afm.styles.MarkdownStyles
+import com.fluid.compose.FluidMarkdown
+import com.fluid.compose.MarkdownTheme
 
 @Composable
 fun MessageBubble(
@@ -147,67 +146,13 @@ private fun AssistantBubble(
 
     // Content
     if (message.content.isNotBlank()) {
-      val textColor = cs.onSurface.toArgb()
       val content = message.content.trimEnd()
-      val primaryArgb = cs.primary.toArgb()
-      AndroidView(
-        factory = { context ->
-          AFMInitializer.init(context, null, null, null)
-          val density = context.resources.displayMetrics.density
-          // Black backgrounds for high contrast
-          val codeBg = 0xFF0A0A0A.toInt()
-          val codeHeaderBg = 0xFF111111.toInt()
-          val styles = MarkdownStyles.getDefaultStyles()
-            .codeStyle(com.fluid.afm.styles.CodeStyle.create()
-              .codeFontColor(0xFFE0E0E0.toInt())
-              .codeBackgroundColor(codeBg)
-              .titleFontColor(cs.primary.copy(alpha = 0.8f).toArgb())
-              .borderColor(0xFF1A1A1A.toInt())
-              .inlineFontColor(0xFFCE9178.toInt())
-              .inlineCodeBackgroundColor(0xFF111111.toInt()))
-          val styles2 = styles
-          val ts = styles2.tableStyle()
-            .bodyFontSize(11f * density)
-            .headerFontSize(11f * density)
-            .titleFontSize(11f * density)
-            .fontColor(cs.onSurface.toArgb())
-            .titleFontColor(cs.primary.copy(alpha = 0.8f).toArgb())
-            .titleBackgroundColor(codeHeaderBg)
-            .headerBackgroundColor(0xFF0E0E0E.toInt())
-            .bodyBackgroundColor(codeBg)
-            .borderColor(0xFF1A1A1A.toInt())
-          styles2.tableStyle(ts)
-          object : PrinterMarkDownTextView(context) {
-            init { init(styles, null); setTextColor(textColor); textSize = 15.5f; setLineSpacing(0f, 1.5f); setPadding(0, 8, 0, 8); tag = "" }
-            override fun onMeasure(wSpec: Int, hSpec: Int) {
-              super.onMeasure(wSpec, hSpec)
-              val l = layout ?: return
-              if (l.lineCount == 0) return
-              val contentH = l.getLineBottom(l.lineCount - 1) + paddingTop + paddingBottom
-              // Only clamp if measured height is more than double the content
-              if (contentH > 0 && measuredHeight > contentH * 2) {
-                setMeasuredDimension(measuredWidth, contentH)
-              }
-            }
-          }
-        },
-        update = { tv ->
-          val prev = tv.tag as? String ?: ""
-          if (content != prev) {
-            tv.tag = content
-            try {
-              tv.setMarkdownText(content)
-              if (tv.text.isNullOrEmpty() && content.isNotEmpty()) tv.text = content
-            } catch (_: Exception) { tv.text = content }
-            val txt = tv.text
-            if (txt != null) {
-              val len = txt.length; var i = len
-              while (i > 0 && (txt[i - 1] == '\n' || txt[i - 1] == '\u00A0' || txt[i - 1] == ' ')) i--
-              if (i < len) tv.text = txt.subSequence(0, i)
-            }
-          }
-        },
-        modifier = Modifier.fillMaxWidth().wrapContentHeight()
+      val mdTheme = rememberMarkdownTheme(cs)
+      FluidMarkdown(
+        content = content,
+        theme = mdTheme,
+        animateStreaming = true,
+        modifier = Modifier.fillMaxWidth()
       )
     }
 
@@ -407,6 +352,33 @@ private fun MessageMenu(
       }
     }
   }
+}
+
+// ── MarkdownTheme from MaterialTheme ──
+
+@Composable
+private fun rememberMarkdownTheme(cs: ColorScheme): MarkdownTheme = remember(cs) {
+  MarkdownTheme(
+    textColor = cs.onSurface,
+    headingColor = cs.onSurface,
+    linkColor = cs.primary,
+    listBulletColor = cs.onSurfaceVariant,
+    codeTextColor = Color(0xFFE0E0E0),
+    codeBgColor = Color(0xFF0A0A0A),
+    codeBorderColor = Color(0xFF1A1A1A),
+    codeLabelColor = cs.primary.copy(alpha = 0.8f),
+    inlineCodeTextColor = Color(0xFFCE9178),
+    inlineCodeBgColor = Color(0xFF111111),
+    blockQuoteBorderColor = cs.outlineVariant,
+    blockQuoteTextColor = cs.onSurfaceVariant,
+    tableHeaderBgColor = Color(0xFF0E0E0E),
+    tableBodyBgColor = Color(0xFF0A0A0A),
+    tableBorderColor = Color(0xFF1A1A1A),
+    tableHeaderTextColor = cs.onSurface,
+    tableBodyTextColor = cs.onSurface,
+    hrColor = cs.outlineVariant,
+    checkboxColor = cs.primary,
+  )
 }
 
 // ── Utility ──
