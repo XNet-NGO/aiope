@@ -196,7 +196,9 @@ private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = fals
   val listState = rememberLazyListState()
   val scope = rememberCoroutineScope()
   LaunchedEffect(messages.size) {
-    if (messages.isNotEmpty()) scope.launch { listState.animateScrollToItem(messages.size - 1) }
+    if (messages.isNotEmpty()) scope.launch {
+      listState.animateScrollToItem(messages.size - 1, scrollOffset = Int.MAX_VALUE)
+    }
   }
   Box(modifier = modifier) {
     LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 60.dp)) {
