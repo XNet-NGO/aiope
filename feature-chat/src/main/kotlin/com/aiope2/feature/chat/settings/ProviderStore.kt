@@ -19,7 +19,11 @@ class ProviderStore @Inject constructor(@ApplicationContext ctx: Context) {
       val default = ProviderProfile(
         id = "default_gateway", builtinId = "aiope_gateway",
         label = "AIOPE Gateway", apiKey = "aiope-app-383cd9ac-c1bf-487b-9ba1-e0e454ad86fc",
-        selectedModelId = "llama/qwen3.5-2b-heretic", isActive = true
+        selectedModelId = "llama/qwen3.5-2b-heretic", isActive = true,
+        modelConfigs = mapOf("llama/qwen3.5-2b-heretic" to ModelConfig(
+          modelId = "llama/qwen3.5-2b-heretic", toolsOverride = true, visionOverride = true,
+          reasoningEffort = "auto", contextTokens = 128_000, autoCompact = true
+        ))
       )
       save(default); setActive(default.id)
       // Auto-fetch models in background
