@@ -1,235 +1,132 @@
-![cover](https://user-images.githubusercontent.com/24237865/207994894-0cd5307b-f62e-4c38-be89-610a3ed459c0.jpg)
+# AIOPE
 
-<p align="center">
-  <a href="https://opensource.org/licenses/Apache-2.0"><img alt="License" src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"/></a>
-  <a href="https://android-arsenal.com/api?level=21"><img alt="API" src="https://img.shields.io/badge/API-21%2B-brightgreen.svg?style=flat"/></a>
-  <a href="https://github.com/skydoves/chatgpt-android/actions/workflows/android.yml"><img alt="Build Status" src="https://github.com/skydoves/chatgpt-android/actions/workflows/android.yml/badge.svg"/></a>
-  <a href="https://github.com/skydoves"><img alt="Profile" src="https://skydoves.github.io/badges/skydoves.svg"/></a>
-  <a href="https://github.com/doveletter"><img alt="Profile" src="https://skydoves.github.io/badges/dove-letter.svg"/></a>
-</p>
+**AI-powered terminal and assistant for Android** — a chat interface with tool use, a full Linux terminal, live data, location awareness, and native markdown rendering. Runs entirely on-device with any OpenAI-compatible API.
 
-**ChatGPT Android** demonstrates [OpenAI's ChatGPT](https://chat.openai.com/chat) on Android with [Stream Chat SDK for Compose](https://getstream.io/chat/sdk/android/?utm_source=github&utm_medium=referral&utm_content=&utm_campaign=Jaewoong_github_2025).
+## What it does
 
-The primary objective of this repository is to showcase the following:
+AIOPE gives an LLM direct access to your Android device. It can run shell commands, manage files, fetch web pages, query live data (weather, earthquakes, space events), find nearby places, open apps and URLs, and render its responses with full markdown — code blocks, tables, LaTeX, and more.
 
-- Demonstrating [OpenAI's chat APIs](https://platform.openai.com/docs/api-reference/chat).
-- Creating comprehensive UI elements utilizing Jetpack Compose.
-- Incorporating Android architecture components using Jetpack libraries such as Hilt and AppStartup.
-- Executing background tasks efficiently through Kotlin Coroutines and WorkManager.
-- Seamlessly integrating chat systems via the [Stream Chat SDK for Compose](https://getstream.io/chat/sdk/compose?utm_source=Github&utm_medium=Jaewoong_OSS&utm_content=Developer&utm_campaign=Github_April2024_Jaewoong_ChatGPT&utm_term=DevRelOss) to facilitate real-time event handling.
+The AI doesn't just answer questions. It acts.
 
-## 📷 Previews
+## Features
 
-<p align="center">
-<img src="previews/preview0.png" alt="drawing" width="270px" />
-<img src="previews/preview1.png" alt="drawing" width="270px" />
-<img src="previews/preview2.gif" alt="drawing" width="269px" /></br>
-</p>
+### Tool Use (10 tools)
+The AI can autonomously call tools in a loop — reasoning, executing, reading results, and continuing until the task is done.
 
-<a href="https://getstream.io/chat/sdk/compose?utm_source=Github&utm_medium=Jaewoong_OSS&utm_content=Developer&utm_campaign=Github_April2024_Jaewoong_ChatGPT&utm_term=DevRelOss">
-<img src="https://user-images.githubusercontent.com/24237865/138428440-b92e5fb7-89f8-41aa-96b1-71a5486c5849.png" align="right" width="12%"/>
-</a>
+| Tool | What it does |
+|---|---|
+| `run_sh` | Execute Android shell commands |
+| `run_proot` | Run commands in a full Ubuntu proot environment (apt, python, gcc, etc.) |
+| `read_file` | Read any file on the device |
+| `write_file` | Create or overwrite files |
+| `list_directory` | List directory contents |
+| `get_location` | Get current GPS coordinates |
+| `search_location` | Search for places, addresses, businesses |
+| `open_intent` | Open URLs, maps, navigation, phone dialer, email |
+| `fetch_url` | Fetch and extract content from any URL |
+| `query_data` | Live data: weather, air quality, UV, earthquakes, NASA APOD, ISS position, solar flares, fires, and more |
 
-## 🛥 Stream Chat & Video SDKs
-**ChatGPT Android** is built with __[Stream Chat SDK for Compose](https://getstream.io/chat/sdk/android/?utm_source=github&utm_medium=referral&utm_content=&utm_campaign=Jaewoong_github_2025)__ to implement messaging systems. If you’re interested in adding powerful In-App Messaging or real-time Video Chat to your app, check out the __[Android Chat Messaging Tutorial](https://getstream.io/tutorials/android-chat?utm_source=github&utm_medium=referral&utm_content=&utm_campaign=Jaewoong_github_2025)__ or __[Android Video Call Tutorial](https://getstream.io/video/docs/android/tutorials/video-calling?utm_source=github&utm_medium=referral&utm_content=&utm_campaign=Jaewoong_github_2025)__ !
+### Embedded Linux Terminal
+A full terminal emulator with proot-based Ubuntu environment. Install packages with `apt`, run Python scripts, compile C code — all on your phone. The terminal panel sits alongside the chat in split view.
 
-- [Stream Chat SDK for Android on GitHub](https://github.com/getStream/stream-chat-android)
-- [Android Samples for Stream Chat SDK on GitHub](https://github.com/getStream/android-samples)
-- [Stream Chat Compose UI Componenets Guidelines](https://getstream.io/chat/docs/sdk/android/compose/overview/)
+### Native Markdown Rendering
+Powered by [FluidMarkdown](https://github.com/xnet-admin-1/FluidMarkdown) — a native Compose renderer built on CommonMark + GFM:
+- Syntax-highlighted code blocks with copy button
+- GFM tables with header styling
+- LaTeX math (inline and block)
+- Block quotes, task lists, horizontal rules
+- Headings (H1–H6) with proper typography
+- Inline code, bold, italic, strikethrough, links
+- Native text selection across all content
 
-If you're interested in building a real-time meeting room with video/audio calling, audio room, or livestreaming, check out the references below:
+### Streaming & Reasoning
+- Real-time SSE streaming with token-by-token display
+- Reasoning/thinking block support (DeepSeek R1, OpenAI o-series, `<think>` tags)
+- Thinking streams with last-3-lines preview, auto-collapses on completion, toggleable
+- Shimmer animation on "Thinking…" label during reasoning
 
-- [Stream Video SDK for Android on GitHub](https://github.com/getstream/stream-video-android)
-- [Video Call Tutorial](https://getstream.io/video/docs/android/tutorials/video-calling?utm_source=github&utm_medium=referral&utm_content=&utm_campaign=Jaewoong_github_2025) / [Audio Room Tutorial](https://getstream.io/video/docs/android/tutorials/audio-room?utm_source=github&utm_medium=referral&utm_content=&utm_campaign=Jaewoong_github_2025) / [Livestream Tutorial](https://getstream.io/video/docs/android/tutorials/livestream?utm_source=github&utm_medium=referral&utm_content=&utm_campaign=Jaewoong_github_2025)
+### Location Awareness
+- GPS-based location with interactive map cards (Ramani/MapLibre)
+- Nearby place search ("closest coffee shop")
+- Turn-by-turn navigation via intent
 
-## 💻 How to build the project?
+### Live Data Queries
+Weather, hourly forecasts, severe alerts, air quality, UV index, sunrise/sunset, earthquakes, significant quakes, wildfires, asteroid close approaches, solar flares, coronal mass ejections, geomagnetic storms, ISS position, astronauts in space, NASA Astronomy Picture of the Day, NASA media search, NASA tech patents, EPIC daily Earth photos, impact risk assessments, and more.
 
-For proper project setup, it's essential to follow the instructions below. In most cases, you can complete all configuration steps within 10 to 20 minutes:
+### Multi-Provider Support
+Works with any OpenAI-compatible API. Built-in templates for:
 
-1. Go to the __[Stream login page](https://getstream.io/try-for-free?utm_source=github&utm_medium=referral&utm_content=&utm_campaign=Jaewoong_github_2025)__.
+| Provider | Notes |
+|---|---|
+| Pollinations | Free, no API key required |
+| AIOPE Gateway | Custom gateway |
+| OpenAI | GPT-4o, o4-mini |
+| Anthropic | Claude Sonnet 4, Claude 3.5 Haiku |
+| Google AI Studio | Gemini 2.0 Flash (1M context) |
+| DeepSeek | V3, R1 (reasoning) |
+| OpenRouter | Free tier models available |
+| GitHub Models | GPT-4o, DeepSeek R1 |
+| Groq | Llama 3.3 70B (fast inference) |
+| Ollama | Local models |
+| Custom | Any OpenAI-compatible endpoint |
 
-2. If you have your GitHub or Google account, click the **Continue with GitHub** or **Continue with Google** button and you can sign up within a couple of seconds. 
+Model fetching from provider APIs. Per-model configuration for context window, temperature, reasoning effort, vision, and tool use.
 
-![stream](figures/stream0.png)
+### Conversation Management
+- Multiple conversations with auto-generated titles
+- Edit & resend user messages
+- Retry from any point (deletes subsequent messages)
+- Fork conversations
+- Auto-compact when approaching context limits
+- Image and file attachments (camera, gallery, file picker)
+- Speech-to-text input
+- LaTeX document export to PDF
 
-3. Go to the __[Dashboard](https://dashboard.getstream.io?utm_source=github&utm_medium=referral&utm_content=&utm_campaign=Jaewoong_github_2025)__ and click the **Create App** button like the below.
+## Architecture
 
-![stream](figures/stream1.png)
-
-4. Fill in the blanks like the below and click the **Create App** button.
-
-![stream](figures/stream2.png)
-
-5. You will see the **Key** like the figure below and then copy it.
-
-![stream](figures/stream3.png)
-
-6. Create a new file named **secrets.properties** on the root directory of this Android project, and add the key to the `secrets.properties` file like the below:
-
-![stream](https://github.com/skydoves/gemini-android/blob/main/figures/stream5.png)
-
-```gradle
-STREAM_API_KEY=..
+```
+app/                          # Android app module
+core-designsystem/            # Theme, colors, typography
+core-network/                 # LLM provider, SSE streaming, API client
+core-terminal/                # Terminal emulator, proot bootstrap, shell
+feature-chat/                 # Chat UI, ViewModel, tools, settings
+  engine/                     # StreamingOrchestrator, tool execution loop
+  location/                   # GPS provider, map card, geocoding
+  settings/                   # Provider config, model config, proot setup
 ```
 
-7. Go to your __[Dashboard](https://dashboard.getstream.io?utm_source=github&utm_medium=referral&utm_content=&utm_campaign=Jaewoong_github_2025)__ again and click your App.
+**Key components:**
+- `StreamingOrchestrator` — SSE parser with parallel tool call accumulation, reasoning extraction (`<think>`/`<thought>` tags + `reasoning_content` field), and automatic tool loop
+- `ChatViewModel` — conversation state, message persistence (Room), tool execution, auto-compact
+- `FluidMarkdown` — native Compose markdown renderer (AnnotatedString-based, no WebView)
+- `TerminalSession` — proot-backed terminal with PTY, keyboard handling, and shell discovery
 
-9. In the **Overview** menu, you can find the **Authentication** category by scrolling to the middle of the page.
-10. Switch on the **Disable Auth Checks** option and click the **Submit** button like the figure below.
+## UI Design
 
-![stream](figures/stream4.png)
+Dark green background (`#132E1F`) with black containers (`#0A0A0A`) for high contrast. Inspired by [Kelivo](https://github.com/Yubico/kelivo)'s chat design patterns:
 
-11. Click the **Explorer** tab on the left side menu.
+- User bubbles: right-aligned, 75% width, `primary.alpha(0.15)`, borderRadius 16
+- Assistant messages: full-width, no background
+- Text: 15.5sp with 1.5 line height
+- Code blocks: black background, syntax highlighting, copy button
+- Reasoning: collapsible with shimmer animation, last-3-lines streaming preview
+- Tool calls: card-style with expandable results
+- Action row: copy, retry, menu below each assistant message
 
-12. Click **users** -> **Create New User** button sequentially and add fill in the user like the below:
+## Setup
 
-![stream](figures/stream6.png)
+1. Clone and open in Android Studio
+2. Build and install on device (minSdk 26, targetSdk 34)
+3. Open Settings → add a provider (Pollinations works out of the box with no API key)
+4. For the Linux terminal: Settings → install proot environment
 
-- User Name: `Chat GPT`
-- User ID: `70ef052a-da88-4451-af92-99f7ed335a71`
+## Requirements
 
-13. Now, it's time to set up the OpenAI API key. Go to __[OpenAI API Dashboard](https://platform.openai.com/api-keys)__, login with your Google account and click **Start verification** to verify your phone number to create an API key.
+- Android 8.0+ (API 26)
+- Internet connection for LLM API calls
+- GPS for location features (optional)
+- Camera for photo input (optional)
 
-![stream](figures/stream7.png)
+## License
 
-14. After verifying your phone number, click the **Create new secret key** on the page like the image below and create your API key:
-
-![stream](figures/stream8.png)
-
-15. Copy and paste your API key to the `secrets.properties` file as named `GPT_API_KEY` under the `STREAM_API_KEY` field:
-
-![stream](figures/stream9.png)
-
-```gradle
-GPT_API_KEY=..
-```
-
-16. Unlock Rate limits for OpenAI APIs
-
-As per the guidelines outlined in their [Rate limits](https://platform.openai.com/account/limits) documentation, access to the free tier of the API is __granted after a minimum expenditure of $5 since the creation of your account__. That means, you should register your payment method to the OpenAI and purchase initial credits. 
-
-![stream](figures/stream10.png)
-
-So you should go to the [OpenAI Billings](https://platform.openai.com/account/billing/overview) and click the **Add payment details** button like the image below:
-
-![stream](figures/stream11.png)
-
-17. Once you've added your payment deatils, you'll able to see the **Add to creadit balance** button like the image below:
-
-![stream](figures/stream12.png)
-
-Next, click the **Add to credit balance** button to purchase the initial credit. As you've discovered in the previous step, the minimum credit starts from $5. Therefore, if you only intend to utilize the API limits for testing or building a side project, you can opt for the minimum pricing. Also, not that it's advisable to disable the automatic recharge option to avoid unexpected charges.
-
-![stream](figures/stream13.png)
-
-18. Once you've completed all those steps above, now build, run and enjoy your the project!
-
-## ⚙️ Troubleshooting
-
-You can typically find the reasons behind your error code by referring to the [OpenAI Error code documentation](https://platform.openai.com/docs/guides/error-codes).
-
-### 401 Error
-
-If you encounter 401 errors while chatting with ChatGPT app, as shown in the image below, it's crucial to verify the correctness of your OpenAI API key. Ensure that there are no typos in your API key and that it has been correctly copied and pasted into the `secrets.properties` file, as outlined in the guidelines above.
-
-![stream](figures/stream14.png)
-
-### 429 Error
-
-If you encounter this error from the outset, it's likely that your rate limits do not meet the requirements. Please revisit step 16 in the guidelines above for further instructions.
-
-## 🛠 Tech Stack & Open Source Libraries
-- Minimum SDK level 21.
-- 100% [Jetpack Compose](https://developer.android.com/jetpack/compose) based + [Coroutines](https://github.com/Kotlin/kotlinx.coroutines) + [Flow](https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines.flow/) for asynchronous and cold streams.
-- [Compose Chat SDK for Messaging](https://getstream.io/chat/sdk/compose?utm_source=github&utm_medium=referral&utm_content=&utm_campaign=Jaewoong_github_2025): The Jetpack Compose Chat Messaging SDK is built on a low-level chat client and provides modular, customizable Compose UI components that you can easily drop into your app.
-- [OpenAI Chat API](https://platform.openai.com/docs/api-reference/chat): Given a list of messages comprising a conversation, the model will return a response.
-- Jetpack
-  - Compose: Android’s modern toolkit for building native UI.
-  - ViewModel: UI related data holder and lifecycle aware.
-  - App Startup: Provides a straightforward, performant way to initialize components at application startup.
-  - Navigation: For navigating screens and [Hilt Navigation Compose](https://developer.android.com/jetpack/compose/libraries#hilt) for injecting dependencies.
-  - Room: Constructs Database by providing an abstraction layer over SQLite to allow fluent database access.
-  - [Hilt](https://dagger.dev/hilt/): Dependency Injection.
-  - [WorkManager](https://developer.android.com/topic/libraries/architecture/workmanager): To achieve background processing with scheduling.
-- [Landscapist Glide](https://github.com/skydoves/landscapist#glide), [animation](https://github.com/skydoves/landscapist#animation), [placeholder](https://github.com/skydoves/landscapist#placeholder): Jetpack Compose image loading library that fetches and displays network images with Glide, Coil, and Fresco.
-- [Retrofit2 & OkHttp3](https://github.com/square/retrofit): Construct the REST APIs and paging network data.
-- [Sandwich](https://github.com/skydoves/Sandwich): Construct a lightweight and modern response interface to handle network payload for Android.
-- [Moshi](https://github.com/square/moshi/): A modern JSON library for Kotlin and Java.
-- [ksp](https://github.com/google/ksp): Kotlin Symbol Processing API.
-- [Balloon](https://github.com/skydoves/balloon): Modernized and sophisticated tooltips, fully customizable with an arrow and animations for Android.
-- [viewmodel-lifecycle](https://github.com/skydoves/viewmodel-lifecycle): ViewModel Lifecycle allows you to track and observe Jetpack's ViewModel lifecycle changes.
-- [StreamLog](https://github.com/GetStream/stream-log): A lightweight and extensible logger library for Kotlin and Android.
-- [Baseline Profiles](https://medium.com/proandroiddev/improve-your-android-app-performance-with-baseline-profiles-297f388082e6): To improve app performance by including a list of classes and methods specifications in your APK that can be used by Android Runtime.
-
-## 🏛️ Architecture
-
-**ChatGPT Android** follows the [Google's official architecture guidance](https://developer.android.com/topic/architecture).
-
-![architecture](figures/figure0.png)
-
-**ChatGPT Android** was built with [Guide to app architecture](https://developer.android.com/topic/architecture), so it would be a great sample to show how the architecture works in real-world projects.<br>
-
-The overall architecture is composed of two layers; UI Layer and the data layer. Each layer has dedicated components and they each have different responsibilities.
-The arrow means the component has a dependency on the target component following its direction.
-
-### Architecture Overview
-
-![layer](figures/figure1.png)
-
-Each layer has different responsibilities below. Basically, they follow [unidirectional event/data flow](https://developer.android.com/topic/architecture/ui-layer#udf).
-
-### UI Layer
-
-![layer](figures/figure2.png)
-
-The UI Layer consists of UI elements like buttons, menus, tabs that could interact with users and [ViewModel](https://developer.android.com/topic/libraries/architecture/viewmodel) that holds app states and restores data when configuration changes.
-
-### Data Layer
-
-![layer](figures/figure3.png)
-
-The data Layer consists of repositories, which include business logic, such as querying data from the local database and requesting remote data from the network. It is implemented as an offline-first source of business logic and follows the [single source of truth](https://en.wikipedia.org/wiki/Single_source_of_truth) principle.<br>
-
-For more information about the overall architecture, check out **[Build a Real-Time WhatsApp Clone With Jetpack Compose](https://getstream.io/blog/build-whatsapp-clone/)**.
-
-## Modularization
-
-![modules](figures/figure4.png)
-
-**ChatGPT Android** adopted modularization strategies below:
-
-- **Reusability**: Modulizing reusable codes properly enable opportunities for code sharing and limits code accessibility in other modules at the same time.
-
-- **Parallel Building**: Each module can be run in parallel and it reduces the build time.
-
-- **Decentralized focusing**: Each developer team can assign their dedicated module and they can focus on their own modules.
-
-
-## 💯 MAD Score
-
-![summary](https://user-images.githubusercontent.com/24237865/158918011-bc766482-ec83-47dd-9237-d8a226cab263.png)
-
-## 🤝 Contribution
-
-Most of the features are not completed except the chat feature, so anyone can contribute and improve this project following the [Contributing Guideline](https://github.com/skydoves/chatgpt-android/blob/main/CONTRIBUTING.md).
-
-## Find this repository useful? 💙
-Support it by joining __[stargazers](https://github.com/skydoves/chatgpt-android/stargazers)__ for this repository. :star: <br>
-Also, __[follow me](https://github.com/skydoves)__ on GitHub for my next creations! 🤩
-
-# License
-```xml
-Designed and developed by 2022 skydoves (Jaewoong Eum)
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-   http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
+Apache License 2.0
