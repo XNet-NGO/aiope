@@ -257,18 +257,10 @@ private fun MessageMenu(
       Icon(Icons.Default.MoreVert, "More", modifier = Modifier.size(16.dp), tint = iconTint)
     }
     DropdownMenu(expanded = showMenu, onDismissRequest = { onShowMenu(false) }) {
-      DropdownMenuItem(text = { Text("Copy") }, onClick = {
+      if (isUser) DropdownMenuItem(text = { Text("Copy") }, onClick = {
         onShowMenu(false)
-        val full = buildString {
-          if (message.reasoning.isNotEmpty()) append("[Thinking]\n${message.reasoning.joinToString("\n\n")}\n\n")
-          message.toolCalls.forEachIndexed { i, c ->
-            append("$c\n")
-            if (i < message.toolResults.size) append("${message.toolResults[i]}\n\n")
-          }
-          append(message.content)
-        }
         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(ClipData.newPlainText("message", full))
+        cm.setPrimaryClip(ClipData.newPlainText("message", message.content))
         Toast.makeText(ctx, "Copied", Toast.LENGTH_SHORT).show()
       })
       if (isUser && onEdit != null) DropdownMenuItem(text = { Text("Edit & Resend") }, onClick = { onShowMenu(false); onEdit() })
