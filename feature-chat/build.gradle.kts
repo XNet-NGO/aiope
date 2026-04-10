@@ -20,8 +20,8 @@ dependencies {
 
   // FluidMarkdown (streaming markdown renderer)
   implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
-  implementation("com.atlassian.commonmark:commonmark:0.13.0")
-  implementation("com.atlassian.commonmark:commonmark-ext-gfm-tables:0.13.0")
+  implementation("com.atlassian.commonmark:commonmark:0.17.0")
+  implementation("com.atlassian.commonmark:commonmark-ext-gfm-tables:0.17.0")
   implementation("com.vdurmont:emoji-java:5.1.1")
   implementation("androidx.recyclerview:recyclerview:1.3.2")
   implementation(libs.androidx.appcompat)
