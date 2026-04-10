@@ -200,13 +200,13 @@ private fun AssistantBubble(
               while (i > 0 && (txt[i - 1] == '\n' || txt[i - 1] == '\u00A0' || txt[i - 1] == ' ')) i--
               if (i < len) tv.text = txt.subSequence(0, i)
             }
-            // Fix inflated height from table replacement spans (one-shot)
-            tv.post {
-              val l = tv.layout ?: return@post
-              val contentH = l.getLineBottom(l.lineCount - 1) + tv.paddingTop + tv.paddingBottom
-              if (tv.height > contentH + 50) {
-                tv.layoutParams?.let { lp -> lp.height = contentH; tv.layoutParams = lp }
-              }
+          }
+          // Always fix inflated height from table replacement spans
+          tv.post {
+            val l = tv.layout ?: return@post
+            val contentH = l.getLineBottom(l.lineCount - 1) + tv.paddingTop + tv.paddingBottom
+            if (tv.height > contentH + 50) {
+              tv.layoutParams?.let { lp -> lp.height = contentH; tv.layoutParams = lp }
             }
           }
         },
