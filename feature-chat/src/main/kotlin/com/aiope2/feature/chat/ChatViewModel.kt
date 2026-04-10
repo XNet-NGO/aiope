@@ -331,7 +331,7 @@ class ChatViewModel @Inject constructor(
           val currentLen = sb.length
           val hasNewLine = chunk.content.contains('\n')
           val lineWorth = currentLen - lastUiLength >= charsPerLine
-          if (chunk.isDone || chunk.error != null || hasNewLine || lineWorth || chunk.toolCalls != null || chunk.toolResults != null) {
+          if (chunk.isDone || chunk.error != null || hasNewLine || lineWorth || chunk.toolCalls != null || chunk.toolResults != null || chunk.reasoning != null) {
             lastUiLength = currentLen
             withContext(Dispatchers.Main) {
             _messages.value = _messages.value.toMutableList().also {
