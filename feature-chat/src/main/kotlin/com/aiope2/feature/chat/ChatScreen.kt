@@ -233,9 +233,7 @@ private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = fals
         }
         Spacer(Modifier.height(14.dp))
         IconButton(onClick = { scope.launch {
-          listState.scrollToItem(messages.size - 1)
-          // Scroll past the last item to reach absolute bottom
-          listState.scroll { scrollBy(10000f) }
+          listState.animateScrollToItem(messages.size - 1)
         } }, modifier = btnMod, colors = btnColors) {
           Text("\u25BC", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
