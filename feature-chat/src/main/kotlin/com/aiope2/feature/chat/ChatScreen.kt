@@ -106,7 +106,7 @@ private fun ChatContent(
   var showModelPicker by remember { mutableStateOf(false) }
   Column(modifier) {
     // ── Toolbar ──
-    Surface(color = Color(0xFF0A0A0A)) {
+    Surface(color = Color(0xFF0F1A14)) {
     Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
       // Left: Chats
       TextButton(onClick = onChats, modifier = Modifier.align(Alignment.CenterStart),
@@ -166,7 +166,7 @@ private fun ChatContent(
     HorizontalDivider(color = Color(0xFF1A1A1A))
 
     // ── Input ──
-    Surface(color = Color(0xFF0A0A0A)) {
+    Surface(color = Color(0xFF0F1A14)) {
     ChatInput(onSend = onSend, onStop = onStop, isStreaming = isStreaming, editText = editText, onEditTextChange = onEditTextChange)
     }
   }
