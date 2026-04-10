@@ -562,7 +562,8 @@ class ChatViewModel @Inject constructor(
     StreamingOrchestrator.ToolDef("open_intent", "Open a URL, app, or navigation intent from the device. Use for opening maps, web pages, dialing, etc. Examples: 'https://google.com', 'geo:43.6,-116.3', 'google.navigation:q=123+Main+St', 'tel:5551234567'", org.json.JSONObject("""{"type":"object","properties":{"uri":{"type":"string","description":"URI to open. Supports https://, geo:, google.navigation:q=, tel:, mailto:, etc."}},"required":["uri"]}""")),
     StreamingOrchestrator.ToolDef("fetch_url", "Fetch a URL. Returns extracted text and any images found as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them to the user.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text+images from HTML"}},"required":["url"]}""")),
     StreamingOrchestrator.ToolDef("query_data", "Query live real-time data. Returns JSON and any images as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them. Automatically uses device GPS for location-based queries. Pass 'extra' for searches (nasa_media, nasa_tech) or station IDs (tides, ocean_temp) or breed IDs (cat_breed). Available categories: ${fetchDataCategories()}", org.json.JSONObject("""{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query, station ID, or breed ID depending on category"}},"required":["category"]}""")),
-    StreamingOrchestrator.ToolDef("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}"""))
+    StreamingOrchestrator.ToolDef("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}""")),
+    StreamingOrchestrator.ToolDef("search_web", "Search the web for current information, news, answers, or any topic. Returns results with titles, URLs, and snippets. Use when the user asks about recent events, facts you're unsure of, or anything requiring up-to-date information.", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}"""))
   )
 
   private val locationProvider by lazy { com.aiope2.feature.chat.location.LocationProvider(getApplication()) }
@@ -686,6 +687,20 @@ class ChatViewModel @Inject constructor(
         try { searchPlaces(query) } catch (e2: Exception) { "Error: ${e2.message}" }
       }
     }
+    "search_web" -> try {
+      val query = args["query"]?.toString() ?: ""
+      val p = providerStore.getActive()
+      val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
+      val encoded = java.net.URLEncoder.encode(query, "UTF-8")
+      val u = java.net.URL("$gwBase/v1/data?q=search_web&query=$encoded")
+      val conn = u.openConnection() as java.net.HttpURLConnection
+      if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+      conn.connectTimeout = 15_000; conn.readTimeout = 15_000
+      val body = (if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream)
+        ?.bufferedReader(Charsets.UTF_8)?.readText() ?: "Error: HTTP ${conn.responseCode}"
+      conn.disconnect()
+      if (body.length > 12000) body.take(12000) + "\n...(truncated)" else body
+    } catch (e: Exception) { "Error: ${e.message}" }
     else -> "Unknown tool: $name"
   }
 
