@@ -22,7 +22,7 @@ class ProviderStore @Inject constructor(@ApplicationContext ctx: Context) {
         selectedModelId = "llama/qwen3.5-2b-heretic", isActive = true,
         modelConfigs = mapOf("llama/qwen3.5-2b-heretic" to ModelConfig(
           modelId = "llama/qwen3.5-2b-heretic", toolsOverride = true, visionOverride = true,
-          reasoningEffort = "auto", contextTokens = 128_000, autoCompact = true
+          reasoningEffort = "auto", contextTokens = 128_000, autoCompact = true, maxTokens = 16_000
         ))
       )
       save(default); setActive(default.id)
