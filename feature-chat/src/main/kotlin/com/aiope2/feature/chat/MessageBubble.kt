@@ -278,21 +278,23 @@ private fun ReasoningBlock(reasoning: String, isStreaming: Boolean) {
       AnimatedVisibility(visible = showContent || isPartial) {
         Box {
           SelectionContainer {
-            Text(reasoning, fontSize = 12.5.sp, lineHeight = 16.5.sp,
+            val lines = reasoning.lines()
+            val displayText = if (isPartial && lines.size > 3) lines.takeLast(3).joinToString("\n") else reasoning
+            Text(displayText, fontSize = 12.5.sp, lineHeight = 16.5.sp,
               color = cs.onSurfaceVariant.copy(alpha = 0.7f),
               maxLines = if (isPartial) 3 else Int.MAX_VALUE,
               overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
               modifier = Modifier.padding(top = 6.dp))
           }
-          // Fade mask at bottom when partially collapsed
+          // Fade mask at top when partially collapsed
           if (isPartial) {
-            Box(Modifier.matchParentSize().align(Alignment.BottomCenter)
+            Box(Modifier.matchParentSize().align(Alignment.TopCenter)
               .drawWithContent {
                 drawContent()
                 drawRect(
                   brush = Brush.verticalGradient(
-                    colors = listOf(Color.Transparent, Color(0xFF0A0A0A)),
-                    startY = size.height * 0.4f, endY = size.height
+                    colors = listOf(Color(0xFF0A0A0A), Color.Transparent),
+                    startY = 0f, endY = size.height * 0.5f
                   )
                 )
               })
