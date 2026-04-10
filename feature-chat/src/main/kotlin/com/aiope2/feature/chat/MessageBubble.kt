@@ -177,13 +177,15 @@ private fun AssistantBubble(
             .bodyBackgroundColor(codeBg)
             .borderColor(0xFF1A1A1A.toInt())
           styles2.tableStyle(ts)
-          PrinterMarkDownTextView(context).apply {
-            init(styles, null)
-            setTextColor(textColor)
-            textSize = 15.5f
-            setLineSpacing(0f, 1.5f)
-            setPadding(0, 8, 0, 8)
-            tag = ""
+          object : PrinterMarkDownTextView(context) {
+            init { init(styles, null); setTextColor(textColor); textSize = 15.5f; setLineSpacing(0f, 1.5f); setPadding(0, 8, 0, 8); tag = "" }
+            override fun onMeasure(wSpec: Int, hSpec: Int) {
+              super.onMeasure(wSpec, hSpec)
+              layout?.let { l ->
+                val h = l.getLineBottom(l.lineCount - 1) + paddingTop + paddingBottom
+                if (measuredHeight > h + 20) setMeasuredDimension(measuredWidth, h)
+              }
+            }
           }
         },
         update = { tv ->
@@ -199,14 +201,6 @@ private fun AssistantBubble(
               val len = txt.length; var i = len
               while (i > 0 && (txt[i - 1] == '\n' || txt[i - 1] == '\u00A0' || txt[i - 1] == ' ')) i--
               if (i < len) tv.text = txt.subSequence(0, i)
-            }
-          }
-          // Always fix inflated height from table replacement spans
-          tv.post {
-            val l = tv.layout ?: return@post
-            val contentH = l.getLineBottom(l.lineCount - 1) + tv.paddingTop + tv.paddingBottom
-            if (tv.height > contentH + 50) {
-              tv.layoutParams?.let { lp -> lp.height = contentH; tv.layoutParams = lp }
             }
           }
         },
