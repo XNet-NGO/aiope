@@ -28,13 +28,6 @@ class ChatViewModel @Inject constructor(
   val providerStore: ProviderStore
 ) : AndroidViewModel(application) {
 
-  companion object {
-    private const val DEFAULT_SYSTEM_PROMPT = "You are AIOPE, an AI assistant running on Android with tool access. " +
-      "When tool results contain markdown images like ![alt](url), include them in your response exactly as-is so they render inline. " +
-      "Always use markdown image syntax ![description](url) to display images — never output bare URLs. " +
-      "Use markdown formatting in all responses."
-  }
-
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
   val messages = _messages.asStateFlow()
 
@@ -248,7 +241,7 @@ class ChatViewModel @Inject constructor(
 
         // Build messages (trim to contextTokens limit, ~4 chars/token)
         val chatMessages = mutableListOf<Pair<String, String>>()
-        chatMessages.add("system" to (mc.systemPromptOverride?.takeIf { it.isNotBlank() } ?: DEFAULT_SYSTEM_PROMPT))
+        mc.systemPromptOverride?.let { if (it.isNotBlank()) chatMessages.add("system" to it) }
         val maxChars = mc.contextTokens * 4L
         var charCount = 0L
         val history = _messages.value.dropLast(1).reversed()
@@ -496,7 +489,7 @@ class ChatViewModel @Inject constructor(
         
 
         val chatMessages = mutableListOf<Pair<String, String>>()
-        chatMessages.add("system" to (mc.systemPromptOverride?.takeIf { it.isNotBlank() } ?: DEFAULT_SYSTEM_PROMPT))
+        mc.systemPromptOverride?.let { if (it.isNotBlank()) chatMessages.add("system" to it) }
         _messages.value.dropLast(1).forEach { msg ->
           when (msg.role) {
             Role.USER -> chatMessages.add("user" to msg.content)
@@ -567,8 +560,8 @@ class ChatViewModel @Inject constructor(
     StreamingOrchestrator.ToolDef("list_directory", "List directory", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""")),
     StreamingOrchestrator.ToolDef("get_location", "Get the device's current GPS location. Call this FIRST when the user asks about nearby places or 'closest' anything, then use the coordinates with search_location.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
     StreamingOrchestrator.ToolDef("open_intent", "Open a URL, app, or navigation intent from the device. Use for opening maps, web pages, dialing, etc. Examples: 'https://google.com', 'geo:43.6,-116.3', 'google.navigation:q=123+Main+St', 'tel:5551234567'", org.json.JSONObject("""{"type":"object","properties":{"uri":{"type":"string","description":"URI to open. Supports https://, geo:, google.navigation:q=, tel:, mailto:, etc."}},"required":["uri"]}""")),
-    StreamingOrchestrator.ToolDef("fetch_url", "Fetch content from a URL. Returns raw text for txt/md/json/css/xml, or extracted readable text for HTML pages. Use for reading web pages, APIs, raw files, documentation, etc.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text from HTML"}},"required":["url"]}""")),
-    StreamingOrchestrator.ToolDef("query_data", "Query live real-time data. Automatically uses device GPS location. Pass 'extra' for searches (nasa_media, nasa_tech) or station IDs (tides, ocean_temp) or breed IDs (cat_breed). Available categories: ${fetchDataCategories()}", org.json.JSONObject("""{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query, station ID, or breed ID depending on category"}},"required":["category"]}""")),
+    StreamingOrchestrator.ToolDef("fetch_url", "Fetch a URL. Returns extracted text and any images found as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them to the user.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text+images from HTML"}},"required":["url"]}""")),
+    StreamingOrchestrator.ToolDef("query_data", "Query live real-time data. Returns JSON and any images as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them. Automatically uses device GPS for location-based queries. Pass 'extra' for searches (nasa_media, nasa_tech) or station IDs (tides, ocean_temp) or breed IDs (cat_breed). Available categories: ${fetchDataCategories()}", org.json.JSONObject("""{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query, station ID, or breed ID depending on category"}},"required":["category"]}""")),
     StreamingOrchestrator.ToolDef("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}"""))
   )
 
