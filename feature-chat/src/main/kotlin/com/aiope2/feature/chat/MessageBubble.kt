@@ -146,6 +146,7 @@ fun MessageBubble(
                     if (tv.text.isNullOrEmpty() && content.isNotEmpty()) tv.text = content
                   } catch (_: Exception) { tv.text = content }
                 }
+                tv.requestLayout()
               },
               modifier = Modifier.fillMaxWidth().wrapContentHeight()
             )
