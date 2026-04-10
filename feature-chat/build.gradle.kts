@@ -18,12 +18,12 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtimeCompose)
   implementation(libs.androidx.lifecycle.viewModelCompose)
 
-  // FluidMarkdown (streaming markdown renderer)
+  // UniversalMarkdown (streaming markdown renderer)
   implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
-  implementation("com.atlassian.commonmark:commonmark:0.13.0")
-  implementation("com.atlassian.commonmark:commonmark-ext-gfm-tables:0.13.0")
+  implementation("com.atlassian.commonmark:commonmark:0.17.0")
+  implementation("com.atlassian.commonmark:commonmark-ext-gfm-tables:0.17.0")
   implementation("com.vdurmont:emoji-java:5.1.1")
-  implementation("androidx.recyclerview:recyclerview:1.3.2")
+  implementation("androidx.recyclerview:recyclerview:1.4.0")
   implementation(libs.androidx.appcompat)
   implementation("ru.noties:jlatexmath-android:0.2.0")
   implementation("ru.noties:jlatexmath-android-font-cyrillic:0.2.0")
@@ -34,9 +34,6 @@ dependencies {
 
   // maps
   implementation("org.ramani-maps:ramani-maplibre:0.10.0")
-
-  // maps
-  implementation("org.ramani-maps:ramani-maplibre:0.6.0")
 
   // room
   implementation(libs.androidx.room.runtime)
