@@ -23,16 +23,13 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build release APK (arm64-v8a)
-        run: ./gradlew :app:assembleRelease -Pandroid.injected.build.abi=arm64-v8a -x spotlessCheck -x spotlessKotlinCheck
+      - name: Build APK (arm64-v8a)
+        run: ./gradlew :app:assembleDebug -x spotlessCheck -x spotlessKotlinCheck
 
-      - name: Sign APK with debug key
+      - name: Rename APK
         run: |
-          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
-          if [ -z "$APK" ]; then echo "No APK found"; exit 1; fi
-          # Use zipalign + debug signing for pre-release
-          ${ANDROID_HOME}/build-tools/35.0.0/zipalign -v -p 4 "$APK" app-aligned.apk || cp "$APK" app-aligned.apk
-          ${ANDROID_HOME}/build-tools/35.0.0/apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out AIOPE-${GITHUB_REF_NAME}-arm64-v8a.apk app-aligned.apk || cp app-aligned.apk AIOPE-${GITHUB_REF_NAME}-arm64-v8a.apk
+          APK=$(find app/build/outputs/apk -name "*.apk" | head -1)
+          cp "$APK" AIOPE-${GITHUB_REF_NAME}-arm64-v8a.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
