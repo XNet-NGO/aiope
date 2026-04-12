@@ -46,7 +46,7 @@ class StreamingOrchestrator(
     }
     // After first request, flatten multimodal content arrays to strings for compatibility
     var firstRequest = true
-    var maxRounds = 6
+    var maxRounds = 100
 
     while (maxRounds-- > 0) {
       if (!firstRequest) {
@@ -65,9 +65,19 @@ class StreamingOrchestrator(
         }
       }
       firstRequest = false
+      // Trim older tool results to reduce payload — keep last 3 full, truncate rest
+      val toolMsgIndices = rawMessages.indices.filter { rawMessages[it].optString("role") == "tool" }
+      if (toolMsgIndices.size > 3) {
+        for (i in toolMsgIndices.dropLast(3)) {
+          val msg = rawMessages[i]
+          val content = msg.optString("content", "")
+          if (content.length > 500) msg.put("content", content.take(500) + "...(truncated)")
+        }
+      }
       val body = buildRequestBody(rawMessages)
       val conn = openConnection(body)
 
+      android.util.Log.d("AIOPE2", "SSE conn responseCode=${conn.responseCode} url=${conn.url}")
       if (conn.responseCode !in 200..299) {
         val err = conn.errorStream?.bufferedReader()?.readText()?.take(300) ?: "HTTP ${conn.responseCode}"
         emit(ChatStreamChunk(error = "Error ${conn.responseCode}: $err", isDone = true))
@@ -86,7 +96,7 @@ class StreamingOrchestrator(
           val line = reader.readLine() ?: break
           if (!line.startsWith("data:")) continue
           val data = line.removePrefix("data:").trim()
-          if (data == "[DONE]") break
+          if (data == "[DONE]") { android.util.Log.d("AIOPE2", "SSE [DONE] received"); break }
           if (data.isEmpty()) continue
 
           try {
@@ -96,6 +106,7 @@ class StreamingOrchestrator(
             val choice = choices.getJSONObject(0)
             val delta = choice.optJSONObject("delta") ?: continue
             val finishReason = choice.optString("finish_reason", "")
+            android.util.Log.d("AIOPE2", "SSE chunk: finish=$finishReason hasContent=${delta.has("content")} hasTools=${delta.has("tool_calls")}")
 
             // Text content
             var content = delta.optString("content", "").let { if (it == "null") "" else it }
@@ -143,7 +154,7 @@ class StreamingOrchestrator(
             if (finishReason == "tool_calls" || finishReason == "stop" && toolAcc.isNotEmpty()) {
               hasToolCalls = toolAcc.isNotEmpty()
             }
-          } catch (_: Exception) { /* skip malformed chunks */ }
+          } catch (e: Exception) { android.util.Log.e("AIOPE2", "SSE parse error: ${e.message} data=${data.take(100)}") }
         }
       } finally {
         reader.close()
@@ -200,7 +211,7 @@ class StreamingOrchestrator(
           rawMessages.add(JSONObject().apply {
             put("role", "tool")
             put("tool_call_id", r.id)
-            put("content", r.result.take(4000))
+            put("content", r.result.take(16000))
           })
         }
 
@@ -250,9 +261,10 @@ class StreamingOrchestrator(
     conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
     conn.setRequestProperty("Accept", "text/event-stream")
     if (apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $apiKey")
-    conn.connectTimeout = 30_000
-    conn.readTimeout = 120_000
+    conn.connectTimeout = 15_000
+    conn.readTimeout = 300_000
     conn.doOutput = true
+    conn.setChunkedStreamingMode(0)
     conn.outputStream.write(body.toByteArray(Charsets.UTF_8))
     return conn
   }

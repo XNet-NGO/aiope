@@ -67,7 +67,7 @@ fun SettingsScreen(providerStore: ProviderStore, onBack: () -> Unit) {
 @Composable
 private fun ProfileList(profiles: List<ProviderProfile>, activeId: String, providerStore: ProviderStore,
   onSelect: (ProviderProfile) -> Unit, onEdit: (ProviderProfile) -> Unit, onAdd: () -> Unit, onTasks: () -> Unit, onBack: () -> Unit) {
-  Scaffold(topBar = { TopAppBar(title = { Text("Providers") },
+  Scaffold(topBar = { TopAppBar(title = { Text("Settings") },
     navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
     actions = { IconButton(onClick = onAdd) { Icon(Icons.Default.Add, "Add") } })
   }) { pad ->
@@ -228,7 +228,9 @@ private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
         Spacer(Modifier.width(8.dp))
         IconButton(onClick = {
           if (customModelText.isNotBlank()) {
-            val nm = ModelDef(customModelText.trim(), customModelText.trim().substringAfterLast("/"), 128_000)
+            val mid = customModelText.trim()
+            val modality = when { mid.startsWith("cf-image/") || mid.contains("/image/") -> "image"; mid.startsWith("cf-audio/") -> "audio"; else -> "text" }
+            val nm = ModelDef(mid, mid.substringAfterLast("/"), 128_000, supportsTools = modality == "text", outputModality = modality)
             models = listOf(nm) + models
             p = p.copy(selectedModelId = nm.id); mc = p.modelConfigs[nm.id] ?: ModelConfig(modelId = nm.id)
             customModelText = ""
@@ -312,7 +314,7 @@ private fun ProfileEditor(profile: ProviderProfile, store: ProviderStore,
         color = if (it.startsWith("[OK]")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
         modifier = Modifier.padding(top = 4.dp)) }
       Spacer(Modifier.height(8.dp))
-      Button(onClick = { saveModelConfig(); onSave(p) }, modifier = Modifier.fillMaxWidth()) { Text("Save & Activate") }
+      Button(onClick = { saveModelConfig(); store.saveModelCache(p.builtinId, models); onSave(p) }, modifier = Modifier.fillMaxWidth()) { Text("Save & Activate") }
       Spacer(Modifier.height(32.dp))
     }
   }
@@ -611,7 +613,8 @@ private suspend fun fetchModels(baseUrl: String, apiKey: String): List<ModelDef>
     val data = org.json.JSONObject(body).optJSONArray("data") ?: return@withContext emptyList()
     (0 until data.length()).map { val o = data.getJSONObject(it)
       val id = o.getString("id"); val name = o.optString("display_name", "").ifBlank { o.optString("name", id) }
-      ModelDef(id, name, o.optInt("context_window"))
+      val modality = when { id.startsWith("cf-image/") || id.contains("/image/") -> "image"; id.startsWith("cf-audio/") -> "audio"; id.startsWith("cf-video/") -> "video"; else -> "text" }
+      ModelDef(id, name, o.optInt("context_window"), supportsTools = modality == "text", outputModality = modality)
     }.sortedBy { it.id }
   } catch (e: Exception) { android.util.Log.e("FetchModels", "Failed: ${e.message}"); emptyList() }
 }

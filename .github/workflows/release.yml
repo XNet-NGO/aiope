@@ -1,0 +1,42 @@
+name: Build & Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release APK (arm64-v8a)
+        run: ./gradlew :app:assembleRelease -Pandroid.injected.build.abi=arm64-v8a
+
+      - name: Sign APK with debug key
+        run: |
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then echo "No APK found"; exit 1; fi
+          # Use zipalign + debug signing for pre-release
+          ${ANDROID_HOME}/build-tools/35.0.0/zipalign -v -p 4 "$APK" app-aligned.apk || cp "$APK" app-aligned.apk
+          ${ANDROID_HOME}/build-tools/35.0.0/apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out AIOPE-${GITHUB_REF_NAME}-arm64-v8a.apk app-aligned.apk || cp app-aligned.apk AIOPE-${GITHUB_REF_NAME}-arm64-v8a.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: AIOPE-*.apk
+          generate_release_notes: true
+          prerelease: true

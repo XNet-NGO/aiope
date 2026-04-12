@@ -66,7 +66,8 @@ data class ModelDef(
   val supportsTools: Boolean = true,
   val supportsVision: Boolean = false,
   val supportsAudio: Boolean = false,
-  val supportsVideo: Boolean = false
+  val supportsVideo: Boolean = false,
+  val outputModality: String = "text" // "text", "image", "audio", "video"
 )
 
 /** Provider profile — only connection info + selected model + per-model configs */
@@ -128,7 +129,13 @@ data class BuiltinProvider(
 object ProviderTemplates {
   val ALL = listOf(
     BuiltinProvider("aiope_gateway", "AIOPE Gateway", "", "https://inf.xnet.ngo/v1", apiKeyHint = "Gateway key", defaultModels = listOf(
-      ModelDef("llama/qwen3.5-2b-heretic", "Qwen 3.5 2B Heretic", 32_768))),
+      ModelDef("llama/qwen3.5-2b-heretic", "Qwen 3.5 2B Heretic", 32_768),
+      ModelDef("cf-image/flux-1-schnell", "FLUX Schnell", outputModality = "image", supportsTools = false),
+      ModelDef("cf-image/flux-2-dev", "FLUX 2 Dev", outputModality = "image", supportsTools = false),
+      ModelDef("cf-image/sdxl-lightning", "SDXL Lightning", outputModality = "image", supportsTools = false),
+      ModelDef("cf-image/dreamshaper-8", "Dreamshaper 8", outputModality = "image", supportsTools = false),
+      ModelDef("cf-image/leonardo-phoenix", "Leonardo Phoenix", outputModality = "image", supportsTools = false),
+    )),
     BuiltinProvider("custom", "Custom", "", apiKeyHint = "API key", requiresApiKey = false),
   )
   val byId = ALL.associateBy { it.id }

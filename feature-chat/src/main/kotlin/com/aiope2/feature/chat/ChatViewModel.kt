@@ -44,6 +44,10 @@ class ChatViewModel @Inject constructor(
 
   private val _terminalVisible = MutableStateFlow(false)
   val terminalVisible = _terminalVisible.asStateFlow()
+  private val _browserVisible = MutableStateFlow(false)
+  val browserVisible = _browserVisible.asStateFlow()
+  private val _browserMaximized = MutableStateFlow(false)
+  val browserMaximized = _browserMaximized.asStateFlow()
 
   private var conversationId = UUID.randomUUID().toString()
 
@@ -75,6 +79,8 @@ class ChatViewModel @Inject constructor(
 
   init {
     refreshModelLabel()
+    com.aiope2.feature.chat.browser.BrowserServer.start { getBrowser() }
+    getBrowser() // preload WebView on main thread
     viewModelScope.launch {
       // Reuse last conversation if it exists, or find an empty one
       val all = chatDao.getConversations()
@@ -191,6 +197,33 @@ class ChatViewModel @Inject constructor(
 
 
   /** Save content:// URIs to disk as JPEG, return comma-separated relative paths */
+  /** POST to /v1/images/generations, decode Cloudflare {result:{image:base64}} or OpenAI {data:[{b64_json}]} */
+  private fun sendImageGeneration(profile: ProviderProfile, prompt: String): String {
+    val base = profile.effectiveApiBase().trimEnd('/')
+    val url = java.net.URL("$base/images/generations")
+    val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+      requestMethod = "POST"; doOutput = true; connectTimeout = 60_000; readTimeout = 300_000
+      setRequestProperty("Content-Type", "application/json")
+      if (profile.apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer ${profile.apiKey}")
+    }
+    val payload = org.json.JSONObject().put("model", profile.selectedModelId).put("prompt", prompt).toString()
+    conn.outputStream.use { it.write(payload.toByteArray()) }
+    val code = conn.responseCode
+    val body = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText() ?: ""
+    conn.disconnect()
+    if (code !in 200..299) throw Exception("HTTP $code: ${body.take(200)}")
+    val json = org.json.JSONObject(body)
+    // Cloudflare: {result:{image:"base64..."}}  OpenAI: {data:[{b64_json:"..."}]}
+    val b64 = json.optJSONObject("result")?.optString("image")
+      ?: json.optJSONArray("data")?.optJSONObject(0)?.optString("b64_json") ?: ""
+    if (b64.isBlank()) return body.take(500)
+    val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+    val dir = java.io.File(getApplication<android.app.Application>().filesDir, "generated")
+    dir.mkdirs()
+    val file = java.io.File(dir, "img_${System.currentTimeMillis()}.png")
+    file.writeBytes(bytes)
+    return "file://${file.absolutePath}"
+  }
   private fun saveImagesToDisk(msgId: String, uris: List<String>): String {
     if (uris.isEmpty()) return ""
     val dir = java.io.File(getApplication<android.app.Application>().filesDir, "chat_images")
@@ -227,6 +260,26 @@ class ChatViewModel @Inject constructor(
 
       val p = providerStore.getActive()
       val mc = p.activeModelConfig()
+
+      // Check if selected model is an image generation model
+      val models = getModelList()
+      val currentModel = models.firstOrNull { it.id == p.selectedModelId }
+      if (currentModel?.outputModality == "image") {
+        try {
+          val result = sendImageGeneration(p, text)
+          val updated = _messages.value.toMutableList()
+          updated[updated.lastIndex] = assistantMsg.copy(content = result, imageUris = if (result.startsWith("file://")) listOf(result) else emptyList())
+          _messages.value = updated
+          chatDao.insertMessage(MessageEntity(id = assistantMsg.id, conversationId = conversationId, role = "assistant", content = result, imagePaths = ""))
+          if (_messages.value.size <= 2) generateTitle(text)
+        } catch (e: Exception) {
+          val updated = _messages.value.toMutableList()
+          updated[updated.lastIndex] = assistantMsg.copy(content = "Error: ${e.message}")
+          _messages.value = updated
+        } finally { _isStreaming.value = false }
+        return@launch
+      }
+
       try {
         val useTools = mc.toolsOverride != false  // null=auto(send), true=send, false=dont send
         val sb = StringBuilder()
@@ -374,6 +427,9 @@ class ChatViewModel @Inject constructor(
   fun toggleTerminal() {
     _terminalVisible.value = !_terminalVisible.value
   }
+  fun toggleBrowser() { _browserVisible.value = !_browserVisible.value }
+  fun setBrowserVisible(v: Boolean) { _browserVisible.value = v }
+  fun setBrowserMaximized(v: Boolean) { _browserMaximized.value = v }
 
   /** Edit & Resend: truncate messages after index, resend with new text */
   fun editAndResend(text: String, atIndex: Int) {
@@ -563,11 +619,23 @@ class ChatViewModel @Inject constructor(
     StreamingOrchestrator.ToolDef("fetch_url", "Fetch a URL. Returns extracted text and any images found as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them to the user.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text+images from HTML"}},"required":["url"]}""")),
     StreamingOrchestrator.ToolDef("query_data", "Query live real-time data. Returns JSON and any images as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them. Automatically uses device GPS for location-based queries. Pass 'extra' for searches (nasa_media, nasa_tech) or station IDs (tides, ocean_temp) or breed IDs (cat_breed). Available categories: ${fetchDataCategories()}", org.json.JSONObject("""{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query, station ID, or breed ID depending on category"}},"required":["category"]}""")),
     StreamingOrchestrator.ToolDef("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}""")),
-    StreamingOrchestrator.ToolDef("search_web", "Search the web for current information, news, answers, or any topic. Returns results with titles, URLs, and snippets. Use when the user asks about recent events, facts you're unsure of, or anything requiring up-to-date information.", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}"""))
+    StreamingOrchestrator.ToolDef("search_web", "Search the web for current information, news, answers, or any topic. Returns results with titles, URLs, and snippets. Use when the user asks about recent events, facts you're unsure of, or anything requiring up-to-date information.", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}""")),
+    StreamingOrchestrator.ToolDef("browser_navigate", "Navigate the in-app browser to a URL. Opens a real WebView you can then interact with via browser_click, browser_fill, browser_eval, browser_content, browser_elements.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL to navigate to"}},"required":["url"]}""")),
+    StreamingOrchestrator.ToolDef("browser_content", "Get the current page text content, URL, and title from the in-app browser.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
+    StreamingOrchestrator.ToolDef("browser_elements", "List all interactive elements (links, buttons, inputs) on the current browser page with their selectors.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
+    StreamingOrchestrator.ToolDef("browser_click", "Click an element in the browser by CSS selector. IMPORTANT: Call browser_elements first to discover available selectors before clicking.", org.json.JSONObject("""{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of element to click"}},"required":["selector"]}""")),
+    StreamingOrchestrator.ToolDef("browser_fill", "Fill an input field in the browser by CSS selector. IMPORTANT: Call browser_elements first to discover available selectors before filling.", org.json.JSONObject("""{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of input element"},"value":{"type":"string","description":"Text to fill"}},"required":["selector","value"]}""")),
+    StreamingOrchestrator.ToolDef("browser_eval", "Execute JavaScript in the browser and return the result.", org.json.JSONObject("""{"type":"object","properties":{"script":{"type":"string","description":"JavaScript code to evaluate"}},"required":["script"]}""")),
+    StreamingOrchestrator.ToolDef("browser_back", "Go back in the browser history.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
+    StreamingOrchestrator.ToolDef("browser_scroll", "Scroll the browser page up or down.", org.json.JSONObject("""{"type":"object","properties":{"direction":{"type":"string","description":"'up' or 'down'"},"amount":{"type":"integer","description":"Pixels to scroll (default 500)"}},"required":["direction"]}""")),
+    StreamingOrchestrator.ToolDef("browser_open", "Open the browser panel so the user can see it.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
+    StreamingOrchestrator.ToolDef("browser_close", "Close the browser panel.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
+    StreamingOrchestrator.ToolDef("browser_maximize", "Maximize or restore the browser panel. Pass maximize=true for fullscreen, false to restore split view.", org.json.JSONObject("""{"type":"object","properties":{"maximize":{"type":"boolean","description":"true to maximize, false to restore"}},"required":["maximize"]}"""))
   )
 
   private val locationProvider by lazy { com.aiope2.feature.chat.location.LocationProvider(getApplication()) }
   private var lastLocationData: LocationData? = null
+  private fun getBrowser() = com.aiope2.feature.chat.browser.BrowserHolder.getOrCreate(getApplication())
 
   private fun executeToolCall(name: String, args: Map<String, Any?>): String = when (name) {
     "run_sh" -> com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "").let { if (it.length > 4000) it.take(4000) + "\n...(truncated)" else it }
@@ -688,6 +756,17 @@ class ChatViewModel @Inject constructor(
       }
     }
     "search_web" -> executeToolCall("query_data", mapOf("category" to "search_web", "extra" to (args["query"]?.toString() ?: "")))
+    "browser_navigate" -> kotlinx.coroutines.runBlocking { getBrowser().navigate(args["url"]?.toString() ?: "") }
+    "browser_content" -> kotlinx.coroutines.runBlocking { getBrowser().getPageContent() }
+    "browser_elements" -> kotlinx.coroutines.runBlocking { getBrowser().getElements() }
+    "browser_click" -> kotlinx.coroutines.runBlocking { getBrowser().click(args["selector"]?.toString() ?: "") }
+    "browser_fill" -> kotlinx.coroutines.runBlocking { getBrowser().fill(args["selector"]?.toString() ?: "", args["value"]?.toString() ?: "") }
+    "browser_eval" -> kotlinx.coroutines.runBlocking { getBrowser().evaluateJs(args["script"]?.toString() ?: "") }
+    "browser_back" -> kotlinx.coroutines.runBlocking { if (getBrowser().goBack()) "Navigated back" else "No history to go back" }
+    "browser_scroll" -> kotlinx.coroutines.runBlocking { getBrowser().scroll(args["direction"]?.toString() ?: "down", (args["amount"] as? Number)?.toInt() ?: 500) }
+    "browser_open" -> { setBrowserVisible(true); "Browser opened" }
+    "browser_close" -> { setBrowserVisible(false); setBrowserMaximized(false); "Browser closed" }
+    "browser_maximize" -> { val max = args["maximize"] as? Boolean ?: true; setBrowserVisible(true); setBrowserMaximized(max); if (max) "Browser maximized" else "Browser restored" }
     else -> "Unknown tool: $name"
   }
 

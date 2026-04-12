@@ -82,6 +82,7 @@ class ProviderStore @Inject constructor(@ApplicationContext ctx: Context) {
     models.forEach { m -> arr.put(JSONObject().apply {
       put("id", m.id); put("name", m.displayName); put("ctx", m.contextWindow)
       put("tools", m.supportsTools); put("vision", m.supportsVision)
+      if (m.outputModality != "text") put("outputModality", m.outputModality)
     }) }
     prefs.edit().putString("mcache_$builtinId", arr.toString()).putLong("mcache_ts_$builtinId", System.currentTimeMillis()).apply()
   }
@@ -99,7 +100,7 @@ class ProviderStore @Inject constructor(@ApplicationContext ctx: Context) {
   private fun parseModelCache(raw: String): List<ModelDef>? = runCatching {
     val arr = JSONArray(raw)
     (0 until arr.length()).map { val o = arr.getJSONObject(it)
-      ModelDef(o.getString("id"), o.optString("name", o.getString("id")), o.optInt("ctx"), o.optBoolean("tools", true), o.optBoolean("vision"))
+      ModelDef(o.getString("id"), o.optString("name", o.getString("id")), o.optInt("ctx"), o.optBoolean("tools", true), o.optBoolean("vision"), outputModality = o.optString("outputModality", "text"))
     }
   }.getOrNull()
 

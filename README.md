@@ -10,8 +10,8 @@ The AI doesn't just answer questions. It acts.
 
 ## Features
 
-### Tool Use (10 tools)
-The AI can autonomously call tools in a loop — reasoning, executing, reading results, and continuing until the task is done.
+### Tool Use (19 tools)
+The AI can autonomously call tools in a loop — reasoning, executing, reading results, and continuing until the task is done. Up to 100 tool rounds per conversation turn.
 
 | Tool | What it does |
 |---|---|
@@ -25,6 +25,27 @@ The AI can autonomously call tools in a loop — reasoning, executing, reading r
 | `open_intent` | Open URLs, maps, navigation, phone dialer, email |
 | `fetch_url` | Fetch and extract content from any URL |
 | `query_data` | Live data: weather, air quality, UV, earthquakes, NASA APOD, ISS position, solar flares, fires, and more |
+| `search_web` | Web search via SearXNG |
+| `browser_navigate` | Open a URL in the in-app browser |
+| `browser_content` | Get page text, title, and URL from the browser |
+| `browser_elements` | List interactive elements with CSS selectors |
+| `browser_click` | Click an element by CSS selector |
+| `browser_fill` | Fill an input field by CSS selector |
+| `browser_eval` | Execute JavaScript in the browser |
+| `browser_scroll` | Scroll the browser page up/down |
+| `browser_back` | Go back in browser history |
+| `browser_open` | Open the browser panel |
+| `browser_close` | Close the browser panel |
+| `browser_maximize` | Maximize/restore the browser panel |
+
+### In-App Browser
+A controllable WebView browser that both the user and AI share in real time:
+- **Navigation bar** with back, forward, refresh, editable URL bar, and maximize button
+- **AI-controlled** — the agent can navigate, click, fill forms, run JS, scroll, and read page content
+- **Localhost API** — HTTP server on port 8735 exposes browser control for external tools
+- **Split view** — browser panel sits alongside chat, or maximizes to full screen
+- **Loading indicator** — cyan progress bar during page loads
+- **Scroll position preserved** across maximize/restore cycles
 
 ### Embedded Linux Terminal
 A full terminal emulator with proot-based Ubuntu environment. Install packages with `apt`, run Python scripts, compile C code — all on your phone. The terminal panel sits alongside the chat in split view.
@@ -91,12 +112,15 @@ core-network/                 # LLM provider, SSE streaming, API client
 core-terminal/                # Terminal emulator, proot bootstrap, shell
 feature-chat/                 # Chat UI, ViewModel, tools, settings
   engine/                     # StreamingOrchestrator, tool execution loop
+  browser/                    # WebBrowser, BrowserPanel, BrowserServer
   location/                   # GPS provider, map card, geocoding
   settings/                   # Provider config, model config, proot setup
 ```
 
 **Key components:**
-- `StreamingOrchestrator` — SSE parser with parallel tool call accumulation, reasoning extraction (`<think>`/`<thought>` tags + `reasoning_content` field), and automatic tool loop
+- `StreamingOrchestrator` — SSE parser with parallel tool call accumulation, reasoning extraction (`<think>`/`<thought>` tags + `reasoning_content` field), and automatic tool loop (up to 100 rounds)
+- `WebBrowser` — controllable WebView with navigate, click, fill, eval, scroll, and content extraction
+- `BrowserServer` — localhost HTTP server (port 8735) exposing browser control endpoints
 - `ChatViewModel` — conversation state, message persistence (Room), tool execution, auto-compact
 - `UniversalMarkdown` — native Compose markdown renderer (AnnotatedString-based, no WebView)
 - `TerminalSession` — proot-backed terminal with PTY, keyboard handling, and shell discovery

@@ -2,26 +2,39 @@ package com.aiope2.core.designsystem.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Vivid dark green palette
-val PRIMARY = Color(0xFF166C47)
-val PRIMARY_DARK = Color(0xFF87D7AA)
-val PRIMARY_CONTAINER_DARK = Color(0xFF1B4D35)
-val PRIMARY_CONTAINER_LIGHT = Color(0xFFB8F0D2)
-// Main background: richer dark green
-val BACKGROUND_DARK = Color(0xFF132E1F)
-val BACKGROUND_LIGHT = Color(0xFFF0F7F3)
-val SURFACE_DARK = Color(0xFF132E1F)
-val SURFACE_LIGHT = Color(0xFFF0F7F3)
-// Containers: black for high contrast
+// ── High-contrast dark: electric cyan + amber on pure black ──
+
+// Primary: electric cyan
+val PRIMARY = Color(0xFF00E5FF)
+val PRIMARY_DARK = Color(0xFF00E5FF)
+val PRIMARY_CONTAINER_DARK = Color(0xFF003D42)
+val PRIMARY_CONTAINER_LIGHT = Color(0xFFB2EBF2)
+
+// Secondary: warm amber
+val SECONDARY_DARK = Color(0xFFFFB300)
+val SECONDARY_LIGHT = Color(0xFF8D6E00)
+val SECONDARY_CONTAINER_DARK = Color(0xFF3D2E00)
+val SECONDARY_CONTAINER_LIGHT = Color(0xFFFFE082)
+
+// Backgrounds: pure black
+val BACKGROUND_DARK = Color(0xFF000000)
+val BACKGROUND_LIGHT = Color(0xFFFAFAFA)
+val SURFACE_DARK = Color(0xFF000000)
+val SURFACE_LIGHT = Color(0xFFFAFAFA)
+
+// Surface variants: near-black
 val SURFACE_VARIANT_DARK = Color(0xFF0A0A0A)
 val SURFACE_VARIANT_LIGHT = Color(0xFFE8E8EC)
-val ON_SURFACE_DARK = Color(0xFFF9F9F9)
-val ON_SURFACE_LIGHT = Color(0xFF202020)
-val ON_SURFACE_VARIANT_DARK = Color(0xFFCECECE)
+
+// Text
+val ON_SURFACE_DARK = Color(0xFFFFFFFF)
+val ON_SURFACE_LIGHT = Color(0xFF1A1A1A)
+val ON_SURFACE_VARIANT_DARK = Color(0xFF9E9E9E)
 val ON_SURFACE_VARIANT_LIGHT = Color(0xFF646464)
+
+// Outlines
 val OUTLINE_VARIANT_DARK = Color(0xFF2A2A2A)
 val OUTLINE_VARIANT_LIGHT = Color(0xFFD0D0D0)
-val SECONDARY_DARK = Color(0xFFC2C5DD)
-val SECONDARY_LIGHT = Color(0xFF595D72)
-val SECONDARY_CONTAINER_DARK = Color(0xFF424659)
-val SECONDARY_CONTAINER_LIGHT = Color(0xFFDEE1F9)
+
+// Error
+val ERROR_DARK = Color(0xFFFF1744)

@@ -1,5 +1,6 @@
 package com.aiope2.feature.chat
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,6 +28,8 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
   val isStreaming by viewModel.isStreaming.collectAsStateWithLifecycle()
   val terminalVisible by viewModel.terminalVisible.collectAsStateWithLifecycle()
   val modelLabel by viewModel._modelLabel.collectAsStateWithLifecycle()
+  val browserVisible by viewModel.browserVisible.collectAsStateWithLifecycle()
+  val browserMaximized by viewModel.browserMaximized.collectAsStateWithLifecycle()
   val config = LocalConfiguration.current
   val isLandscape = config.screenWidthDp > config.screenHeightDp
   var showModelPicker by remember { mutableStateOf(false) }
@@ -35,13 +38,18 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
 
   @OptIn(ExperimentalLayoutApi::class)
   val imeVisible = WindowInsets.isImeVisible
+  val listState = rememberLazyListState()
 
   if (isLandscape) {
     Row(Modifier.fillMaxSize()) {
+      if (!browserMaximized) {
       ChatContent(
         messages = messages, isStreaming = isStreaming, terminalVisible = terminalVisible,
+        browserVisible = browserVisible,
         imeVisible = imeVisible, modelLabel = modelLabel,
+        listState = listState,
         onSend = { text, imgs -> viewModel.send(text, imgs) }, onStop = { viewModel.cancelStreaming() }, onToggleTerminal = viewModel::toggleTerminal,
+        onToggleBrowser = { viewModel.toggleBrowser() },
         onOpenSettings = onOpenSettings,
         onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
         onSwitchModel = { viewModel.switchModel(it) },
@@ -56,13 +64,25 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
       if (terminalVisible) {
         TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.width(360.dp).fillMaxHeight())
       }
+      }
+      if (browserVisible) {
+        com.aiope2.feature.chat.browser.BrowserPanel(
+          maximized = browserMaximized,
+          onToggleMaximize = { viewModel.setBrowserMaximized(!browserMaximized) },
+          modifier = if (browserMaximized) Modifier.fillMaxSize() else Modifier.width(360.dp).fillMaxHeight()
+        )
+      }
     }
   } else {
     Column(Modifier.fillMaxSize()) {
+      if (!browserMaximized) {
       ChatContent(
         messages = messages, isStreaming = isStreaming, terminalVisible = terminalVisible,
+        browserVisible = browserVisible,
         imeVisible = imeVisible, modelLabel = modelLabel,
+        listState = listState,
         onSend = { text, imgs -> viewModel.send(text, imgs) }, onStop = { viewModel.cancelStreaming() }, onToggleTerminal = viewModel::toggleTerminal,
+        onToggleBrowser = { viewModel.toggleBrowser() },
         onOpenSettings = onOpenSettings,
         onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
         onSwitchModel = { viewModel.switchModel(it) },
@@ -77,6 +97,14 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
       if (terminalVisible) {
         TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.fillMaxWidth().height(240.dp))
       }
+      }
+      if (browserVisible) {
+        com.aiope2.feature.chat.browser.BrowserPanel(
+          maximized = browserMaximized,
+          onToggleMaximize = { viewModel.setBrowserMaximized(!browserMaximized) },
+          modifier = if (browserMaximized) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(300.dp)
+        )
+      }
     }
   }
 
@@ -89,8 +117,11 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
 @Composable
 private fun ChatContent(
   messages: List<ChatMessage>, isStreaming: Boolean, terminalVisible: Boolean,
+  browserVisible: Boolean,
   imeVisible: Boolean, modelLabel: String,
+  listState: androidx.compose.foundation.lazy.LazyListState,
   onSend: (String, List<String>) -> Unit, onStop: () -> Unit = {}, onToggleTerminal: () -> Unit,
+  onToggleBrowser: () -> Unit,
   onOpenSettings: () -> Unit,
   onGetModels: () -> List<com.aiope2.core.network.ModelDef>, onGetActiveModelId: () -> String,
   onSwitchModel: (String) -> Unit,
@@ -104,9 +135,9 @@ private fun ChatContent(
   modifier: Modifier = Modifier
 ) {
   var showModelPicker by remember { mutableStateOf(false) }
-  Column(modifier) {
+  Column(modifier.background(Color(0xFF000000))) {
     // ── Toolbar ──
-    Surface(color = Color(0xFF0F1A14)) {
+    Surface(color = Color(0xFF141414)) {
     Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
       // Left: Chats
       TextButton(onClick = onChats, modifier = Modifier.align(Alignment.CenterStart),
@@ -137,19 +168,24 @@ private fun ChatContent(
           }
         }
       }
-      // Right: Terminal + Settings
+      // Right: Browser + Terminal + Settings
       Row(modifier = Modifier.align(Alignment.CenterEnd)) {
+        IconButton(onClick = onToggleBrowser, modifier = Modifier.size(36.dp)) {
+          Icon(Icons.Default.Language, "Browser", modifier = Modifier.size(18.dp),
+            tint = if (browserVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+        }
         IconButton(onClick = onToggleTerminal, modifier = Modifier.size(36.dp)) {
           Icon(Icons.Default.Terminal, "Terminal", modifier = Modifier.size(18.dp),
             tint = if (terminalVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
         }
         IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
-          Icon(Icons.Default.Settings, "Settings", modifier = Modifier.size(18.dp))
+          Icon(Icons.Default.Settings, "Settings", modifier = Modifier.size(18.dp),
+            tint = Color.White)
         }
       }
     }
     }
-    HorizontalDivider(color = Color(0xFF1A1A1A))
+    HorizontalDivider(color = Color(0xFF2A2A2A))
 
     // ── Messages or empty state ──
     if (messages.isEmpty()) {
@@ -160,13 +196,14 @@ private fun ChatContent(
         onRetry = { idx -> onRetry(idx) },
         onCompact = { idx -> onCompact(idx) },
         onFork = { idx -> onFork(idx) },
+        listState = listState,
         modifier = Modifier.weight(1f))
     }
 
-    HorizontalDivider(color = Color(0xFF1A1A1A))
+    HorizontalDivider(color = Color(0xFF2A2A2A))
 
     // ── Input ──
-    Surface(color = Color(0xFF0F1A14)) {
+    Surface(color = Color(0xFF141414)) {
     ChatInput(onSend = onSend, onStop = onStop, isStreaming = isStreaming, editText = editText, onEditTextChange = onEditTextChange)
     }
   }
@@ -184,7 +221,7 @@ private fun EmptyState(onSend: (String, List<String>) -> Unit, modifier: Modifie
     "Show me today's NASA astronomy photo",
     "List files in /sdcard/Download"
   )
-  val purple = Color(0xFF7B2FBE)
+  val purple = Color(0xFF00E5FF)
   Column(modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.Center) {
     Text("AIOPE", fontSize = 24.sp, color = purple)
@@ -202,8 +239,7 @@ private fun EmptyState(onSend: (String, List<String>) -> Unit, modifier: Modifie
 // ── Message list ──
 
 @Composable
-private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = false, onEdit: ((Int) -> Unit)? = null, onRetry: ((Int) -> Unit)? = null, onCompact: ((Int) -> Unit)? = null, onFork: ((Int) -> Unit)? = null, modifier: Modifier = Modifier) {
-  val listState = rememberLazyListState()
+private fun MessageList(messages: List<ChatMessage>, isStreaming: Boolean = false, onEdit: ((Int) -> Unit)? = null, onRetry: ((Int) -> Unit)? = null, onCompact: ((Int) -> Unit)? = null, onFork: ((Int) -> Unit)? = null, listState: androidx.compose.foundation.lazy.LazyListState, modifier: Modifier = Modifier) {
   val scope = rememberCoroutineScope()
   // No auto-scroll — user controls scroll, use ▼ button to go to bottom
   Box(modifier = modifier) {
@@ -334,8 +370,8 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
       colors = OutlinedTextFieldDefaults.colors(
         unfocusedContainerColor = Color(0xFF0A0A0A),
         focusedContainerColor = Color(0xFF0A0A0A),
-        unfocusedBorderColor = Color(0xFF1A1A1A),
-        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+        unfocusedBorderColor = Color(0xFF2A2A2A),
+        focusedBorderColor = Color(0xFF00E5FF).copy(alpha = 0.5f)
       ),
       shape = RoundedCornerShape(16.dp)
     )
@@ -343,7 +379,7 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
       // Attach — opens system file picker (all types)
       IconButton(onClick = { launcher.launch("*/*") }) {
-        Icon(Icons.Default.AttachFile, "Attach")
+        Icon(Icons.Default.AttachFile, "Attach", tint = Color.White)
       }
       // Camera — capture photo
       val cameraUri = remember { mutableStateOf<android.net.Uri?>(null) }
@@ -356,7 +392,7 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
         cameraUri.value = uri
         photoLauncher.launch(uri)
       }) {
-        Icon(Icons.Default.CameraAlt, "Camera")
+        Icon(Icons.Default.CameraAlt, "Camera", tint = Color.White)
       }      // Mic — launches Android speech recognizer
       val speechLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
@@ -374,11 +410,11 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
         }
         try { speechLauncher.launch(intent) } catch (_: Exception) {}
       }) {
-        Icon(Icons.Default.Mic, "Voice")
+        Icon(Icons.Default.Mic, "Voice", tint = Color.White)
       }
       // Clear
       IconButton(onClick = { text = ""; pendingImages.clear() }) {
-        Icon(Icons.Default.Clear, "Clear")
+        Icon(Icons.Default.Clear, "Clear", tint = Color.White)
       }
       Spacer(Modifier.weight(1f))
       // Send / Stop
@@ -391,7 +427,7 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
         },
         enabled = text.isNotBlank() || pendingImages.isNotEmpty() || isStreaming,
         colors = ButtonDefaults.buttonColors(
-          containerColor = if (isStreaming) Color(0xFFCC0000) else MaterialTheme.colorScheme.primary
+          containerColor = if (isStreaming) Color(0xFFFF1744) else MaterialTheme.colorScheme.primary
         )
       ) {
         Text(if (isStreaming) "Stop" else "Send")

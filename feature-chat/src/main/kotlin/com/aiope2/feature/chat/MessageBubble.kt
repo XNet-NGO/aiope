@@ -73,7 +73,7 @@ private fun UserBubble(
   Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.End) {
     Surface(
       shape = RoundedCornerShape(16.dp),
-      color = cs.primary.copy(alpha = 0.15f),
+      color = Color(0xFF00E5FF).copy(alpha = 0.12f),
       modifier = Modifier.widthIn(max = screenW * 0.75f)
     ) {
       Column(Modifier.padding(12.dp)) {
@@ -81,17 +81,21 @@ private fun UserBubble(
           Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             message.imageUris.forEach { uri ->
               val bmp = remember(uri) {
-                try { android.provider.MediaStore.Images.Media.getBitmap(ctx.contentResolver, android.net.Uri.parse(uri)) }
-                catch (_: Exception) { null }
+                try {
+                  if (uri.startsWith("file://")) android.graphics.BitmapFactory.decodeFile(uri.removePrefix("file://"))
+                  else android.provider.MediaStore.Images.Media.getBitmap(ctx.contentResolver, android.net.Uri.parse(uri))
+                } catch (_: Exception) { null }
               }
+              val isGenerated = uri.startsWith("file://") && uri.contains("/generated/")
+              val imgSize = if (isGenerated) 256.dp else 64.dp
               if (bmp != null) {
                 AndroidView(factory = { c -> android.widget.ImageView(c).apply {
-                  scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                  scaleType = if (isGenerated) android.widget.ImageView.ScaleType.FIT_CENTER else android.widget.ImageView.ScaleType.CENTER_CROP
                   setImageBitmap(bmp); clipToOutline = true
                   outlineProvider = object : android.view.ViewOutlineProvider() {
                     override fun getOutline(v: android.view.View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, 24f) }
                   }
-                }}, modifier = Modifier.size(64.dp))
+                }}, modifier = Modifier.size(imgSize))
               }
             }
           }
@@ -146,8 +150,8 @@ private fun AssistantBubble(
       }
     }
 
-    // Content
-    if (message.content.isNotBlank()) {
+    // Content (skip if it's just a generated image file path)
+    if (message.content.isNotBlank() && !(message.content.startsWith("file://") && message.imageUris.isNotEmpty())) {
       val content = message.content.trimEnd()
       val mdTheme = rememberMarkdownTheme(cs)
       UniversalMarkdown(
@@ -223,7 +227,7 @@ private fun ReasoningBlock(reasoning: String, isStreaming: Boolean) {
       expanded = !expanded
     },
     shape = RoundedCornerShape(16.dp),
-    color = Color(0xFF0A0A0A)
+    color = Color(0xFF111111)
   ) {
     Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
       Row(verticalAlignment = Alignment.CenterVertically) {
@@ -252,7 +256,7 @@ private fun ReasoningBlock(reasoning: String, isStreaming: Boolean) {
                 drawContent()
                 drawRect(
                   brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFF0A0A0A), Color.Transparent),
+                    colors = listOf(Color(0xFF111111), Color.Transparent),
                     startY = 0f, endY = size.height * 0.5f
                   )
                 )
@@ -311,7 +315,7 @@ private fun ToolCallsBlock(calls: List<String>, results: List<String>) {
   val cs = MaterialTheme.colorScheme
   Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
     for (i in calls.indices) {
-      Surface(shape = RoundedCornerShape(16.dp), color = cs.primaryContainer.copy(alpha = 0.25f),
+      Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF003D42).copy(alpha = 0.4f),
         modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
           Text(calls[i], fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.W700,
@@ -322,7 +326,7 @@ private fun ToolCallsBlock(calls: List<String>, results: List<String>) {
             val preview = if (result.length > 150 && !expanded) result.take(150) + "…" else result
             Spacer(Modifier.height(6.dp))
             Surface(shape = RoundedCornerShape(10.dp),
-              color = if (MaterialTheme.colorScheme.surface == Color(0xFF121213)) Color.White.copy(alpha = 0.1f) else Color(0xFFF7F7F9),
+              color = if (MaterialTheme.colorScheme.surface == Color(0xFF000000)) Color.White.copy(alpha = 0.1f) else Color(0xFFF7F7F9),
               modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }) {
               SelectionContainer {
                 Text(preview, fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
@@ -377,23 +381,23 @@ private fun rememberMarkdownTheme(cs: ColorScheme): MarkdownTheme = remember(cs)
   MarkdownTheme(
     textColor = cs.onSurface,
     headingColor = cs.onSurface,
-    linkColor = cs.primary,
-    listBulletColor = cs.onSurfaceVariant,
+    linkColor = Color(0xFF00E5FF),
+    listBulletColor = Color(0xFF9E9E9E),
     codeTextColor = Color(0xFFE0E0E0),
-    codeBgColor = Color(0xFF0A0A0A),
-    codeBorderColor = Color(0xFF1A1A1A),
-    codeLabelColor = cs.primary.copy(alpha = 0.8f),
-    inlineCodeTextColor = Color(0xFFCE9178),
-    inlineCodeBgColor = Color(0xFF111111),
-    blockQuoteBorderColor = cs.outlineVariant,
-    blockQuoteTextColor = cs.onSurfaceVariant,
-    tableHeaderBgColor = Color(0xFF0E0E0E),
-    tableBodyBgColor = Color(0xFF0A0A0A),
-    tableBorderColor = Color(0xFF1A1A1A),
+    codeBgColor = Color(0xFF111111),
+    codeBorderColor = Color(0xFF2A2A2A),
+    codeLabelColor = Color(0xFF00E5FF).copy(alpha = 0.8f),
+    inlineCodeTextColor = Color(0xFFFFB300),
+    inlineCodeBgColor = Color(0xFF1A1A1A),
+    blockQuoteBorderColor = Color(0xFF2A2A2A),
+    blockQuoteTextColor = Color(0xFF9E9E9E),
+    tableHeaderBgColor = Color(0xFF1A1A1A),
+    tableBodyBgColor = Color(0xFF111111),
+    tableBorderColor = Color(0xFF333333),
     tableHeaderTextColor = cs.onSurface,
     tableBodyTextColor = cs.onSurface,
-    hrColor = cs.outlineVariant,
-    checkboxColor = cs.primary,
+    hrColor = Color(0xFF2A2A2A),
+    checkboxColor = Color(0xFF00E5FF),
   )
 }
 
