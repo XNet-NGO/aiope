@@ -1,20 +1,24 @@
 package com.aiope2.feature.chat.engine
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.sse.EventSource
+import okhttp3.sse.EventSourceListener
+import okhttp3.sse.EventSources
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
-/**
- * Streaming chat orchestrator — Kelivo-style.
- * Handles SSE streaming, reasoning, parallel tool calls, and tool loop.
- */
 class StreamingOrchestrator(
   private val baseUrl: String,
   private val apiKey: String,
@@ -22,43 +26,48 @@ class StreamingOrchestrator(
   private val tools: List<ToolDef> = emptyList(),
   private val onToolCall: suspend (String, Map<String, Any?>) -> String = { _, _ -> "" },
 ) {
-
   data class ToolDef(val name: String, val description: String, val parameters: JSONObject)
 
-  fun stream(messages: List<Pair<String, String>>, imageBase64s: List<String> = emptyList()): Flow<ChatStreamChunk> = flow {
-    val rawMessages = mutableListOf<JSONObject>()
-    for ((role, content) in messages) {
-      rawMessages.add(JSONObject().put("role", role).put("content", content))
-    }
-    // Attach images to the last user message as multimodal content
-    if (imageBase64s.isNotEmpty() && rawMessages.isNotEmpty()) {
-      val lastUserIdx = rawMessages.indices.lastOrNull { rawMessages[it].optString("role") == "user" }
-      if (lastUserIdx != null) {
-        val msg = rawMessages[lastUserIdx]
-        val contentArr = JSONArray()
-        contentArr.put(JSONObject().put("type", "text").put("text", msg.optString("content", "")))
+  companion object {
+    private val client = OkHttpClient.Builder()
+      .connectTimeout(15, TimeUnit.SECONDS)
+      .readTimeout(5, TimeUnit.MINUTES)
+      .writeTimeout(30, TimeUnit.SECONDS)
+      .retryOnConnectionFailure(true)
+      .build()
+    private val JSON_MT = "application/json; charset=utf-8".toMediaType()
+  }
+
+  fun stream(
+    messages: List<Pair<String, String>>,
+    imageBase64s: List<String> = emptyList(),
+  ): Flow<ChatStreamChunk> = callbackFlow {
+    val rawMessages = messages.map { (role, content) ->
+      JSONObject().put("role", role).put("content", content)
+    }.toMutableList()
+
+    // Attach images to last user message
+    if (imageBase64s.isNotEmpty()) {
+      val idx = rawMessages.indices.lastOrNull { rawMessages[it].optString("role") == "user" }
+      if (idx != null) {
+        val arr = JSONArray()
+        arr.put(JSONObject().put("type", "text").put("text", rawMessages[idx].optString("content", "")))
         for (b64 in imageBase64s) {
-          contentArr.put(
-            JSONObject().put("type", "image_url").put(
-              "image_url",
-              JSONObject().put("url", "data:image/jpeg;base64,$b64"),
-            ),
-          )
+          arr.put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$b64")))
         }
-        msg.put("content", contentArr)
+        rawMessages[idx].put("content", arr)
       }
     }
-    // After first request, flatten multimodal content arrays to strings for compatibility
+
     var firstRequest = true
     var maxRounds = 100
 
     while (maxRounds-- > 0) {
       if (!firstRequest) {
-        // Strip image arrays from messages — follow-up requests don't need images
+        // Flatten multimodal arrays to text for follow-up requests
         for (msg in rawMessages) {
           val c = msg.opt("content")
-          if (c is org.json.JSONArray) {
-            // Extract text from multimodal array
+          if (c is JSONArray) {
             val sb = StringBuilder()
             for (i in 0 until c.length()) {
               val obj = c.optJSONObject(i)
@@ -69,135 +78,153 @@ class StreamingOrchestrator(
         }
       }
       firstRequest = false
-      // Trim older tool results to reduce payload — keep last 3 full, truncate rest
-      val toolMsgIndices = rawMessages.indices.filter { rawMessages[it].optString("role") == "tool" }
-      if (toolMsgIndices.size > 3) {
-        for (i in toolMsgIndices.dropLast(3)) {
-          val msg = rawMessages[i]
-          val content = msg.optString("content", "")
-          if (content.length > 500) msg.put("content", content.take(500) + "...(truncated)")
+
+      // Trim older tool results
+      val toolIdxs = rawMessages.indices.filter { rawMessages[it].optString("role") == "tool" }
+      if (toolIdxs.size > 3) {
+        for (i in toolIdxs.dropLast(3)) {
+          val content = rawMessages[i].optString("content", "")
+          if (content.length > 500) rawMessages[i].put("content", content.take(500) + "...(truncated)")
         }
       }
+
       val body = buildRequestBody(rawMessages)
-      val conn = openConnection(body)
+      val request = Request.Builder()
+        .url("${baseUrl.trimEnd('/')}/chat/completions")
+        .header("Content-Type", "application/json; charset=utf-8")
+        .header("Accept", "text/event-stream")
+        .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
+        .post(body.toRequestBody(JSON_MT))
+        .build()
 
-      android.util.Log.d("AIOPE2", "SSE conn responseCode=${conn.responseCode} url=${conn.url}")
-      if (conn.responseCode !in 200..299) {
-        val err = conn.errorStream?.bufferedReader()?.readText()?.take(300) ?: "HTTP ${conn.responseCode}"
-        emit(ChatStreamChunk(error = "Error ${conn.responseCode}: $err", isDone = true))
-        return@flow
-      }
-
-      val reader = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8))
-      val toolAcc = mutableMapOf<Int, MutableMap<String, String>>() // index -> {id, name, args}
+      val toolAcc = mutableMapOf<Int, MutableMap<String, String>>()
       var hasToolCalls = false
       var inThinkTag = false
       var thinkTagName = "think"
-      var buffer = ""
+      var sseError: String? = null
+      var sseDone = false
 
-      try {
-        while (true) {
-          if (!kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]!!.isActive) break
-          val line = reader.readLine() ?: break
-          if (!line.startsWith("data:")) continue
-          val data = line.removePrefix("data:").trim()
-          if (data == "[DONE]") {
-            android.util.Log.d("AIOPE2", "SSE [DONE] received")
-            break
+      val factory = EventSources.createFactory(client)
+      val latch = java.util.concurrent.CountDownLatch(1)
+
+      val eventSource = factory.newEventSource(
+        request,
+        object : EventSourceListener() {
+          override fun onOpen(eventSource: EventSource, response: Response) {
+            android.util.Log.d("AIOPE2", "SSE opened: ${response.code}")
+            if (response.code !in 200..299) {
+              sseError = "HTTP ${response.code}: ${response.body?.string()?.take(300)}"
+              latch.countDown()
+            }
           }
-          if (data.isEmpty()) continue
 
-          try {
-            val json = JSONObject(data)
-            val choices = json.optJSONArray("choices") ?: continue
-            if (choices.length() == 0) continue
-            val choice = choices.getJSONObject(0)
-            val delta = choice.optJSONObject("delta") ?: continue
-            val finishReason = choice.optString("finish_reason", "")
-            android.util.Log.d("AIOPE2", "SSE chunk: finish=$finishReason hasContent=${delta.has("content")} hasTools=${delta.has("tool_calls")}")
-
-            // Text content
-            var content = delta.optString("content", "").let { if (it == "null") "" else it }
-            // Reasoning: separate field (DeepSeek, OpenAI o-series) or <think>/<thought> tags in content
-            var reasoning = delta.optString("reasoning_content", "").let { if (it == "null") "" else it }.ifBlank {
-              delta.optString("reasoning", "").let { if (it == "null") "" else it }
+          override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
+            if (data == "[DONE]") {
+              sseDone = true
+              latch.countDown()
+              return
             }
+            try {
+              val json = JSONObject(data)
+              val choices = json.optJSONArray("choices") ?: return
+              if (choices.length() == 0) return
+              val choice = choices.getJSONObject(0)
+              val delta = choice.optJSONObject("delta") ?: return
+              val finishReason = choice.optString("finish_reason", "")
 
-            // Handle <think> and <thought> tags in content stream
-            if (!inThinkTag) {
-              if (content.contains("<think>")) {
-                inThinkTag = true
-                thinkTagName = "think"
-                content = content.substringAfter("<think>")
-              } else if (content.contains("<thought>")) {
-                inThinkTag = true
-                thinkTagName = "thought"
-                content = content.substringAfter("<thought>")
+              // Text content
+              var content = delta.optString("content", "").let { if (it == "null") "" else it }
+              // Reasoning
+              var reasoning = delta.optString("reasoning_content", "").let { if (it == "null") "" else it }.ifBlank {
+                delta.optString("reasoning", "").let { if (it == "null") "" else it }
               }
-            }
-            if (inThinkTag) {
-              val closeTag = "</$thinkTagName>"
-              if (content.contains(closeTag)) {
-                reasoning = content.substringBefore(closeTag)
-                content = content.substringAfter(closeTag)
-                inThinkTag = false
-              } else {
-                reasoning = content
-                content = ""
-              }
-            }
 
-            if (content.isNotEmpty() || reasoning.isNotEmpty()) {
-              emit(ChatStreamChunk(content = content, reasoning = reasoning.ifBlank { null }))
-            }
-
-            // Tool calls (accumulated across deltas)
-            val toolCallsArr = delta.optJSONArray("tool_calls")
-            if (toolCallsArr != null) {
-              for (i in 0 until toolCallsArr.length()) {
-                val tc = toolCallsArr.getJSONObject(i)
-                val idx = tc.optInt("index", 0)
-                val acc = toolAcc.getOrPut(idx) { mutableMapOf("id" to "", "name" to "", "args" to "") }
-                tc.optString("id", "").let { if (it.isNotBlank()) acc["id"] = it }
-                tc.optJSONObject("function")?.let { fn ->
-                  fn.optString("name", "").let { if (it.isNotBlank()) acc["name"] = it }
-                  fn.optString("arguments", "").let { acc["args"] = (acc["args"] ?: "") + it }
+              // Handle <think>/<thought> tags
+              if (!inThinkTag) {
+                if (content.contains("<think>")) {
+                  inThinkTag = true
+                  thinkTagName = "think"
+                  content = content.substringAfter("<think>")
+                } else if (content.contains("<thought>")) {
+                  inThinkTag = true
+                  thinkTagName = "thought"
+                  content = content.substringAfter("<thought>")
                 }
               }
-            }
+              if (inThinkTag) {
+                val closeTag = "</$thinkTagName>"
+                if (content.contains(closeTag)) {
+                  reasoning = content.substringBefore(closeTag)
+                  content = content.substringAfter(closeTag)
+                  inThinkTag = false
+                } else {
+                  reasoning = content
+                  content = ""
+                }
+              }
 
-            if (finishReason == "tool_calls" || finishReason == "stop" && toolAcc.isNotEmpty()) {
-              hasToolCalls = toolAcc.isNotEmpty()
+              if (content.isNotEmpty() || reasoning.isNotEmpty()) {
+                trySend(ChatStreamChunk(content = content, reasoning = reasoning.ifBlank { null }))
+              }
+
+              // Tool calls
+              val tcArr = delta.optJSONArray("tool_calls")
+              if (tcArr != null) {
+                for (i in 0 until tcArr.length()) {
+                  val tc = tcArr.getJSONObject(i)
+                  val idx = tc.optInt("index", 0)
+                  val acc = toolAcc.getOrPut(idx) { mutableMapOf("id" to "", "name" to "", "args" to "") }
+                  tc.optString("id", "").let { if (it.isNotBlank()) acc["id"] = it }
+                  tc.optJSONObject("function")?.let { fn ->
+                    fn.optString("name", "").let { if (it.isNotBlank()) acc["name"] = it }
+                    fn.optString("arguments", "").let { acc["args"] = (acc["args"] ?: "") + it }
+                  }
+                }
+              }
+
+              if (finishReason == "tool_calls" || (finishReason == "stop" && toolAcc.isNotEmpty())) {
+                hasToolCalls = toolAcc.isNotEmpty()
+                latch.countDown()
+              }
+            } catch (e: Exception) {
+              android.util.Log.e("AIOPE2", "SSE parse: ${e.message} data=${data.take(100)}")
             }
-          } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-          } catch (e: Exception) {
-            android.util.Log.e("AIOPE2", "SSE parse error: ${e.message} data=${data.take(100)}")
           }
-        }
-      } finally {
-        reader.close()
-        conn.disconnect()
+
+          override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+            sseError = t?.message ?: response?.let { "HTTP ${it.code}" } ?: "Connection failed"
+            android.util.Log.e("AIOPE2", "SSE failure: $sseError", t)
+            latch.countDown()
+          }
+
+          override fun onClosed(eventSource: EventSource) {
+            latch.countDown()
+          }
+        },
+      )
+
+      latch.await()
+      eventSource.cancel()
+
+      if (sseError != null) {
+        send(ChatStreamChunk(error = sseError, isDone = true))
+        close()
+        return@callbackFlow
       }
 
-      // Execute tool calls if any
+      // Execute tool calls
       if (hasToolCalls && toolAcc.isNotEmpty()) {
-        val callInfos = mutableListOf<ToolCallInfo>()
-
-        toolAcc.forEach { (idx, acc) ->
-          val id = acc["id"] ?: "call_${System.nanoTime()}"
-          val name = acc["name"] ?: ""
+        val callInfos = toolAcc.map { (_, acc) ->
           val argsStr = acc["args"] ?: "{}"
           val args = try {
             val j = JSONObject(argsStr)
             j.keys().asSequence().associateWith { k -> j.opt(k) }
           } catch (_: Exception) {
-            emptyMap<String, Any?>()
+            emptyMap()
           }
-          callInfos.add(ToolCallInfo(id = id, name = name, arguments = args))
+          ToolCallInfo(id = acc["id"] ?: "call_${System.nanoTime()}", name = acc["name"] ?: "", arguments = args)
         }
-
-        emit(ChatStreamChunk(toolCalls = callInfos))
+        send(ChatStreamChunk(toolCalls = callInfos))
 
         val results = mutableListOf<ToolResultInfo>()
         for (call in callInfos) {
@@ -208,35 +235,21 @@ class StreamingOrchestrator(
           }
           results.add(ToolResultInfo(id = call.id, name = call.name, arguments = call.arguments, result = result))
         }
+        send(ChatStreamChunk(toolResults = results))
 
-        emit(ChatStreamChunk(toolResults = results))
-
-        // Rebuild full message list with proper tool_call format for follow-up
-        // Add assistant message with tool_calls array
-        val assistantToolMsg = JSONObject().apply {
-          put("role", "assistant")
-          put("content", JSONObject.NULL)
-          val tcArr = JSONArray()
-          for (c in callInfos) {
-            tcArr.put(
-              JSONObject().apply {
-                put("id", c.id)
-                put("type", "function")
-                put(
-                  "function",
-                  JSONObject().apply {
-                    put("name", c.name)
-                    put("arguments", JSONObject(c.arguments).toString())
-                  },
-                )
+        // Append assistant tool_calls + tool results for next round
+        rawMessages.add(
+          JSONObject().apply {
+            put("role", "assistant")
+            put("content", JSONObject.NULL)
+            put(
+              "tool_calls",
+              JSONArray().apply {
+                for (c in callInfos) put(JSONObject().put("id", c.id).put("type", "function").put("function", JSONObject().put("name", c.name).put("arguments", JSONObject(c.arguments).toString())))
               },
             )
-          }
-          put("tool_calls", tcArr)
-        }
-        rawMessages.add(assistantToolMsg)
-
-        // Add tool result messages
+          },
+        )
         for (r in results) {
           rawMessages.add(
             JSONObject().apply {
@@ -246,62 +259,34 @@ class StreamingOrchestrator(
             },
           )
         }
-
         continue
       }
 
-      // No tool calls — done
-      emit(ChatStreamChunk(isDone = true))
-      return@flow
+      // Done
+      send(ChatStreamChunk(isDone = true))
+      close()
+      return@callbackFlow
     }
 
-    emit(ChatStreamChunk(isDone = true))
+    send(ChatStreamChunk(isDone = true))
+    close()
+
+    awaitClose { }
   }.flowOn(Dispatchers.IO)
 
   private fun buildRequestBody(messages: List<JSONObject>): String {
     val body = JSONObject()
     body.put("model", model)
     body.put("stream", true)
-
-    val msgsArr = JSONArray()
-    for (msg in messages) msgsArr.put(msg)
-    body.put("messages", msgsArr)
-
+    body.put("messages", JSONArray().apply { for (m in messages) put(m) })
     if (tools.isNotEmpty()) {
-      val toolsArr = JSONArray()
-      for (t in tools) {
-        toolsArr.put(
-          JSONObject().apply {
-            put("type", "function")
-            put(
-              "function",
-              JSONObject().apply {
-                put("name", t.name)
-                put("description", t.description)
-                put("parameters", t.parameters)
-              },
-            )
-          },
-        )
-      }
-      body.put("tools", toolsArr)
+      body.put(
+        "tools",
+        JSONArray().apply {
+          for (t in tools) put(JSONObject().put("type", "function").put("function", JSONObject().put("name", t.name).put("description", t.description).put("parameters", t.parameters)))
+        },
+      )
     }
-
     return body.toString()
-  }
-
-  private fun openConnection(body: String): HttpURLConnection {
-    val url = "${baseUrl.trimEnd('/')}/chat/completions"
-    val conn = URL(url).openConnection() as HttpURLConnection
-    conn.requestMethod = "POST"
-    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-    conn.setRequestProperty("Accept", "text/event-stream")
-    if (apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $apiKey")
-    conn.connectTimeout = 15_000
-    conn.readTimeout = 300_000
-    conn.doOutput = true
-    conn.setChunkedStreamingMode(0)
-    conn.outputStream.write(body.toByteArray(Charsets.UTF_8))
-    return conn
   }
 }
