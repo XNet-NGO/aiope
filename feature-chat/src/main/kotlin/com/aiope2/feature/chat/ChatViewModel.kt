@@ -299,6 +299,9 @@ class ChatViewModel @Inject constructor(
 
       val p = providerStore.getActive()
       val mc = p.activeModelConfig()
+      toolExecutor.shellOutputLimit = mc.shellOutputLimit
+      toolExecutor.fetchLimit = mc.fetchLimit
+      toolExecutor.fileReadLimit = mc.fileReadLimit
 
       try {
         val useTools = mc.toolsOverride != false // null=auto(send), true=send, false=dont send
@@ -555,9 +558,10 @@ class ChatViewModel @Inject constructor(
           if (chunk.content.isNotEmpty()) sb.append(chunk.content)
         }
         val summaryMsg = ChatMessage(role = Role.SYSTEM, content = sb.toString())
-        _messages.value = listOf(summaryMsg) + remaining
+        val indicatorMsg = ChatMessage(role = Role.SYSTEM, content = "⟳ Context compacted — earlier messages summarized")
+        _messages.value = listOf(summaryMsg, indicatorMsg) + remaining
 
-        // Persist: delete old messages, save summary + remaining
+        // Persist: delete old messages, save summary + indicator + remaining
         chatDao.deleteMessagesAfter(conversationId, 0) // delete all messages in this conversation
         chatDao.insertMessage(
           MessageEntity(
@@ -565,6 +569,14 @@ class ChatViewModel @Inject constructor(
             conversationId = conversationId,
             role = summaryMsg.role.value,
             content = summaryMsg.content,
+          ),
+        )
+        chatDao.insertMessage(
+          MessageEntity(
+            id = indicatorMsg.id,
+            conversationId = conversationId,
+            role = indicatorMsg.role.value,
+            content = indicatorMsg.content,
           ),
         )
         remaining.forEach { msg ->

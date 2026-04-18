@@ -25,6 +25,9 @@ class ToolExecutor(
 ) {
   var lastLocationData: LocationData? = null
   private var cachedDataCategories: String? = null
+  var shellOutputLimit = 4000
+  var fetchLimit = 12000
+  var fileReadLimit = 50000
 
   fun buildToolDefs() = listOf(
     td("run_sh", "Execute Android shell command", """{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}"""),
@@ -80,16 +83,16 @@ class ToolExecutor(
   }
 
   fun execute(name: String, args: Map<String, Any?>): String = when (name) {
-    "run_sh" -> com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "").let { if (it.length > 4000) it.take(4000) + "\n...(truncated)" else it }
+    "run_sh" -> com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "").let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
 
     "run_proot" -> if (!com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(app)) {
       "Alpine not installed. Set up proot in Settings first."
     } else {
-      com.aiope2.core.terminal.shell.ProotExecutor.exec(app, args["command"]?.toString() ?: "").let { if (it.length > 4000) it.take(4000) + "\n...(truncated)" else it }
+      com.aiope2.core.terminal.shell.ProotExecutor.exec(app, args["command"]?.toString() ?: "").let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
     }
 
     "read_file" -> try {
-      java.io.File(args["path"].toString()).readText().let { if (it.length > 50000) "File too large" else it }
+      java.io.File(args["path"].toString()).readText().let { if (it.length > fileReadLimit) "File too large" else it }
     } catch (e: Exception) {
       "Error: ${e.message}"
     }
@@ -234,7 +237,7 @@ class ToolExecutor(
       val text = android.text.Html.fromHtml(cleaned, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
       (if (imgs.isNotEmpty()) imgs.distinct().take(10).joinToString("\n") + "\n\n" else "") + text
     }
-    if (result.length > 12000) result.take(12000) + "\n...(truncated)" else result
+    if (result.length > fetchLimit) result.take(fetchLimit) + "\n...(truncated)" else result
   } catch (e: Exception) {
     "Error: ${e.message}"
   }
@@ -264,7 +267,7 @@ class ToolExecutor(
     val body = (if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader(Charsets.UTF_8)?.readText() ?: "Error: HTTP ${conn.responseCode}"
     conn.disconnect()
     val enriched = resolveDataImages(body)
-    if (enriched.length > 12000) enriched.take(12000) + "\n...(truncated)" else enriched
+    if (enriched.length > fetchLimit) enriched.take(fetchLimit) + "\n...(truncated)" else enriched
   } catch (e: Exception) {
     "Error: ${e.message}"
   }
