@@ -266,7 +266,16 @@ class ChatViewModel @Inject constructor(
     }.joinToString(",")
   }
 
+  private var lastSendTime = 0L
+  private var lastSendHash = 0
+
   fun send(text: String, imageUris: List<String> = emptyList()) {
+    val now = System.currentTimeMillis()
+    val hash = text.hashCode() xor imageUris.hashCode()
+    if (now - lastSendTime < 500 && hash == lastSendHash) return
+    lastSendTime = now
+    lastSendHash = hash
+
     val userMsg = ChatMessage(role = Role.USER, content = text, imageUris = imageUris)
     _messages.value = _messages.value + userMsg
 
