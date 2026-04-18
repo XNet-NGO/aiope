@@ -130,9 +130,18 @@ private fun Render(
 
     is ImageNode -> {
       val ctx = androidx.compose.ui.platform.LocalContext.current
-      coil.compose.AsyncImage(model = node.url, contentDescription = node.alt, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).combinedClickable(onClick = {}, onLongClick = {
-        kotlin.concurrent.thread { try { val bmp = java.net.URL(node.url).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }; if (bmp != null) com.aiope2.feature.chat.saveImageToGallery(ctx, bmp) } catch (_: Exception) {} }
-      }))
+      coil.compose.AsyncImage(
+        model = node.url,
+        contentDescription = node.alt,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).combinedClickable(onClick = {}, onLongClick = {
+          kotlin.concurrent.thread {
+            try {
+              val bmp = java.net.URL(node.url).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+              if (bmp != null) com.aiope2.feature.chat.saveImageToGallery(ctx, bmp)
+            } catch (_: Exception) {}
+          }
+        }),
+      )
     }
 
     is CodeNode -> RenderCode(node)
