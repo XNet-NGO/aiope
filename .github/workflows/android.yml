@@ -38,4 +38,5 @@ jobs:
       - name: Build with Gradle
         run: |
           ./gradlew --scan --stacktrace \
+              -PGATEWAY_KEY="${{ secrets.GATEWAY_KEY }}" \
               :app:assembleDebug

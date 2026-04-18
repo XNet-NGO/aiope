@@ -18,7 +18,10 @@ android {
     targetSdk = Configurations.targetSdk
     versionCode = Configurations.versionCode
     versionName = Configurations.versionName
+    buildConfigField("String", "GATEWAY_KEY", "\"${project.findProperty("GATEWAY_KEY") ?: ""}\"")
   }
+
+  buildFeatures { buildConfig = true }
 
   packaging {
     resources {

@@ -34,7 +34,7 @@ jobs:
           fi
 
       - name: Build release APK
-        run: ./gradlew :app:assembleRelease -x spotlessCheck -x spotlessKotlinCheck
+        run: ./gradlew :app:assembleRelease -PGATEWAY_KEY="${{ secrets.GATEWAY_KEY }}" -x spotlessCheck -x spotlessKotlinCheck
 
       - name: Rename APK
         run: |

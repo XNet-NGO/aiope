@@ -21,7 +21,7 @@ class ProviderStore @Inject constructor(@ApplicationContext ctx: Context) {
         id = "default_gateway",
         builtinId = "aiope_gateway",
         label = "AIOPE Gateway",
-        apiKey = "aiope-app-383cd9ac-c1bf-487b-9ba1-e0e454ad86fc",
+        apiKey = com.aiope2.feature.chat.BuildConfig.GATEWAY_KEY,
         apiBase = "https://inf.xnet.ngo/v1",
         selectedModelId = "llama/qwen3.5-2b-heretic",
         isActive = true,
@@ -82,7 +82,7 @@ class ProviderStore @Inject constructor(@ApplicationContext ctx: Context) {
   }
 
   fun getActive(): ProviderProfile = getAll().firstOrNull { it.id == prefs.getString("active_id", "") } ?: getAll().firstOrNull()
-    ?: ProviderProfile(builtinId = "aiope_gateway", label = "AIOPE Gateway", apiKey = "aiope-app-383cd9ac-c1bf-487b-9ba1-e0e454ad86fc", selectedModelId = "llama/qwen3.5-2b-heretic")
+    ?: ProviderProfile(builtinId = "aiope_gateway", label = "AIOPE Gateway", apiKey = com.aiope2.feature.chat.BuildConfig.GATEWAY_KEY, selectedModelId = "llama/qwen3.5-2b-heretic")
 
   fun getById(id: String): ProviderProfile? = getAll().firstOrNull { it.id == id }
 
