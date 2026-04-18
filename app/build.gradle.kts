@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
   id("aiope2.android.application")
   id("aiope2.android.application.compose")
@@ -23,6 +25,20 @@ android {
 
   buildFeatures { buildConfig = true }
 
+  val keystoreProps = Properties()
+  rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { keystoreProps.load(it) }
+
+  signingConfigs {
+    if (keystoreProps.getProperty("storeFile") != null) {
+      create("release") {
+        storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+        storePassword = keystoreProps.getProperty("storePassword")
+        keyAlias = keystoreProps.getProperty("keyAlias")
+        keyPassword = keystoreProps.getProperty("keyPassword")
+      }
+    }
+  }
+
   packaging {
     resources {
       excludes.add("/META-INF/{AL2.0,LGPL2.1}")
@@ -34,7 +50,7 @@ android {
     release {
       isShrinkResources = true
       isMinifyEnabled = true
-      signingConfig = signingConfigs.getByName("debug")
+      signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
   }
