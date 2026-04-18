@@ -78,7 +78,11 @@ object BrowserServer {
     val qIdx = fullPath.indexOf('?')
     val path = if (qIdx >= 0) fullPath.substring(0, qIdx) else fullPath
     val params = if (qIdx >= 0) parseQuery(fullPath.substring(qIdx + 1)) else emptyMap()
-    val browser = try { browserProvider?.invoke() } catch (_: Exception) { null }
+    val browser = try {
+      browserProvider?.invoke()
+    } catch (_: Exception) {
+      null
+    }
       ?: return json("error", "Browser not ready. Open the browser panel in the app first.")
 
     return try {
@@ -88,43 +92,52 @@ object BrowserServer {
           val result = browser.navigate(url)
           json("ok", result)
         }
+
         "/content" -> {
           val content = browser.getPageContent()
           json("ok", content)
         }
+
         "/elements" -> {
           val elements = browser.getElements()
           json("ok", elements)
         }
+
         "/click" -> {
           val selector = params["selector"] ?: return json("error", "Missing selector param")
           val result = browser.click(selector)
           json("ok", result)
         }
+
         "/fill" -> {
           val selector = params["selector"] ?: return json("error", "Missing selector param")
           val value = params["value"] ?: ""
           val result = browser.fill(selector, value)
           json("ok", result)
         }
+
         "/eval" -> {
           val script = params["script"] ?: return json("error", "Missing script param")
           val result = browser.evaluateJs(script)
           json("ok", result)
         }
+
         "/back" -> {
           val ok = browser.goBack()
           json("ok", if (ok) "Navigated back" else "No history")
         }
+
         "/scroll" -> {
           val direction = params["direction"] ?: "down"
           val amount = params["amount"]?.toIntOrNull() ?: 500
           val result = browser.scroll(direction, amount)
           json("ok", result)
         }
+
         "/status" -> {
           json("ok", "url=${browser.currentUrl()} title=${browser.title()}")
         }
+
         else -> json("error", "Unknown endpoint: $path. Available: /navigate, /content, /elements, /click, /fill, /eval, /back, /status")
       }
     } catch (e: Exception) {
@@ -132,12 +145,10 @@ object BrowserServer {
     }
   }
 
-  private fun parseQuery(query: String): Map<String, String> {
-    return query.split("&").mapNotNull {
-      val kv = it.split("=", limit = 2)
-      if (kv.size == 2) URLDecoder.decode(kv[0], "UTF-8") to URLDecoder.decode(kv[1], "UTF-8") else null
-    }.toMap()
-  }
+  private fun parseQuery(query: String): Map<String, String> = query.split("&").mapNotNull {
+    val kv = it.split("=", limit = 2)
+    if (kv.size == 2) URLDecoder.decode(kv[0], "UTF-8") to URLDecoder.decode(kv[1], "UTF-8") else null
+  }.toMap()
 
   private fun json(status: String, message: String): String {
     val escaped = message.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")

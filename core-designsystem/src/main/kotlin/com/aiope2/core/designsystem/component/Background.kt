@@ -36,16 +36,13 @@ import com.aiope2.core.designsystem.theme.LocalBackgroundTheme
  * @param content The background content.
  */
 @Composable
-fun AiopeBackground(
-  modifier: Modifier = Modifier,
-  content: @Composable () -> Unit
-) {
+fun AiopeBackground(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
   val color = LocalBackgroundTheme.current.color
   val tonalElevation = LocalBackgroundTheme.current.tonalElevation
   Surface(
     color = if (color == Color.Unspecified) Color.Transparent else color,
     tonalElevation = if (tonalElevation == Dp.Unspecified) 0.dp else tonalElevation,
-    modifier = modifier.fillMaxSize()
+    modifier = modifier.fillMaxSize(),
   ) {
     CompositionLocalProvider(LocalAbsoluteTonalElevation provides 0.dp) {
       content()

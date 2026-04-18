@@ -20,12 +20,10 @@ import androidx.core.content.edit
 import com.aiope2.core.preferences.Preferences
 import kotlin.reflect.KProperty
 
-fun booleanPreferences(key: String, defaultValue: Boolean) =
-  BooleanPreferenceDelegate(key, defaultValue)
+fun booleanPreferences(key: String, defaultValue: Boolean) = BooleanPreferenceDelegate(key, defaultValue)
 
 class BooleanPreferenceDelegate(private val key: String, private val defaultValue: Boolean) {
-  operator fun getValue(preferences: Preferences, property: KProperty<*>): Boolean =
-    preferences.sharedPreferences.getBoolean(key, defaultValue)
+  operator fun getValue(preferences: Preferences, property: KProperty<*>): Boolean = preferences.sharedPreferences.getBoolean(key, defaultValue)
 
   operator fun setValue(preferences: Preferences, property: KProperty<*>, value: Boolean?) {
     if (value != null) {

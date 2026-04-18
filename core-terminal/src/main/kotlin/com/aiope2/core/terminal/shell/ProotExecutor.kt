@@ -6,7 +6,7 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * Executes commands inside a proot Ubuntu/Debian environment.
+ * Executes commands inside a proot Alpine Linux environment.
  * Tracks running process for external cancellation.
  */
 object ProotExecutor {
@@ -17,12 +17,12 @@ object ProotExecutor {
 
   fun exec(context: Context, command: String, timeoutMs: Long = 30_000): String {
     val filesDir = context.filesDir.absolutePath
-    val rootfs = File(filesDir, "env/ubuntu")
+    val rootfs = File(filesDir, "env/alpine")
     val nativeLibDir = context.applicationInfo.nativeLibraryDir
 
     val prootBin = ProotBootstrap.findProotXed(context)
       ?: return "Error: proot binary not found in $nativeLibDir"
-    if (!rootfs.isDirectory) return "Error: Ubuntu rootfs not installed. Run setup first."
+    if (!rootfs.isDirectory) return "Error: Alpine rootfs not installed. Run setup first."
 
     val talloc = File(filesDir, "libtalloc.so.2")
     if (!talloc.exists()) {
@@ -35,7 +35,9 @@ object ProotExecutor {
     }
 
     File(filesDir, "tmp").mkdirs()
-    File(rootfs, "root").mkdirs()
+    val rootDir = File(rootfs, "root")
+    rootDir.mkdirs()
+    if (!rootDir.isDirectory) Log.w(TAG, "/root dir creation failed at ${rootDir.absolutePath}")
     // Ensure /etc/group has our GID to suppress "cannot find name for group ID" warning
     val groupFile = File(rootfs, "etc/group")
     if (groupFile.exists()) {
@@ -112,6 +114,8 @@ object ProotExecutor {
     bind(filesDir)
 
     val tmpDir = File(rootfs, "tmp").also { it.mkdirs() }
+    val homeDir = File(filesDir, "home").also { it.mkdirs() }
+    bind(homeDir.absolutePath, "/root")
     bind(tmpDir.absolutePath, "/dev/shm")
 
     bind("/proc/self/fd/0", "/dev/stdin")
@@ -120,6 +124,8 @@ object ProotExecutor {
 
     val fipsFile = File(tmpDir, "fips_enabled").also { it.writeText("0\n") }
     bind(fipsFile.absolutePath, "/proc/sys/crypto/fips_enabled")
+
+    val shell = if (File(rootfs, "bin/bash").exists()) "/bin/bash" else "/bin/sh"
 
     args.addAll(
       listOf(
@@ -130,7 +136,7 @@ object ProotExecutor {
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME=/root", "USER=root", "TERM=xterm-256color",
         "TMPDIR=/tmp", "LANG=C.UTF-8", "LC_ALL=C.UTF-8",
-        "/bin/bash", "-c", command,
+        shell, "-c", command,
       ),
     )
     return args
@@ -139,6 +145,7 @@ object ProotExecutor {
   private fun buildProotEnv(filesDir: String, nativeLibDir: String): Map<String, String> {
     val env = mutableMapOf(
       "PROOT_TMP_DIR" to "$filesDir/tmp",
+      "PROOT_VERBOSE" to "-1",
       "LD_LIBRARY_PATH" to filesDir,
     )
     val loader = File(nativeLibDir, "libproot.so")

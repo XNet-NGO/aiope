@@ -26,11 +26,7 @@ enum class ModelTask(val id: String, val label: String, val description: String)
   }
 }
 
-data class TaskModelConfig(
-  val taskId: String,
-  val profileId: String? = null,
-  val modelId: String? = null,
-)
+data class TaskModelConfig(val taskId: String, val profileId: String? = null, val modelId: String? = null)
 
 class TaskModelStore(context: Context) {
   private val prefs = context.getSharedPreferences("task_models", Context.MODE_PRIVATE)

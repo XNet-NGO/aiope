@@ -7,16 +7,14 @@ import com.aiope2.core.navigation.AppComposeNavigator
 import com.aiope2.feature.chat.ChatScreen
 import com.aiope2.feature.chat.settings.ProviderStore
 import com.aiope2.feature.chat.settings.SettingsScreen
+import com.aiope2.feature.chat.settings.ToolStore
 import javax.inject.Inject
 
-fun NavGraphBuilder.aiopeNavigation(
-  composeNavigator: AppComposeNavigator,
-  providerStore: ProviderStore,
-) {
+fun NavGraphBuilder.aiopeNavigation(composeNavigator: AppComposeNavigator, providerStore: ProviderStore, toolStore: ToolStore) {
   composable(route = AiopeScreens.Chat.route) {
     ChatScreen(onOpenSettings = { composeNavigator.navigate(AiopeScreens.Settings.route) })
   }
   composable(route = AiopeScreens.Settings.route) {
-    SettingsScreen(providerStore = providerStore, onBack = { composeNavigator.navigateUp() })
+    SettingsScreen(providerStore = providerStore, toolStore = toolStore, onBack = { composeNavigator.navigateUp() })
   }
 }

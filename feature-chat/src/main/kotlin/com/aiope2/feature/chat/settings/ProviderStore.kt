@@ -18,16 +18,27 @@ class ProviderStore @Inject constructor(@ApplicationContext ctx: Context) {
   init {
     if (getAll().isEmpty()) {
       val default = ProviderProfile(
-        id = "default_gateway", builtinId = "aiope_gateway",
-        label = "AIOPE Gateway", apiKey = "aiope-app-383cd9ac-c1bf-487b-9ba1-e0e454ad86fc",
+        id = "default_gateway",
+        builtinId = "aiope_gateway",
+        label = "AIOPE Gateway",
+        apiKey = "aiope-app-383cd9ac-c1bf-487b-9ba1-e0e454ad86fc",
         apiBase = "https://inf.xnet.ngo/v1",
-        selectedModelId = "llama/qwen3.5-2b-heretic", isActive = true,
-        modelConfigs = mapOf("llama/qwen3.5-2b-heretic" to ModelConfig(
-          modelId = "llama/qwen3.5-2b-heretic", toolsOverride = true, visionOverride = true,
-          reasoningEffort = "auto", contextTokens = 128_000, autoCompact = true, maxTokens = 16_000
-        ))
+        selectedModelId = "llama/qwen3.5-2b-heretic",
+        isActive = true,
+        modelConfigs = mapOf(
+          "llama/qwen3.5-2b-heretic" to ModelConfig(
+            modelId = "llama/qwen3.5-2b-heretic",
+            toolsOverride = true,
+            visionOverride = true,
+            reasoningEffort = "auto",
+            contextTokens = 128_000,
+            autoCompact = true,
+            maxTokens = 16_000,
+          ),
+        ),
       )
-      save(default); setActive(default.id)
+      save(default)
+      setActive(default.id)
       // Auto-fetch models in background
       Thread {
         try {
@@ -35,12 +46,24 @@ class ProviderStore @Inject constructor(@ApplicationContext ctx: Context) {
           val url = if (base.endsWith("/v1")) "$base/models" else "$base/v1/models"
           val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
           conn.setRequestProperty("Authorization", "Bearer ${default.apiKey}")
-          conn.connectTimeout = 10_000; conn.readTimeout = 10_000
+          conn.connectTimeout = 10_000
+          conn.readTimeout = 10_000
           val body = conn.inputStream.bufferedReader().readText()
           conn.disconnect()
           val data = org.json.JSONObject(body).optJSONArray("data") ?: return@Thread
-          val models = (0 until data.length()).map { val o = data.getJSONObject(it)
-            ModelDef(o.getString("id"), o.optString("name", o.getString("id")), o.optInt("context_window"))
+          val models = (0 until data.length()).map {
+            val o = data.getJSONObject(it)
+            val inputMods = o.optJSONObject("modalities")?.optJSONArray("input")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
+            ModelDef(
+              o.getString("id"),
+              o.optString("display_name", "").ifBlank { o.optString("name", o.getString("id")) },
+              o.optInt("context_window"),
+              supportsTools = o.optBoolean("tool_call", true),
+              supportsVision = "image" in inputMods || o.optBoolean("attachment"),
+              supportsReasoning = o.optBoolean("reasoning"),
+              maxOutput = o.optInt("max_output"),
+              family = o.optString("family", ""),
+            )
           }.sortedBy { it.id }
           if (models.isNotEmpty()) saveModelCache(default.builtinId, models)
         } catch (_: Exception) {}
@@ -53,12 +76,13 @@ class ProviderStore @Inject constructor(@ApplicationContext ctx: Context) {
     return try {
       val arr = JSONArray(raw)
       (0 until arr.length()).mapNotNull { runCatching { ProviderProfile.fromJson(arr.getJSONObject(it)) }.getOrNull() }
-    } catch (_: Exception) { emptyList() }
+    } catch (_: Exception) {
+      emptyList()
+    }
   }
 
-  fun getActive(): ProviderProfile =
-    getAll().firstOrNull { it.id == prefs.getString("active_id", "") } ?: getAll().firstOrNull()
-      ?: ProviderProfile(builtinId = "aiope_gateway", label = "AIOPE Gateway", apiKey = "aiope-app-383cd9ac-c1bf-487b-9ba1-e0e454ad86fc", selectedModelId = "llama/qwen3.5-2b-heretic")
+  fun getActive(): ProviderProfile = getAll().firstOrNull { it.id == prefs.getString("active_id", "") } ?: getAll().firstOrNull()
+    ?: ProviderProfile(builtinId = "aiope_gateway", label = "AIOPE Gateway", apiKey = "aiope-app-383cd9ac-c1bf-487b-9ba1-e0e454ad86fc", selectedModelId = "llama/qwen3.5-2b-heretic")
 
   fun getById(id: String): ProviderProfile? = getAll().firstOrNull { it.id == id }
 
@@ -74,16 +98,28 @@ class ProviderStore @Inject constructor(@ApplicationContext ctx: Context) {
     if (prefs.getString("active_id", "") == id) prefs.edit().remove("active_id").apply()
   }
 
-  fun setActive(id: String) { prefs.edit().putString("active_id", id).apply() }
+  fun setActive(id: String) {
+    prefs.edit().putString("active_id", id).apply()
+  }
 
   // Model cache with TTL
   fun saveModelCache(builtinId: String, models: List<ModelDef>) {
     val arr = JSONArray()
-    models.forEach { m -> arr.put(JSONObject().apply {
-      put("id", m.id); put("name", m.displayName); put("ctx", m.contextWindow)
-      put("tools", m.supportsTools); put("vision", m.supportsVision)
-      if (m.outputModality != "text") put("outputModality", m.outputModality)
-    }) }
+    models.forEach { m ->
+      arr.put(
+        JSONObject().apply {
+          put("id", m.id)
+          put("name", m.displayName)
+          put("ctx", m.contextWindow)
+          put("tools", m.supportsTools)
+          put("vision", m.supportsVision)
+          put("reasoning", m.supportsReasoning)
+          put("maxOutput", m.maxOutput)
+          if (m.outputModality != "text") put("outputModality", m.outputModality)
+          if (m.family.isNotBlank()) put("family", m.family)
+        },
+      )
+    }
     prefs.edit().putString("mcache_$builtinId", arr.toString()).putLong("mcache_ts_$builtinId", System.currentTimeMillis()).apply()
   }
 
@@ -94,18 +130,38 @@ class ProviderStore @Inject constructor(@ApplicationContext ctx: Context) {
     return parseModelCache(raw)
   }
 
-  fun getModelCacheStale(builtinId: String): List<ModelDef>? =
-    prefs.getString("mcache_$builtinId", null)?.let { parseModelCache(it) }
+  fun getModelCacheStale(builtinId: String): List<ModelDef>? = prefs.getString("mcache_$builtinId", null)?.let { parseModelCache(it) }
 
   private fun parseModelCache(raw: String): List<ModelDef>? = runCatching {
     val arr = JSONArray(raw)
-    (0 until arr.length()).map { val o = arr.getJSONObject(it)
-      ModelDef(o.getString("id"), o.optString("name", o.getString("id")), o.optInt("ctx"), o.optBoolean("tools", true), o.optBoolean("vision"), outputModality = o.optString("outputModality", "text"))
+    (0 until arr.length()).map {
+      val o = arr.getJSONObject(it)
+      ModelDef(
+        o.getString(
+          "id",
+        ),
+        o.optString(
+          "name",
+          o.getString("id"),
+        ),
+        o.optInt(
+          "ctx",
+        ),
+        o.optBoolean(
+          "tools",
+          true,
+        ),
+        o.optBoolean(
+          "vision",
+        ),
+        supportsReasoning = o.optBoolean("reasoning"), outputModality = o.optString("outputModality", "text"), maxOutput = o.optInt("maxOutput"), family = o.optString("family", ""),
+      )
     }
   }.getOrNull()
 
   private fun persist(list: List<ProviderProfile>) {
-    val arr = JSONArray(); list.forEach { arr.put(it.toJson()) }
+    val arr = JSONArray()
+    list.forEach { arr.put(it.toJson()) }
     prefs.edit().putString("profiles", arr.toString()).apply()
   }
 

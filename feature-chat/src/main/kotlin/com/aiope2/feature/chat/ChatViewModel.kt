@@ -3,15 +3,17 @@ package com.aiope2.feature.chat
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.aiope2.core.network.ModelConfig
+import com.aiope2.core.network.ModelDef
+import com.aiope2.core.network.ProviderProfile
+import com.aiope2.core.network.ProviderTemplates
 import com.aiope2.feature.chat.db.ChatDao
 import com.aiope2.feature.chat.db.ConversationEntity
 import com.aiope2.feature.chat.db.MessageEntity
 import com.aiope2.feature.chat.engine.StreamingOrchestrator
+import com.aiope2.feature.chat.settings.McpManager
 import com.aiope2.feature.chat.settings.ProviderStore
-import com.aiope2.core.network.ModelDef
-import com.aiope2.core.network.ModelConfig
-import com.aiope2.core.network.ProviderProfile
-import com.aiope2.core.network.ProviderTemplates
+import com.aiope2.feature.chat.settings.ToolStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +27,8 @@ import javax.inject.Inject
 class ChatViewModel @Inject constructor(
   application: Application,
   private val chatDao: ChatDao,
-  val providerStore: ProviderStore
+  val providerStore: ProviderStore,
+  val toolStore: ToolStore,
 ) : AndroidViewModel(application) {
 
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -97,7 +100,9 @@ class ChatViewModel @Inject constructor(
               val file = java.io.File(getApplication<android.app.Application>().filesDir, relPath.trim())
               if (file.exists()) android.net.Uri.fromFile(file).toString() else null
             }
-          } else emptyList()
+          } else {
+            emptyList()
+          }
           ChatMessage(id = it.id, role = Role.from(it.role), content = it.content, imageUris = uris, timestamp = it.timestamp)
         }
         _messages.value = msgs
@@ -128,19 +133,24 @@ class ChatViewModel @Inject constructor(
             val file = java.io.File(getApplication<android.app.Application>().filesDir, relPath.trim())
             if (file.exists()) android.net.Uri.fromFile(file).toString() else null
           }
-        } else emptyList()
+        } else {
+          emptyList()
+        }
         ChatMessage(id = it.id, role = Role.from(it.role), content = it.content, imageUris = uris, timestamp = it.timestamp)
       }
       _messages.value = msgs
     }
   }
 
-
   fun shareConversation() {
     val msgs = _messages.value
     if (msgs.isEmpty()) return
     val text = msgs.joinToString("\n\n") { msg ->
-      val prefix = when (msg.role) { Role.USER -> "User"; Role.ASSISTANT -> "Assistant"; else -> msg.role.value.replaceFirstChar { it.uppercase() } }
+      val prefix = when (msg.role) {
+        Role.USER -> "User"
+        Role.ASSISTANT -> "Assistant"
+        else -> msg.role.value.replaceFirstChar { it.uppercase() }
+      }
       "$prefix:\n${msg.content}"
     }
     val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -164,6 +174,7 @@ class ChatViewModel @Inject constructor(
   }
 
   // LLM client — resolves task model, then creates client
+
   /** Resolve provider + model for a given task. Falls back to active profile. */
   private fun resolveTaskModel(task: com.aiope2.core.network.ModelTask): Pair<ProviderProfile, String> {
     val taskStore = com.aiope2.core.network.TaskModelStore(getApplication())
@@ -173,6 +184,41 @@ class ChatViewModel @Inject constructor(
     return profile to modelId
   }
 
+  /** Translate a message using the TRANSLATION task model */
+  fun translateMessage(messageId: String, language: String) {
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        val msg = _messages.value.find { it.id == messageId } ?: return@launch
+        val (profile, modelId) = resolveTaskModel(com.aiope2.core.network.ModelTask.TRANSLATION)
+        val prompt = "Translate the following text to $language. Reply with ONLY the translation, nothing else:\n\n${msg.content}"
+        val orchestrator = StreamingOrchestrator(
+          baseUrl = profile.effectiveApiBase(),
+          apiKey = profile.apiKey,
+          model = modelId,
+        )
+        val sb = StringBuilder()
+        orchestrator.stream(listOf("user" to prompt)).collect { chunk ->
+          if (chunk.content.isNotEmpty()) {
+            sb.append(chunk.content)
+            val updated = _messages.value.toMutableList()
+            val idx = updated.indexOfFirst { it.id == messageId }
+            if (idx >= 0) {
+              updated[idx] = updated[idx].copy(translation = sb.toString())
+              _messages.value = updated
+            }
+          }
+        }
+      } catch (e: Exception) {
+        val updated = _messages.value.toMutableList()
+        val idx = updated.indexOfFirst { it.id == messageId }
+        if (idx >= 0) {
+          updated[idx] = updated[idx].copy(translation = "Translation error: ${e.message}")
+          _messages.value = updated
+        }
+      }
+    }
+  }
+
   /** Generate a conversation title using the TITLE task model */
   private fun generateTitle(firstMessage: String) {
     viewModelScope.launch(Dispatchers.IO) {
@@ -180,7 +226,9 @@ class ChatViewModel @Inject constructor(
         val (profile, modelId) = resolveTaskModel(com.aiope2.core.network.ModelTask.TITLE)
         val prompt = "Generate a short title (max 6 words) for a conversation that starts with: \"${firstMessage.take(200)}\". Reply with ONLY the title, no quotes."
         val orchestrator = StreamingOrchestrator(
-          baseUrl = profile.effectiveApiBase(), apiKey = profile.apiKey, model = modelId
+          baseUrl = profile.effectiveApiBase(),
+          apiKey = profile.apiKey,
+          model = modelId,
         )
         val sb = StringBuilder()
         orchestrator.stream(listOf("user" to prompt)).collect { chunk ->
@@ -195,29 +243,44 @@ class ChatViewModel @Inject constructor(
     }
   }
 
-
   /** Save content:// URIs to disk as JPEG, return comma-separated relative paths */
-  /** POST to /v1/images/generations, decode Cloudflare {result:{image:base64}} or OpenAI {data:[{b64_json}]} */
+  // POST to /v1/images/generations
   private fun sendImageGeneration(profile: ProviderProfile, prompt: String): String {
     val base = profile.effectiveApiBase().trimEnd('/')
     val url = java.net.URL("$base/images/generations")
     val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-      requestMethod = "POST"; doOutput = true; connectTimeout = 60_000; readTimeout = 300_000
+      requestMethod = "POST"
+      doOutput = true
+      connectTimeout = 60_000
+      readTimeout = 300_000
       setRequestProperty("Content-Type", "application/json")
+      setRequestProperty("Cache-Control", "no-cache, no-store")
+      setRequestProperty("Pragma", "no-cache")
       if (profile.apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer ${profile.apiKey}")
+      useCaches = false
     }
-    val payload = org.json.JSONObject().put("model", profile.selectedModelId).put("prompt", prompt).toString()
+    val payload = org.json.JSONObject().apply {
+      put("model", profile.selectedModelId)
+      put("prompt", prompt)
+      put("response_format", "b64_json")
+      put("seed", System.currentTimeMillis())
+    }.toString()
     conn.outputStream.use { it.write(payload.toByteArray()) }
     val code = conn.responseCode
     val body = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText() ?: ""
     conn.disconnect()
     if (code !in 200..299) throw Exception("HTTP $code: ${body.take(200)}")
     val json = org.json.JSONObject(body)
-    // Cloudflare: {result:{image:"base64..."}}  OpenAI: {data:[{b64_json:"..."}]}
     val b64 = json.optJSONObject("result")?.optString("image")
       ?: json.optJSONArray("data")?.optJSONObject(0)?.optString("b64_json") ?: ""
-    if (b64.isBlank()) return body.take(500)
-    val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+    val imageUrl = json.optJSONArray("data")?.optJSONObject(0)?.optString("url") ?: ""
+    val bytes = if (b64.isNotBlank()) {
+      android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+    } else if (imageUrl.isNotBlank()) {
+      java.net.URL(imageUrl).readBytes()
+    } else {
+      throw Exception("No image in response: ${body.take(200)}")
+    }
     val dir = java.io.File(getApplication<android.app.Application>().filesDir, "generated")
     dir.mkdirs()
     val file = java.io.File(dir, "img_${System.currentTimeMillis()}.png")
@@ -232,12 +295,15 @@ class ChatViewModel @Inject constructor(
       try {
         val uri = android.net.Uri.parse(uriStr)
         val input = getApplication<android.app.Application>().contentResolver.openInputStream(uri) ?: return@mapIndexedNotNull null
-        val bytes = input.readBytes(); input.close()
+        val bytes = input.readBytes()
+        input.close()
         val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@mapIndexedNotNull null
         val file = java.io.File(dir, "${msgId}_$i.jpg")
         java.io.FileOutputStream(file).use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }
         "chat_images/${msgId}_$i.jpg"
-      } catch (_: Exception) { null }
+      } catch (_: Exception) {
+        null
+      }
     }.joinToString(",")
   }
 
@@ -245,14 +311,19 @@ class ChatViewModel @Inject constructor(
     val userMsg = ChatMessage(role = Role.USER, content = text, imageUris = imageUris)
     _messages.value = _messages.value + userMsg
 
-    cancelStreaming(); streamingJob = viewModelScope.launch(Dispatchers.IO) {
+    cancelStreaming()
+    streamingJob = viewModelScope.launch(Dispatchers.IO) {
       // Save images to disk
       val savedPaths = saveImagesToDisk(userMsg.id, imageUris)
-      chatDao.insertMessage(MessageEntity(
-        id = userMsg.id, conversationId = conversationId,
-        role = userMsg.role.value, content = userMsg.content,
-        imagePaths = savedPaths
-      ))
+      chatDao.insertMessage(
+        MessageEntity(
+          id = userMsg.id,
+          conversationId = conversationId,
+          role = userMsg.role.value,
+          content = userMsg.content,
+          imagePaths = savedPaths,
+        ),
+      )
 
       _isStreaming.value = true
       val assistantMsg = ChatMessage(role = Role.ASSISTANT, content = "")
@@ -261,40 +332,19 @@ class ChatViewModel @Inject constructor(
       val p = providerStore.getActive()
       val mc = p.activeModelConfig()
 
-      // Check if selected model is an image generation model
-      val models = getModelList()
-      val currentModel = models.firstOrNull { it.id == p.selectedModelId }
-      if (currentModel?.outputModality == "image") {
-        try {
-          val result = sendImageGeneration(p, text)
-          val updated = _messages.value.toMutableList()
-          updated[updated.lastIndex] = assistantMsg.copy(content = result, imageUris = if (result.startsWith("file://")) listOf(result) else emptyList())
-          _messages.value = updated
-          chatDao.insertMessage(MessageEntity(id = assistantMsg.id, conversationId = conversationId, role = "assistant", content = result, imagePaths = ""))
-          if (_messages.value.size <= 2) generateTitle(text)
-        } catch (e: Exception) {
-          val updated = _messages.value.toMutableList()
-          updated[updated.lastIndex] = assistantMsg.copy(content = "Error: ${e.message}")
-          _messages.value = updated
-        } finally { _isStreaming.value = false }
-        return@launch
-      }
-
       try {
-        val useTools = mc.toolsOverride != false  // null=auto(send), true=send, false=dont send
+        val useTools = mc.toolsOverride != false // null=auto(send), true=send, false=dont send
         val sb = StringBuilder()
         val reasoningBlocks = mutableListOf<String>()
         val currentReasoning = StringBuilder()
         var isReasoning = false
         val toolCallsList = mutableListOf<String>()
         val toolResultsList = mutableListOf<String>()
-        
 
         val toolDefs = if (useTools) buildToolDefs() else emptyList()
 
         // Build messages (trim to contextTokens limit, ~4 chars/token)
-        val chatMessages = mutableListOf<Pair<String, String>>()
-        mc.systemPromptOverride?.let { if (it.isNotBlank()) chatMessages.add("system" to it) }
+        val chatMessages = buildSystemMessages(mc)
         val maxChars = mc.contextTokens * 4L
         var charCount = 0L
         val history = _messages.value.dropLast(1).reversed()
@@ -303,18 +353,27 @@ class ChatViewModel @Inject constructor(
           val len = msg.content.length
           if (charCount + len > maxChars) break
           charCount += len
-          val role = when (msg.role) { Role.USER -> "user"; Role.ASSISTANT -> "assistant"; Role.SYSTEM -> "system"; else -> null }
+          val role = when (msg.role) {
+            Role.USER -> "user"
+            Role.ASSISTANT -> "assistant"
+            Role.SYSTEM -> "system"
+            else -> null
+          }
           if (role != null) trimmed.add(0, role to msg.content)
         }
         chatMessages.addAll(trimmed)
         chatMessages.add("user" to text)
 
+        val isTaskModel = imageUris.isNotEmpty()
+        val (sendProfile, sendModelId) = if (isTaskModel) resolveTaskModel(com.aiope2.core.network.ModelTask.IMAGE_RECOGNITION) else (p to p.selectedModelId)
+        val sendMessages = if (isTaskModel) mutableListOf<Pair<String, String>>("user" to text) else chatMessages
+        val sendTools = if (isTaskModel) emptyList() else toolDefs
         val orchestrator = StreamingOrchestrator(
-          baseUrl = p.effectiveApiBase(),
-          apiKey = p.apiKey,
-          model = p.selectedModelId,
-          tools = toolDefs,
-          onToolCall = { name, args -> executeToolCall(name, args) }
+          baseUrl = sendProfile.effectiveApiBase(),
+          apiKey = sendProfile.apiKey,
+          model = sendModelId,
+          tools = sendTools,
+          onToolCall = { name, args -> executeToolCall(name, args) },
         )
 
         // Encode images to base64 — use saved disk paths (content URIs may expire)
@@ -332,15 +391,20 @@ class ChatViewModel @Inject constructor(
             scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
             scaled.recycle()
             android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
-          } catch (_: Exception) { null }
+          } catch (_: Exception) {
+            null
+          }
         }
 
         var lastUiLength = 0
         val charsPerLine = 55
-        orchestrator.stream(chatMessages, imageBase64s).collect { chunk ->
+        orchestrator.stream(sendMessages, imageBase64s).collect { chunk ->
           // Reasoning — accumulate into current block
           chunk.reasoning?.let { r ->
-            if (!isReasoning) { isReasoning = true; currentReasoning.clear() }
+            if (!isReasoning) {
+              isReasoning = true
+              currentReasoning.clear()
+            }
             currentReasoning.append(r)
           }
 
@@ -377,9 +441,11 @@ class ChatViewModel @Inject constructor(
           }
 
           // Build current reasoning list (include in-progress block)
-          val allReasoning = if (isReasoning && currentReasoning.isNotEmpty())
+          val allReasoning = if (isReasoning && currentReasoning.isNotEmpty()) {
             reasoningBlocks + currentReasoning.toString()
-          else reasoningBlocks.toList()
+          } else {
+            reasoningBlocks.toList()
+          }
 
           val currentLen = sb.length
           val hasNewLine = chunk.content.contains('\n')
@@ -387,16 +453,25 @@ class ChatViewModel @Inject constructor(
           if (chunk.isDone || chunk.error != null || hasNewLine || lineWorth || chunk.toolCalls != null || chunk.toolResults != null || chunk.reasoning != null) {
             lastUiLength = currentLen
             withContext(Dispatchers.Main) {
-            _messages.value = _messages.value.toMutableList().also {
-              it[it.lastIndex] = it.last().copy(
-                content = sb.toString(),
-                reasoning = allReasoning,
-                isReasoningDone = !isReasoning,
-                toolCalls = toolCallsList.toList(),
-                toolResults = toolResultsList.toList(), locationData = lastLocationData
-              )
+              _messages.value = _messages.value.toMutableList().also {
+                it[it.lastIndex] = it.last().copy(
+                  content = sb.toString(),
+                  reasoning = allReasoning,
+                  isReasoningDone = !isReasoning,
+                  toolCalls = toolCallsList.toList(),
+                  toolResults = toolResultsList.toList(),
+                  locationData = lastLocationData,
+                )
+              }
             }
           }
+        }
+
+        // Extract generated image URIs from content
+        val generatedImages = Regex("""file:///[^\s)]+\.(png|jpg|jpeg|webp)""").findAll(sb.toString()).map { it.value }.toList()
+        if (generatedImages.isNotEmpty()) {
+          _messages.value = _messages.value.toMutableList().also {
+            it[it.lastIndex] = it.last().copy(imageUris = generatedImages)
           }
         }
 
@@ -404,10 +479,17 @@ class ChatViewModel @Inject constructor(
         val finalMsg = _messages.value.last()
         lastLocationData = null // Don't carry map to next response
         android.util.Log.d("AIOPE2", "Final content len=${finalMsg.content.length} last100=${finalMsg.content.takeLast(100)}")
-        chatDao.insertMessage(MessageEntity(
-          id = finalMsg.id, conversationId = conversationId,
-          role = Role.ASSISTANT.value, content = finalMsg.content
-        ))
+        val filesDirPath = getApplication<android.app.Application>().filesDir.absolutePath
+        val genImagePaths = generatedImages.joinToString(",") { it.removePrefix("file://").removePrefix("$filesDirPath/") }
+        chatDao.insertMessage(
+          MessageEntity(
+            id = finalMsg.id,
+            conversationId = conversationId,
+            role = Role.ASSISTANT.value,
+            content = finalMsg.content,
+            imagePaths = genImagePaths,
+          ),
+        )
         if (_messages.value.size <= 2) {
           chatDao.updateConversation(conversationId, text.take(50))
           // Auto-generate title using TITLE task model
@@ -427,9 +509,15 @@ class ChatViewModel @Inject constructor(
   fun toggleTerminal() {
     _terminalVisible.value = !_terminalVisible.value
   }
-  fun toggleBrowser() { _browserVisible.value = !_browserVisible.value }
-  fun setBrowserVisible(v: Boolean) { _browserVisible.value = v }
-  fun setBrowserMaximized(v: Boolean) { _browserMaximized.value = v }
+  fun toggleBrowser() {
+    _browserVisible.value = !_browserVisible.value
+  }
+  fun setBrowserVisible(v: Boolean) {
+    _browserVisible.value = v
+  }
+  fun setBrowserMaximized(v: Boolean) {
+    _browserMaximized.value = v
+  }
 
   /** Edit & Resend: truncate messages after index, resend with new text */
   fun editAndResend(text: String, atIndex: Int) {
@@ -464,7 +552,7 @@ class ChatViewModel @Inject constructor(
     if (!mc.autoCompact) return
     val msgs = _messages.value
     val totalChars = msgs.sumOf { it.content.length }
-    val threshold = mc.contextTokens * 4L * 95 / 100  // 95% of token limit in chars
+    val threshold = mc.contextTokens * 4L * 95 / 100 // 95% of token limit in chars
     if (totalChars > threshold && msgs.size > 2) {
       // Compact first half of conversation
       compact(msgs.size / 2)
@@ -478,13 +566,16 @@ class ChatViewModel @Inject constructor(
     val transcript = toCompact.joinToString("\n") { "[${it.role.value}] ${it.content.take(2000)}" }
     val remaining = msgs.drop(atIndex + 1)
 
-    cancelStreaming(); streamingJob = viewModelScope.launch(Dispatchers.IO) {
+    cancelStreaming()
+    streamingJob = viewModelScope.launch(Dispatchers.IO) {
       _isStreaming.value = true
       try {
         val (profile, modelId) = resolveTaskModel(com.aiope2.core.network.ModelTask.SUMMARY)
         val prompt = "Summarize this conversation concisely, preserving all key context needed to continue. Start with [Summary].\n\n$transcript"
         val orchestrator = StreamingOrchestrator(
-          baseUrl = profile.effectiveApiBase(), apiKey = profile.apiKey, model = modelId
+          baseUrl = profile.effectiveApiBase(),
+          apiKey = profile.apiKey,
+          model = modelId,
         )
         val sb = StringBuilder()
         orchestrator.stream(listOf("user" to prompt)).collect { chunk ->
@@ -495,19 +586,29 @@ class ChatViewModel @Inject constructor(
 
         // Persist: delete old messages, save summary + remaining
         chatDao.deleteMessagesAfter(conversationId, 0) // delete all messages in this conversation
-        chatDao.insertMessage(MessageEntity(
-          id = summaryMsg.id, conversationId = conversationId,
-          role = summaryMsg.role.value, content = summaryMsg.content
-        ))
+        chatDao.insertMessage(
+          MessageEntity(
+            id = summaryMsg.id,
+            conversationId = conversationId,
+            role = summaryMsg.role.value,
+            content = summaryMsg.content,
+          ),
+        )
         remaining.forEach { msg ->
-          chatDao.insertMessage(MessageEntity(
-            id = msg.id, conversationId = conversationId,
-            role = msg.role.value, content = msg.content
-          ))
+          chatDao.insertMessage(
+            MessageEntity(
+              id = msg.id,
+              conversationId = conversationId,
+              role = msg.role.value,
+              content = msg.content,
+            ),
+          )
         }
       } catch (_: kotlinx.coroutines.CancellationException) { /* stopped */ } catch (e: Exception) {
         // Don't lose messages on failure
-      } finally { _isStreaming.value = false }
+      } finally {
+        _isStreaming.value = false
+      }
     }
   }
 
@@ -528,24 +629,23 @@ class ChatViewModel @Inject constructor(
 
   /** Send to LLM without adding a new user message (used by retry) */
   private fun resend(text: String) {
-    cancelStreaming(); streamingJob = viewModelScope.launch(Dispatchers.IO) {
+    cancelStreaming()
+    streamingJob = viewModelScope.launch(Dispatchers.IO) {
       _isStreaming.value = true
       val assistantMsg = ChatMessage(role = Role.ASSISTANT, content = "")
       _messages.value = _messages.value + assistantMsg
       try {
         val p = providerStore.getActive()
         val mc = p.activeModelConfig()
-        val useTools = mc.toolsOverride != false  // null=auto(send), true=send, false=dont send
+        val useTools = mc.toolsOverride != false // null=auto(send), true=send, false=dont send
         val sb = StringBuilder()
         val reasoningBlocks = mutableListOf<String>()
         val currentReasoning = StringBuilder()
         var isReasoning = false
         val toolCallsList = mutableListOf<String>()
         val toolResultsList = mutableListOf<String>()
-        
 
-        val chatMessages = mutableListOf<Pair<String, String>>()
-        mc.systemPromptOverride?.let { if (it.isNotBlank()) chatMessages.add("system" to it) }
+        val chatMessages = buildSystemMessages(mc)
         _messages.value.dropLast(1).forEach { msg ->
           when (msg.role) {
             Role.USER -> chatMessages.add("user" to msg.content)
@@ -555,21 +655,43 @@ class ChatViewModel @Inject constructor(
         }
 
         val orchestrator = StreamingOrchestrator(
-          baseUrl = p.effectiveApiBase(), apiKey = p.apiKey, model = p.selectedModelId,
+          baseUrl = p.effectiveApiBase(),
+          apiKey = p.apiKey,
+          model = p.selectedModelId,
           tools = if (useTools) buildToolDefs() else emptyList(),
-          onToolCall = { name, args -> executeToolCall(name, args) }
+          onToolCall = { name, args -> executeToolCall(name, args) },
         )
 
         orchestrator.stream(chatMessages).collect { chunk ->
-          chunk.reasoning?.let { if (!isReasoning) { isReasoning = true; currentReasoning.clear() }; currentReasoning.append(it) }
+          chunk.reasoning?.let {
+            if (!isReasoning) {
+              isReasoning = true
+              currentReasoning.clear()
+            }
+            currentReasoning.append(it)
+          }
           if (chunk.content.isNotEmpty()) {
-            if (isReasoning && currentReasoning.isNotEmpty()) { reasoningBlocks.add(currentReasoning.toString()); currentReasoning.clear(); isReasoning = false }
+            if (isReasoning && currentReasoning.isNotEmpty()) {
+              reasoningBlocks.add(currentReasoning.toString())
+              currentReasoning.clear()
+              isReasoning = false
+            }
             sb.append(chunk.content)
           }
-          chunk.toolCalls?.let { calls -> if (isReasoning) { reasoningBlocks.add(currentReasoning.toString()); currentReasoning.clear(); isReasoning = false }; for (c in calls) toolCallsList.add("${c.name}(${c.arguments.values.firstOrNull()?.toString()?.take(80) ?: ""})") }
+          chunk.toolCalls?.let { calls ->
+            if (isReasoning) {
+              reasoningBlocks.add(currentReasoning.toString())
+              currentReasoning.clear()
+              isReasoning = false
+            }
+            for (c in calls) toolCallsList.add("${c.name}(${c.arguments.values.firstOrNull()?.toString()?.take(80) ?: ""})")
+          }
           chunk.toolResults?.let { results -> for (r in results) toolResultsList.add(r.result.take(2000)) }
           chunk.error?.let { sb.append("\nError: $it") }
-          if (chunk.isDone && isReasoning && currentReasoning.isNotEmpty()) { reasoningBlocks.add(currentReasoning.toString()); isReasoning = false }
+          if (chunk.isDone && isReasoning && currentReasoning.isNotEmpty()) {
+            reasoningBlocks.add(currentReasoning.toString())
+            isReasoning = false
+          }
           val allReasoning = if (isReasoning && currentReasoning.isNotEmpty()) reasoningBlocks + currentReasoning.toString() else reasoningBlocks.toList()
           withContext(Dispatchers.Main) {
             _messages.value = _messages.value.toMutableList().also {
@@ -578,13 +700,20 @@ class ChatViewModel @Inject constructor(
           }
         }
 
+        val resendImages = Regex("""file:///[^\s)]+\.(png|jpg|jpeg|webp)""").findAll(sb.toString()).map { it.value }.toList()
+        if (resendImages.isNotEmpty()) {
+          _messages.value = _messages.value.toMutableList().also { it[it.lastIndex] = it.last().copy(imageUris = resendImages) }
+        }
+
         val finalMsg = _messages.value.last()
         chatDao.insertMessage(MessageEntity(id = finalMsg.id, conversationId = conversationId, role = Role.ASSISTANT.value, content = finalMsg.content))
       } catch (_: kotlinx.coroutines.CancellationException) { /* stopped */ } catch (e: Exception) {
         val updated = _messages.value.toMutableList()
         updated[updated.lastIndex] = updated.last().copy(content = "Error: ${e.message}")
         _messages.value = updated
-      } finally { _isStreaming.value = false }
+      } finally {
+        _isStreaming.value = false
+      }
     }
   }
 
@@ -598,19 +727,22 @@ class ChatViewModel @Inject constructor(
       val u = java.net.URL("$gwBase/v1/data")
       val conn = u.openConnection() as java.net.HttpURLConnection
       if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
-      conn.connectTimeout = 5_000; conn.readTimeout = 5_000
+      conn.connectTimeout = 5_000
+      conn.readTimeout = 5_000
       val body = conn.inputStream.bufferedReader().readText()
       conn.disconnect()
       val cats = org.json.JSONObject(body).getJSONArray("categories")
-      val list = (0 until cats.length()).joinToString(", ") { cats.getString(it) }
+      val list = (0 until cats.length()).map { cats.getString(it) }.filter { it != "search_web" && it != "image_search" }.joinToString(", ")
       cachedDataCategories = list
       list
-    } catch (_: Exception) { "air_quality, alerts, apod, asteroids, astronauts, cat, cat_breed, cat_breeds, cme, earth_events, earth_image, earthquakes, earthquakes_significant, epic, fires, geomagnetic, impact_risk, ip_location, iss, nasa_media, nasa_tech, ocean_temp, solar, solar_flares, sunrise_sunset, tides, time, uv, weather, weather_hourly" }
+    } catch (_: Exception) {
+      "air_quality, alerts, apod, asteroids, astronauts, cat, cat_breed, cat_breeds, cme, earth_events, earth_image, earthquakes, earthquakes_significant, epic, fires, geomagnetic, impact_risk, ip_location, iss, nasa_media, nasa_tech, ocean_temp, solar, solar_flares, sunrise_sunset, tides, time, uv, weather, weather_hourly"
+    }
   }
 
   private fun buildToolDefs() = listOf(
     StreamingOrchestrator.ToolDef("run_sh", "Execute Android shell command", org.json.JSONObject("""{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}""")),
-    StreamingOrchestrator.ToolDef("run_proot", "Execute a command in the Ubuntu proot Linux environment. Use for apt, python, gcc, etc.", org.json.JSONObject("""{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}""")),
+    StreamingOrchestrator.ToolDef("run_proot", "Execute a command in the Alpine Linux proot environment. Use for apk, python, gcc, etc.", org.json.JSONObject("""{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}""")),
     StreamingOrchestrator.ToolDef("read_file", "Read file contents", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""")),
     StreamingOrchestrator.ToolDef("write_file", "Write file", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""")),
     StreamingOrchestrator.ToolDef("list_directory", "List directory", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""")),
@@ -620,6 +752,7 @@ class ChatViewModel @Inject constructor(
     StreamingOrchestrator.ToolDef("query_data", "Query live real-time data. Returns JSON and any images as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them. Automatically uses device GPS for location-based queries. Pass 'extra' for searches (nasa_media, nasa_tech) or station IDs (tides, ocean_temp) or breed IDs (cat_breed). Available categories: ${fetchDataCategories()}", org.json.JSONObject("""{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query, station ID, or breed ID depending on category"}},"required":["category"]}""")),
     StreamingOrchestrator.ToolDef("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}""")),
     StreamingOrchestrator.ToolDef("search_web", "Search the web for current information, news, answers, or any topic. Returns results with titles, URLs, and snippets. Use when the user asks about recent events, facts you're unsure of, or anything requiring up-to-date information.", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}""")),
+    StreamingOrchestrator.ToolDef("search_images", "Search for images on the web. Returns image URLs with titles. Use when the user asks to find photos, pictures, or images of something.", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"Image search query"}},"required":["query"]}""")),
     StreamingOrchestrator.ToolDef("browser_navigate", "Navigate the in-app browser to a URL. Opens a real WebView you can then interact with via browser_click, browser_fill, browser_eval, browser_content, browser_elements.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL to navigate to"}},"required":["url"]}""")),
     StreamingOrchestrator.ToolDef("browser_content", "Get the current page text content, URL, and title from the in-app browser.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
     StreamingOrchestrator.ToolDef("browser_elements", "List all interactive elements (links, buttons, inputs) on the current browser page with their selectors.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
@@ -630,45 +763,142 @@ class ChatViewModel @Inject constructor(
     StreamingOrchestrator.ToolDef("browser_scroll", "Scroll the browser page up or down.", org.json.JSONObject("""{"type":"object","properties":{"direction":{"type":"string","description":"'up' or 'down'"},"amount":{"type":"integer","description":"Pixels to scroll (default 500)"}},"required":["direction"]}""")),
     StreamingOrchestrator.ToolDef("browser_open", "Open the browser panel so the user can see it.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
     StreamingOrchestrator.ToolDef("browser_close", "Close the browser panel.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
-    StreamingOrchestrator.ToolDef("browser_maximize", "Maximize or restore the browser panel. Pass maximize=true for fullscreen, false to restore split view.", org.json.JSONObject("""{"type":"object","properties":{"maximize":{"type":"boolean","description":"true to maximize, false to restore"}},"required":["maximize"]}"""))
-  )
+    StreamingOrchestrator.ToolDef("browser_maximize", "Maximize or restore the browser panel. Pass maximize=true for fullscreen, false to restore split view.", org.json.JSONObject("""{"type":"object","properties":{"maximize":{"type":"boolean","description":"true to maximize, false to restore"}},"required":["maximize"]}""")),
+    StreamingOrchestrator.ToolDef("memory_store", "Store a fact or preference the user wants you to remember across conversations. Use a short descriptive key.", org.json.JSONObject("""{"type":"object","properties":{"key":{"type":"string","description":"Short key like 'user_name' or 'preferred_language'"},"content":{"type":"string","description":"The fact to remember"},"category":{"type":"string","description":"Optional: general, preference, learning, error"}},"required":["key","content"]}""")),
+    StreamingOrchestrator.ToolDef("memory_recall", "Search your persistent memory for stored facts. Call with empty query to list all memories.", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"Search term, or empty to list all"}},"required":["query"]}""")),
+    StreamingOrchestrator.ToolDef("memory_forget", "Delete a specific memory by its key.", org.json.JSONObject("""{"type":"object","properties":{"key":{"type":"string","description":"Key of the memory to delete"}},"required":["key"]}""")),
+    StreamingOrchestrator.ToolDef("image_generate", "Generate an image from a text prompt. Use when the user asks you to draw, create, generate, or make an image/picture/illustration.", org.json.JSONObject("""{"type":"object","properties":{"prompt":{"type":"string","description":"Detailed image generation prompt"}},"required":["prompt"]}""")),
+    StreamingOrchestrator.ToolDef("analyze_image", "Analyze an image from a URL using vision. Use for browser screenshots, fetched images, or any image URL the user wants described.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL of the image to analyze"},"question":{"type":"string","description":"What to look for or ask about the image"}},"required":["url"]}""")),
+  ).filter { toolStore.isToolEnabled(it.name) } + buildMcpToolDefs()
+
+  private fun buildMcpToolDefs(): List<StreamingOrchestrator.ToolDef> = toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
+    mcpManager.getToolDefs(server.id)
+  }.filter { toolStore.isToolEnabled(it.name) }
+
+  val mcpManager: McpManager by lazy { McpManager(toolStore).also { it.startHeartbeat() } }
 
   private val locationProvider by lazy { com.aiope2.feature.chat.location.LocationProvider(getApplication()) }
+
+  private suspend fun buildSystemMessages(mc: com.aiope2.core.network.ModelConfig): MutableList<Pair<String, String>> {
+    val msgs = mutableListOf<Pair<String, String>>()
+    mc.systemPromptOverride?.let { if (it.isNotBlank()) msgs.add("system" to it) }
+    if (toolStore.isDynamicUiEnabled()) {
+      msgs.add(
+        "system" to buildString {
+          append("## Dynamic UI\n")
+          append("You can enhance your chat responses with interactive UI elements using aiope-ui blocks. ")
+          append("Proactively use them whenever you need input from the user — don't just ask in plain text if a form, selector, or buttons would be more natural. ")
+          append("Use aiope-ui whenever collecting data, offering choices, presenting structured information, or guiding multi-step workflows. ")
+          append("You can mix aiope-ui blocks with regular markdown text naturally — use markdown for explanations and aiope-ui for interactive elements.\n\n")
+          append("Format: wrap a JSON object in ```aiope-ui fences.\n\n")
+          append("Components: column, row, card, text, button, text_input, checkbox, switch, select, radio_group, slider, chip_group, table, list, divider, image, icon, code, progress, alert, tabs, accordion, quote, badge, stat.\n")
+          append("- text: {\"type\":\"text\",\"value\":\"...\",\"style\":\"headline|title|body|caption\",\"bold\":true,\"italic\":true,\"color\":\"primary|secondary|error|violet|green|amber\"} — do NOT use markdown formatting (**, *, #) in text values; use bold/italic/style properties instead\n")
+          append("- button: {\"type\":\"button\",\"label\":\"...\",\"action\":{...},\"variant\":\"filled|outlined|text|tonal\"} — always include a label\n")
+          append("- text_input: {\"type\":\"text_input\",\"id\":\"...\",\"label\":\"...\",\"placeholder\":\"...\"}\n")
+          append("- checkbox: {\"type\":\"checkbox\",\"id\":\"...\",\"label\":\"...\",\"checked\":false}\n")
+          append("- switch: {\"type\":\"switch\",\"id\":\"...\",\"label\":\"...\",\"checked\":false}\n")
+          append("- select: {\"type\":\"select\",\"id\":\"...\",\"label\":\"...\",\"options\":[\"A\",\"B\"],\"selected\":\"A\"}\n")
+          append("- radio_group: {\"type\":\"radio_group\",\"id\":\"...\",\"label\":\"...\",\"options\":[\"A\",\"B\"]}\n")
+          append("- slider: {\"type\":\"slider\",\"id\":\"...\",\"label\":\"...\",\"value\":50,\"min\":0,\"max\":100,\"step\":10}\n")
+          append("- chip_group: {\"type\":\"chip_group\",\"id\":\"...\",\"chips\":[{\"label\":\"Tag\",\"value\":\"tag\"}],\"selection\":\"single|multi|none\"}\n")
+          append("- list: {\"type\":\"list\",\"items\":[...],\"ordered\":false} — do NOT include bullet characters in item text\n")
+          append("- table: {\"type\":\"table\",\"headers\":[\"Col1\",\"Col2\"],\"rows\":[[\"a\",\"b\"]]}\n")
+          append("- icon: {\"type\":\"icon\",\"name\":\"home|star|check|warning|info|...\",\"size\":24,\"color\":\"primary\"} — you can also use any emoji as the name\n")
+          append("- code: {\"type\":\"code\",\"code\":\"...\",\"language\":\"kotlin\"}\n")
+          append("- progress: {\"type\":\"progress\",\"value\":0.5,\"label\":\"50%\"}\n")
+          append("- alert: {\"type\":\"alert\",\"message\":\"...\",\"title\":\"...\",\"severity\":\"info|success|warning|error\"}\n")
+          append("- tabs: {\"type\":\"tabs\",\"tabs\":[{\"label\":\"Tab 1\",\"children\":[...]},{\"label\":\"Tab 2\",\"children\":[...]}]}\n")
+          append("- accordion: {\"type\":\"accordion\",\"title\":\"...\",\"children\":[...],\"expanded\":false}\n")
+          append("- quote: {\"type\":\"quote\",\"text\":\"...\",\"source\":\"Author\"}\n")
+          append("- badge: {\"type\":\"badge\",\"value\":\"3\",\"color\":\"primary\"}\n")
+          append("- stat: {\"type\":\"stat\",\"value\":\"\$1,234\",\"label\":\"Revenue\",\"description\":\"12% increase\"}\n\n")
+          append("Actions (on buttons):\n")
+          append("- callback: {\"type\":\"callback\",\"event\":\"event_name\",\"data\":{\"key\":\"val\"},\"collectFrom\":[\"input_id\"]} — collects input values and sends them back\n")
+          append("- toggle: {\"type\":\"toggle\",\"targetId\":\"element_id\"} — shows/hides an element\n")
+          append("- open_url: {\"type\":\"open_url\",\"url\":\"https://...\"}\n")
+          append("- copy_to_clipboard: {\"type\":\"copy_to_clipboard\",\"text\":\"...\"}\n\n")
+          append("Layout tips:\n")
+          append("- Put buttons INSIDE cards, directly below related content — never group all buttons separately at the bottom\n")
+          append("- Use rows for groups of buttons or chips — rows wrap automatically\n")
+          append("- Keep button labels short (1-3 words)\n")
+          append("- Form inputs only store state locally. Their values are ONLY sent when a button's collectFrom includes their id. Always pair form inputs with a submit button.\n\n")
+          append("Example:\n```aiope-ui\n{\"type\":\"column\",\"children\":[{\"type\":\"text\",\"value\":\"Your name?\",\"style\":\"title\"},{\"type\":\"text_input\",\"id\":\"name\",\"placeholder\":\"Enter name\"},{\"type\":\"button\",\"label\":\"Submit\",\"action\":{\"type\":\"callback\",\"event\":\"submit\",\"collectFrom\":[\"name\"]}}]}\n```\n")
+        },
+      )
+    }
+    return msgs
+  }
   private var lastLocationData: LocationData? = null
   private fun getBrowser() = com.aiope2.feature.chat.browser.BrowserHolder.getOrCreate(getApplication())
 
   private fun executeToolCall(name: String, args: Map<String, Any?>): String = when (name) {
     "run_sh" -> com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "").let { if (it.length > 4000) it.take(4000) + "\n...(truncated)" else it }
+
     "run_proot" -> {
       val ctx = getApplication<android.app.Application>()
-      if (!com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(ctx)) "Ubuntu not installed. Set up proot in Settings first."
-      else com.aiope2.core.terminal.shell.ProotExecutor.exec(ctx, args["command"]?.toString() ?: "").let { if (it.length > 4000) it.take(4000) + "\n...(truncated)" else it }
+      if (!com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(ctx)) {
+        "Alpine not installed. Set up proot in Settings first."
+      } else {
+        com.aiope2.core.terminal.shell.ProotExecutor.exec(ctx, args["command"]?.toString() ?: "").let { if (it.length > 4000) it.take(4000) + "\n...(truncated)" else it }
+      }
     }
-    "read_file" -> try { java.io.File(args["path"].toString()).readText().let { if (it.length > 50000) "File too large" else it } } catch (e: Exception) { "Error: ${e.message}" }
-    "write_file" -> try { val f = java.io.File(args["path"].toString()); f.parentFile?.mkdirs(); f.writeText(args["content"].toString()); "Written ${args["content"].toString().length} bytes" } catch (e: Exception) { "Error: ${e.message}" }
-    "list_directory" -> try { java.io.File(args["path"].toString()).listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" } ?: "Empty" } catch (e: Exception) { "Error: ${e.message}" }
+
+    "read_file" -> try {
+      java.io.File(args["path"].toString()).readText().let { if (it.length > 50000) "File too large" else it }
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
+    "write_file" -> try {
+      val f = java.io.File(args["path"].toString())
+      f.parentFile?.mkdirs()
+      f.writeText(args["content"].toString())
+      "OK: Written ${args["content"].toString().length} bytes to ${f.absolutePath}"
+    } catch (e: Exception) {
+      "FAILED write_file: ${args["path"]} — ${e.message}"
+    }
+
+    "list_directory" -> try {
+      java.io.File(args["path"].toString()).listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" } ?: "Empty"
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
     "open_intent" -> try {
       val uri = android.net.Uri.parse(args["uri"].toString())
       val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
       getApplication<android.app.Application>().startActivity(intent)
       "Opened: $uri"
-    } catch (e: Exception) { "Error: ${e.message}" }
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
     "fetch_url" -> try {
       val fetchUrl = java.net.URL(args["url"].toString())
       val mode = args["mode"]?.toString() ?: "text"
       val conn = fetchUrl.openConnection() as java.net.HttpURLConnection
       conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AIOPE/2.0")
-      conn.connectTimeout = 15_000; conn.readTimeout = 15_000
+      conn.connectTimeout = 15_000
+      conn.readTimeout = 15_000
       val ct = conn.contentType ?: ""
       val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
       conn.disconnect()
-      val result = if (mode == "raw" || !ct.contains("html")) body
-      else {
+      val result = if (mode == "raw" || !ct.contains("html")) {
+        body
+      } else {
         val base = "${fetchUrl.protocol}://${fetchUrl.host}"
         // Extract images: <img src>, <meta og:image>
         val imgs = mutableListOf<String>()
         Regex("""<img[^>]+src=["']([^"']+)["'][^>]*(?:alt=["']([^"']*)["'])?""", RegexOption.IGNORE_CASE).findAll(body).forEach { m ->
-          val src = m.groupValues[1].let { if (it.startsWith("http")) it else if (it.startsWith("/")) "$base$it" else "$base/$it" }
+          val src = m.groupValues[1].let {
+            if (it.startsWith("http")) {
+              it
+            } else if (it.startsWith("/")) {
+              "$base$it"
+            } else {
+              "$base/$it"
+            }
+          }
           if (src.matches(Regex(".*\\.(jpg|jpeg|png|gif|webp|svg)(\\?.*)?$", RegexOption.IGNORE_CASE)) || !src.contains(".js")) {
             val alt = m.groupValues.getOrElse(2) { "" }.take(80)
             imgs.add("![${alt.ifEmpty { "image" }}]($src)")
@@ -685,12 +915,16 @@ class ChatViewModel @Inject constructor(
         imgSection + text
       }
       if (result.length > 12000) result.take(12000) + "\n...(truncated)" else result
-    } catch (e: Exception) { "Error: ${e.message}" }
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
     "query_data" -> try {
       val cat = args["category"]?.toString() ?: ""
       val extra = args["extra"]?.toString() ?: ""
-      val needsLocation = cat in setOf("weather","weather_hourly","alerts","air_quality","uv","solar","sunrise_sunset","time")
-      val lat: String; val lon: String
+      val needsLocation = cat in setOf("weather", "weather_hourly", "alerts", "air_quality", "uv", "solar", "sunrise_sunset", "time")
+      val lat: String
+      val lon: String
       if (needsLocation) {
         val loc = lastLocationData ?: kotlinx.coroutines.runBlocking {
           locationProvider.getLastLocation()?.let { l ->
@@ -698,45 +932,59 @@ class ChatViewModel @Inject constructor(
             lastLocationData
           }
         }
-        lat = loc?.latitude?.toString() ?: ""; lon = loc?.longitude?.toString() ?: ""
-      } else { lat = ""; lon = "" }
+        lat = loc?.latitude?.toString() ?: ""
+        lon = loc?.longitude?.toString() ?: ""
+      } else {
+        lat = ""
+        lon = ""
+      }
       val p = providerStore.getActive()
       val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
       val u = java.net.URL("$gwBase/v1/data?q=$cat&lat=$lat&lon=$lon&extra=$extra")
       val conn = u.openConnection() as java.net.HttpURLConnection
       if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
-      conn.connectTimeout = 15_000; conn.readTimeout = 30_000
+      conn.connectTimeout = 15_000
+      conn.readTimeout = 30_000
       val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
       val body = stream?.bufferedReader(Charsets.UTF_8)?.readText() ?: "Error: HTTP ${conn.responseCode}"
       conn.disconnect()
       val enriched = resolveDataImages(cat, body)
       if (enriched.length > 12000) enriched.take(12000) + "\n...(truncated)" else enriched
-    } catch (e: Exception) { "Error: ${e.message}" }
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
     "get_location" -> kotlinx.coroutines.runBlocking {
       val loc = locationProvider.getFreshLocation() ?: locationProvider.getLastLocation()
       if (loc != null) {
         lastLocationData = LocationData(
-          latitude = loc.latitude, longitude = loc.longitude,
+          latitude = loc.latitude,
+          longitude = loc.longitude,
           altitude = if (loc.hasAltitude()) loc.altitude else null,
           speed = if (loc.hasSpeed()) loc.speed.toDouble() else null,
           bearing = if (loc.hasBearing()) loc.bearing.toDouble() else null,
-          accuracy = loc.accuracy.toDouble()
+          accuracy = loc.accuracy.toDouble(),
         )
         val base = locationProvider.formatLocation(loc)
         val address = locationProvider.reverseGeocode(loc)
         if (address != null) "$base\n$address" else base
-      } else "Location unavailable -- check permissions or GPS"
+      } else {
+        "Location unavailable -- check permissions or GPS"
+      }
     }
+
     "search_location" -> {
       val query = args["query"]?.toString() ?: ""
       val q = query.lowercase()
       // Skip Geocoder for business/amenity/brand queries — go straight to Overpass
-      val businessTerms = listOf("near", "closest", "nearest", "nearby",
+      val businessTerms = listOf(
+        "near", "closest", "nearest", "nearby",
         "restaurant", "food", "eat", "coffee", "cafe", "pizza", "burger",
         "gas", "fuel", "pharmacy", "hotel", "motel", "grocery", "supermarket",
         "bar", "pub", "gym", "bank", "atm", "parking", "hospital",
         "mcdonald", "starbucks", "walmart", "target", "costco", "wendy",
-        "subway", "taco bell", "burger king", "chick-fil", "dunkin")
+        "subway", "taco bell", "burger king", "chick-fil", "dunkin",
+      )
       val isBusinessQuery = businessTerms.any { q.contains(it) }
       try {
         if (!isBusinessQuery) {
@@ -749,34 +997,139 @@ class ChatViewModel @Inject constructor(
               val line = addr.getAddressLine(0) ?: "${addr.locality ?: ""}, ${addr.adminArea ?: ""}, ${addr.countryName ?: ""}"
               "${i + 1}. $line\n   Lat: ${addr.latitude}, Lng: ${addr.longitude}"
             }.joinToString("\n")
-          } else searchPlaces(query)
-        } else searchPlaces(query)
+          } else {
+            searchPlaces(query)
+          }
+        } else {
+          searchPlaces(query)
+        }
       } catch (e: Exception) {
-        try { searchPlaces(query) } catch (e2: Exception) { "Error: ${e2.message}" }
+        try {
+          searchPlaces(query)
+        } catch (e2: Exception) {
+          "Error: ${e2.message}"
+        }
       }
     }
-    "search_web" -> executeToolCall("query_data", mapOf("category" to "search_web", "extra" to (args["query"]?.toString() ?: "")))
-    "browser_navigate" -> kotlinx.coroutines.runBlocking { getBrowser().navigate(args["url"]?.toString() ?: "") }
-    "browser_content" -> kotlinx.coroutines.runBlocking { getBrowser().getPageContent() }
-    "browser_elements" -> kotlinx.coroutines.runBlocking { getBrowser().getElements() }
-    "browser_click" -> kotlinx.coroutines.runBlocking { getBrowser().click(args["selector"]?.toString() ?: "") }
-    "browser_fill" -> kotlinx.coroutines.runBlocking { getBrowser().fill(args["selector"]?.toString() ?: "", args["value"]?.toString() ?: "") }
-    "browser_eval" -> kotlinx.coroutines.runBlocking { getBrowser().evaluateJs(args["script"]?.toString() ?: "") }
-    "browser_back" -> kotlinx.coroutines.runBlocking { if (getBrowser().goBack()) "Navigated back" else "No history to go back" }
-    "browser_scroll" -> kotlinx.coroutines.runBlocking { getBrowser().scroll(args["direction"]?.toString() ?: "down", (args["amount"] as? Number)?.toInt() ?: 500) }
-    "browser_open" -> { setBrowserVisible(true); "Browser opened" }
-    "browser_close" -> { setBrowserVisible(false); setBrowserMaximized(false); "Browser closed" }
-    "browser_maximize" -> { val max = args["maximize"] as? Boolean ?: true; setBrowserVisible(true); setBrowserMaximized(max); if (max) "Browser maximized" else "Browser restored" }
-    else -> "Unknown tool: $name"
-  }
 
+    "search_web" -> executeToolCall("query_data", mapOf("category" to "search_web", "extra" to (args["query"]?.toString() ?: "")))
+
+    "search_images" -> executeToolCall("query_data", mapOf("category" to "image_search", "extra" to (args["query"]?.toString() ?: "")))
+
+    "browser_navigate" -> kotlinx.coroutines.runBlocking { getBrowser().navigate(args["url"]?.toString() ?: "") }
+
+    "browser_content" -> kotlinx.coroutines.runBlocking { getBrowser().getPageContent() }
+
+    "browser_elements" -> kotlinx.coroutines.runBlocking { getBrowser().getElements() }
+
+    "browser_click" -> kotlinx.coroutines.runBlocking { getBrowser().click(args["selector"]?.toString() ?: "") }
+
+    "browser_fill" -> kotlinx.coroutines.runBlocking { getBrowser().fill(args["selector"]?.toString() ?: "", args["value"]?.toString() ?: "") }
+
+    "browser_eval" -> kotlinx.coroutines.runBlocking { getBrowser().evaluateJs(args["script"]?.toString() ?: "") }
+
+    "browser_back" -> kotlinx.coroutines.runBlocking { if (getBrowser().goBack()) "Navigated back" else "No history to go back" }
+
+    "browser_scroll" -> kotlinx.coroutines.runBlocking { getBrowser().scroll(args["direction"]?.toString() ?: "down", (args["amount"] as? Number)?.toInt() ?: 500) }
+
+    "browser_open" -> {
+      setBrowserVisible(true)
+      "Browser opened"
+    }
+
+    "browser_close" -> {
+      setBrowserVisible(false)
+      setBrowserMaximized(false)
+      "Browser closed"
+    }
+
+    "browser_maximize" -> {
+      val max = args["maximize"] as? Boolean ?: true
+      setBrowserVisible(true)
+      setBrowserMaximized(max)
+      if (max) "Browser maximized" else "Browser restored"
+    }
+
+    "memory_store" -> kotlinx.coroutines.runBlocking {
+      val key = args["key"]?.toString() ?: return@runBlocking "Error: key required"
+      val content = args["content"]?.toString() ?: return@runBlocking "Error: content required"
+      val category = args["category"]?.toString() ?: "general"
+      chatDao.upsertMemory(com.aiope2.feature.chat.db.MemoryEntity(key = key, content = content, category = category))
+      "Stored memory: $key"
+    }
+
+    "memory_recall" -> kotlinx.coroutines.runBlocking {
+      val query = args["query"]?.toString() ?: ""
+      val memories = if (query.isBlank()) chatDao.getAllMemories() else chatDao.searchMemories(query)
+      if (memories.isEmpty()) {
+        "No memories found."
+      } else {
+        memories.joinToString("\n") { "- ${it.key}: ${it.content} [${it.category}]" }
+      }
+    }
+
+    "memory_forget" -> kotlinx.coroutines.runBlocking {
+      val key = args["key"]?.toString() ?: return@runBlocking "Error: key required"
+      chatDao.deleteMemory(key)
+      "Deleted memory: $key"
+    }
+
+    "image_generate" -> kotlinx.coroutines.runBlocking {
+      val prompt = args["prompt"]?.toString() ?: return@runBlocking "Error: prompt required"
+      try {
+        val (profile, modelId) = resolveTaskModel(com.aiope2.core.network.ModelTask.IMAGE_GENERATION)
+        val p = profile.copy(selectedModelId = modelId)
+        val result = sendImageGeneration(p, prompt)
+        if (result.startsWith("file://")) {
+          val filePath = result.removePrefix("file://")
+          val fileSize = java.io.File(filePath).length()
+          "Image generated successfully.\nFile: $result\nSize: $fileSize bytes\nModel: $modelId\nProvider: ${profile.effectiveApiBase()}\nPrompt: $prompt\nDisplay: ![generated image]($result)\nYou can verify this image by calling analyze_image with this file URL."
+        } else {
+          "Generation returned unexpected result: ${result.take(200)}"
+        }
+      } catch (e: Exception) {
+        "Image generation FAILED.\nModel: ${try {
+          resolveTaskModel(com.aiope2.core.network.ModelTask.IMAGE_GENERATION).second
+        } catch (_: Exception) {
+          "unknown"
+        }}\nPrompt: $prompt\nError: ${e.message}\nYou may retry this call."
+      }
+    }
+
+    "analyze_image" -> kotlinx.coroutines.runBlocking {
+      val url = args["url"]?.toString() ?: return@runBlocking "Error: url required"
+      val question = args["question"]?.toString() ?: "Describe this image in detail."
+      try {
+        val (profile, modelId) = resolveTaskModel(com.aiope2.core.network.ModelTask.IMAGE_RECOGNITION)
+        val imageBytes = java.net.URL(url).readBytes()
+        val b64 = android.util.Base64.encodeToString(imageBytes, android.util.Base64.NO_WRAP)
+        val orchestrator = StreamingOrchestrator(
+          baseUrl = profile.effectiveApiBase(),
+          apiKey = profile.apiKey,
+          model = modelId,
+        )
+        val sb = StringBuilder()
+        orchestrator.stream(listOf("user" to question), listOf(b64)).collect { chunk ->
+          if (chunk.content.isNotEmpty()) sb.append(chunk.content)
+        }
+        val analysis = sb.toString().ifBlank { "No description returned." }
+        "Image analysis complete.\nSource: $url\nModel: $modelId\nQuestion: $question\nResult: $analysis"
+      } catch (e: Exception) {
+        "Image analysis FAILED.\nSource: $url\nQuestion: $question\nError: ${e.message}\nYou may retry this call."
+      }
+    }
+
+    else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"
+  }
 
   private fun resolveDataImages(category: String, json: String): String {
     try {
       val imgs = mutableListOf<String>()
       extractImageUrls(org.json.JSONTokener(json).nextValue(), imgs)
       return if (imgs.isNotEmpty()) imgs.distinct().take(5).joinToString("\n") + "\n\n" + json else json
-    } catch (_: Exception) { return json }
+    } catch (_: Exception) {
+      return json
+    }
   }
 
   private fun extractImageUrls(obj: Any?, out: MutableList<String>) {
@@ -788,9 +1141,12 @@ class ChatViewModel @Inject constructor(
           if (v is String && key in imgKeys && v.matches(Regex("^https?://.*\\.(jpg|jpeg|png|gif|webp)(\\?.*)?$", RegexOption.IGNORE_CASE))) {
             val label = obj.optString("title", obj.optString("caption", key))
             out.add("![$label]($v)")
-          } else extractImageUrls(v, out)
+          } else {
+            extractImageUrls(v, out)
+          }
         }
       }
+
       is org.json.JSONArray -> for (i in 0 until minOf(obj.length(), 10)) extractImageUrls(obj.opt(i), out)
     }
   }
@@ -801,8 +1157,11 @@ class ChatViewModel @Inject constructor(
       val loc = kotlinx.coroutines.runBlocking { locationProvider.getFreshLocation() ?: locationProvider.getLastLocation() }
       if (loc != null) {
         lastLocationData = LocationData(latitude = loc.latitude, longitude = loc.longitude)
-        lat = loc.latitude; lng = loc.longitude
-      } else return "Location unavailable. Enable GPS and try again."
+        lat = loc.latitude
+        lng = loc.longitude
+      } else {
+        return "Location unavailable. Enable GPS and try again."
+      }
     }
 
     val q = query.trim().replace(Regex("\\s*(near|in|around|close to|closest to|nearest to)\\s+.*$", RegexOption.IGNORE_CASE), "").trim()
@@ -815,7 +1174,8 @@ class ChatViewModel @Inject constructor(
       val gwUrl = "$gwBase/v1/data?q=places&query=$encoded&lat=$lat&lon=$lng"
       val conn = java.net.URL(gwUrl).openConnection() as java.net.HttpURLConnection
       if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
-      conn.connectTimeout = 10_000; conn.readTimeout = 15_000
+      conn.connectTimeout = 10_000
+      conn.readTimeout = 15_000
       if (conn.responseCode in 200..299) {
         val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
         val wrapper = org.json.JSONObject(body)
@@ -829,11 +1189,13 @@ class ChatViewModel @Inject constructor(
     if (apiKey.isBlank()) return "Place search unavailable. Set Geoapify key in Settings or configure it on the gateway."
     val url = "https://api.geoapify.com/v2/places?categories=commercial,catering,service,entertainment,leisure,sport,tourism,accommodation,education,healthcare&conditions=named&filter=circle:$lng,$lat,5000&bias=proximity:$lng,$lat&limit=5&name=$encoded&apiKey=$apiKey"
     val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-    conn.connectTimeout = 15000; conn.readTimeout = 15000
+    conn.connectTimeout = 15000
+    conn.readTimeout = 15000
     if (conn.responseCode !in 200..299) {
       val url2 = "https://api.geoapify.com/v1/geocode/search?text=${java.net.URLEncoder.encode(query, "UTF-8")}&bias=proximity:$lng,$lat&limit=5&apiKey=$apiKey"
       val conn2 = java.net.URL(url2).openConnection() as java.net.HttpURLConnection
-      conn2.connectTimeout = 15000; conn2.readTimeout = 15000
+      conn2.connectTimeout = 15000
+      conn2.readTimeout = 15000
       if (conn2.responseCode !in 200..299) return "Search error: HTTP ${conn2.responseCode}"
       return parseGeoapifyResults(conn2.inputStream.bufferedReader(Charsets.UTF_8).readText(), query)
     }
@@ -873,7 +1235,8 @@ class ChatViewModel @Inject constructor(
   }
 
   private fun padToSquare(bmp: android.graphics.Bitmap): android.graphics.Bitmap {
-    val w = bmp.width; val h = bmp.height
+    val w = bmp.width
+    val h = bmp.height
     if (w == h) return bmp
     val size = maxOf(w, h)
     val out = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)

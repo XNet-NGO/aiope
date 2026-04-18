@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.aiope2.core.navigation.AppComposeNavigator
 import com.aiope2.feature.chat.settings.ProviderStore
+import com.aiope2.feature.chat.settings.ToolStore
 import com.aiope2.ui.AiopeMain
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -24,6 +25,8 @@ class MainActivity : ComponentActivity() {
   @Inject lateinit var composeNavigator: AppComposeNavigator
 
   @Inject lateinit var providerStore: ProviderStore
+
+  @Inject lateinit var toolStore: ToolStore
 
   private val runtimePermissions = buildList {
     add(Manifest.permission.CAMERA)
@@ -87,6 +90,6 @@ class MainActivity : ComponentActivity() {
     // Start foreground service
     startForegroundService(Intent(this, AiopeForegroundService::class.java))
 
-    setContent { AiopeMain(composeNavigator = composeNavigator, providerStore = providerStore) }
+    setContent { AiopeMain(composeNavigator = composeNavigator, providerStore = providerStore, toolStore = toolStore) }
   }
 }

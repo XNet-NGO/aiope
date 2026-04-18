@@ -20,7 +20,7 @@ class StreamingOrchestrator(
   private val apiKey: String,
   private val model: String,
   private val tools: List<ToolDef> = emptyList(),
-  private val onToolCall: suspend (String, Map<String, Any?>) -> String = { _, _ -> "" }
+  private val onToolCall: suspend (String, Map<String, Any?>) -> String = { _, _ -> "" },
 ) {
 
   data class ToolDef(val name: String, val description: String, val parameters: JSONObject)
@@ -38,8 +38,12 @@ class StreamingOrchestrator(
         val contentArr = JSONArray()
         contentArr.put(JSONObject().put("type", "text").put("text", msg.optString("content", "")))
         for (b64 in imageBase64s) {
-          contentArr.put(JSONObject().put("type", "image_url").put("image_url",
-            JSONObject().put("url", "data:image/jpeg;base64,$b64")))
+          contentArr.put(
+            JSONObject().put("type", "image_url").put(
+              "image_url",
+              JSONObject().put("url", "data:image/jpeg;base64,$b64"),
+            ),
+          )
         }
         msg.put("content", contentArr)
       }
@@ -93,10 +97,14 @@ class StreamingOrchestrator(
 
       try {
         while (true) {
+          if (!kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]!!.isActive) break
           val line = reader.readLine() ?: break
           if (!line.startsWith("data:")) continue
           val data = line.removePrefix("data:").trim()
-          if (data == "[DONE]") { android.util.Log.d("AIOPE2", "SSE [DONE] received"); break }
+          if (data == "[DONE]") {
+            android.util.Log.d("AIOPE2", "SSE [DONE] received")
+            break
+          }
           if (data.isEmpty()) continue
 
           try {
@@ -117,8 +125,15 @@ class StreamingOrchestrator(
 
             // Handle <think> and <thought> tags in content stream
             if (!inThinkTag) {
-              if (content.contains("<think>")) { inThinkTag = true; thinkTagName = "think"; content = content.substringAfter("<think>") }
-              else if (content.contains("<thought>")) { inThinkTag = true; thinkTagName = "thought"; content = content.substringAfter("<thought>") }
+              if (content.contains("<think>")) {
+                inThinkTag = true
+                thinkTagName = "think"
+                content = content.substringAfter("<think>")
+              } else if (content.contains("<thought>")) {
+                inThinkTag = true
+                thinkTagName = "thought"
+                content = content.substringAfter("<thought>")
+              }
             }
             if (inThinkTag) {
               val closeTag = "</$thinkTagName>"
@@ -154,7 +169,11 @@ class StreamingOrchestrator(
             if (finishReason == "tool_calls" || finishReason == "stop" && toolAcc.isNotEmpty()) {
               hasToolCalls = toolAcc.isNotEmpty()
             }
-          } catch (e: Exception) { android.util.Log.e("AIOPE2", "SSE parse error: ${e.message} data=${data.take(100)}") }
+          } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+          } catch (e: Exception) {
+            android.util.Log.e("AIOPE2", "SSE parse error: ${e.message} data=${data.take(100)}")
+          }
         }
       } finally {
         reader.close()
@@ -172,7 +191,9 @@ class StreamingOrchestrator(
           val args = try {
             val j = JSONObject(argsStr)
             j.keys().asSequence().associateWith { k -> j.opt(k) }
-          } catch (_: Exception) { emptyMap<String, Any?>() }
+          } catch (_: Exception) {
+            emptyMap<String, Any?>()
+          }
           callInfos.add(ToolCallInfo(id = id, name = name, arguments = args))
         }
 
@@ -180,7 +201,11 @@ class StreamingOrchestrator(
 
         val results = mutableListOf<ToolResultInfo>()
         for (call in callInfos) {
-          val result = try { onToolCall(call.name, call.arguments) } catch (e: Exception) { "Error: ${e.message}" }
+          val result = try {
+            onToolCall(call.name, call.arguments)
+          } catch (e: Exception) {
+            "Error: ${e.message}"
+          }
           results.add(ToolResultInfo(id = call.id, name = call.name, arguments = call.arguments, result = result))
         }
 
@@ -193,14 +218,19 @@ class StreamingOrchestrator(
           put("content", JSONObject.NULL)
           val tcArr = JSONArray()
           for (c in callInfos) {
-            tcArr.put(JSONObject().apply {
-              put("id", c.id)
-              put("type", "function")
-              put("function", JSONObject().apply {
-                put("name", c.name)
-                put("arguments", JSONObject(c.arguments).toString())
-              })
-            })
+            tcArr.put(
+              JSONObject().apply {
+                put("id", c.id)
+                put("type", "function")
+                put(
+                  "function",
+                  JSONObject().apply {
+                    put("name", c.name)
+                    put("arguments", JSONObject(c.arguments).toString())
+                  },
+                )
+              },
+            )
           }
           put("tool_calls", tcArr)
         }
@@ -208,11 +238,13 @@ class StreamingOrchestrator(
 
         // Add tool result messages
         for (r in results) {
-          rawMessages.add(JSONObject().apply {
-            put("role", "tool")
-            put("tool_call_id", r.id)
-            put("content", r.result.take(16000))
-          })
+          rawMessages.add(
+            JSONObject().apply {
+              put("role", "tool")
+              put("tool_call_id", r.id)
+              put("content", r.result.take(16000))
+            },
+          )
         }
 
         continue
@@ -226,7 +258,6 @@ class StreamingOrchestrator(
     emit(ChatStreamChunk(isDone = true))
   }.flowOn(Dispatchers.IO)
 
-
   private fun buildRequestBody(messages: List<JSONObject>): String {
     val body = JSONObject()
     body.put("model", model)
@@ -239,14 +270,19 @@ class StreamingOrchestrator(
     if (tools.isNotEmpty()) {
       val toolsArr = JSONArray()
       for (t in tools) {
-        toolsArr.put(JSONObject().apply {
-          put("type", "function")
-          put("function", JSONObject().apply {
-            put("name", t.name)
-            put("description", t.description)
-            put("parameters", t.parameters)
-          })
-        })
+        toolsArr.put(
+          JSONObject().apply {
+            put("type", "function")
+            put(
+              "function",
+              JSONObject().apply {
+                put("name", t.name)
+                put("description", t.description)
+                put("parameters", t.parameters)
+              },
+            )
+          },
+        )
       }
       body.put("tools", toolsArr)
     }
