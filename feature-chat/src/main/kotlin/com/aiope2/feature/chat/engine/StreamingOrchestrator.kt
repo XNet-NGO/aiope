@@ -36,6 +36,10 @@ class StreamingOrchestrator(
       .retryOnConnectionFailure(true)
       .build()
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
+    private val PARALLEL_SAFE = setOf(
+      "read_file", "list_directory", "query_data", "search_web", "search_images",
+      "fetch_url", "memory_recall", "get_location", "browser_content", "browser_elements",
+    )
   }
 
   fun stream(
@@ -226,14 +230,29 @@ class StreamingOrchestrator(
         }
         send(ChatStreamChunk(toolCalls = callInfos))
 
-        val results = mutableListOf<ToolResultInfo>()
-        for (call in callInfos) {
-          val result = try {
-            onToolCall(call.name, call.arguments)
-          } catch (e: Exception) {
-            "Error: ${e.message}"
+        val results = if (callInfos.size > 1 && callInfos.all { it.name in PARALLEL_SAFE }) {
+          val deferred = callInfos.map { call ->
+            kotlinx.coroutines.CompletableDeferred<ToolResultInfo>().also { d ->
+              kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val result = try {
+                  onToolCall(call.name, call.arguments)
+                } catch (e: Exception) {
+                  "Error: ${e.message}"
+                }
+                d.complete(ToolResultInfo(id = call.id, name = call.name, arguments = call.arguments, result = result))
+              }
+            }
           }
-          results.add(ToolResultInfo(id = call.id, name = call.name, arguments = call.arguments, result = result))
+          deferred.map { it.await() }
+        } else {
+          callInfos.map { call ->
+            val result = try {
+              onToolCall(call.name, call.arguments)
+            } catch (e: Exception) {
+              "Error: ${e.message}"
+            }
+            ToolResultInfo(id = call.id, name = call.name, arguments = call.arguments, result = result)
+          }
         }
         send(ChatStreamChunk(toolResults = results))
 
