@@ -9,6 +9,10 @@ plugins {
 
 android {
   namespace = "com.aiope2.feature.chat"
+  defaultConfig {
+    buildConfigField("String", "GATEWAY_KEY", "\"${project.findProperty("GATEWAY_KEY") ?: ""}\"")
+  }
+  buildFeatures { buildConfig = true }
 }
 
 dependencies {
