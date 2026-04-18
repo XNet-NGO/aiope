@@ -12,6 +12,7 @@ import com.aiope2.feature.chat.db.ConversationEntity
 import com.aiope2.feature.chat.db.MessageEntity
 import com.aiope2.feature.chat.engine.StreamingOrchestrator
 import com.aiope2.feature.chat.engine.TokenCounter
+import com.aiope2.feature.chat.engine.ToolExecutor
 import com.aiope2.feature.chat.settings.McpManager
 import com.aiope2.feature.chat.settings.ProviderStore
 import com.aiope2.feature.chat.settings.ToolStore
@@ -117,7 +118,7 @@ class ChatViewModel @Inject constructor(
   fun newConversation() {
     conversationId = UUID.randomUUID().toString()
     _messages.value = emptyList()
-    lastLocationData = null
+    toolExecutor.lastLocationData = null
     viewModelScope.launch {
       chatDao.insertConversation(ConversationEntity(id = conversationId))
       refreshConversations()
@@ -126,7 +127,7 @@ class ChatViewModel @Inject constructor(
 
   fun loadConversation(id: String) {
     conversationId = id
-    lastLocationData = null
+    toolExecutor.lastLocationData = null
     viewModelScope.launch {
       val msgs = chatDao.getMessages(id).map {
         val uris = if (it.imagePaths.isNotBlank()) {
@@ -245,49 +246,6 @@ class ChatViewModel @Inject constructor(
   }
 
   /** Save content:// URIs to disk as JPEG, return comma-separated relative paths */
-  // POST to /v1/images/generations
-  private fun sendImageGeneration(profile: ProviderProfile, prompt: String): String {
-    val base = profile.effectiveApiBase().trimEnd('/')
-    val url = java.net.URL("$base/images/generations")
-    val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-      requestMethod = "POST"
-      doOutput = true
-      connectTimeout = 60_000
-      readTimeout = 300_000
-      setRequestProperty("Content-Type", "application/json")
-      setRequestProperty("Cache-Control", "no-cache, no-store")
-      setRequestProperty("Pragma", "no-cache")
-      if (profile.apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer ${profile.apiKey}")
-      useCaches = false
-    }
-    val payload = org.json.JSONObject().apply {
-      put("model", profile.selectedModelId)
-      put("prompt", prompt)
-      put("response_format", "b64_json")
-      put("seed", System.currentTimeMillis())
-    }.toString()
-    conn.outputStream.use { it.write(payload.toByteArray()) }
-    val code = conn.responseCode
-    val body = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText() ?: ""
-    conn.disconnect()
-    if (code !in 200..299) throw Exception("HTTP $code: ${body.take(200)}")
-    val json = org.json.JSONObject(body)
-    val b64 = json.optJSONObject("result")?.optString("image")
-      ?: json.optJSONArray("data")?.optJSONObject(0)?.optString("b64_json") ?: ""
-    val imageUrl = json.optJSONArray("data")?.optJSONObject(0)?.optString("url") ?: ""
-    val bytes = if (b64.isNotBlank()) {
-      android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-    } else if (imageUrl.isNotBlank()) {
-      java.net.URL(imageUrl).readBytes()
-    } else {
-      throw Exception("No image in response: ${body.take(200)}")
-    }
-    val dir = java.io.File(getApplication<android.app.Application>().filesDir, "generated")
-    dir.mkdirs()
-    val file = java.io.File(dir, "img_${System.currentTimeMillis()}.png")
-    file.writeBytes(bytes)
-    return "file://${file.absolutePath}"
-  }
   private fun saveImagesToDisk(msgId: String, uris: List<String>): String {
     if (uris.isEmpty()) return ""
     val dir = java.io.File(getApplication<android.app.Application>().filesDir, "chat_images")
@@ -342,7 +300,7 @@ class ChatViewModel @Inject constructor(
         val toolCallsList = mutableListOf<String>()
         val toolResultsList = mutableListOf<String>()
 
-        val toolDefs = if (useTools) buildToolDefs() else emptyList()
+        val toolDefs = if (useTools) toolExecutor.buildToolDefs() else emptyList()
 
         // Build messages (trim to contextTokens limit using jtokkit)
         val chatMessages = buildSystemMessages(mc)
@@ -374,7 +332,7 @@ class ChatViewModel @Inject constructor(
           apiKey = sendProfile.apiKey,
           model = sendModelId,
           tools = sendTools,
-          onToolCall = { name, args -> executeToolCall(name, args) },
+          onToolCall = { name, args -> toolExecutor.execute(name, args) },
         )
 
         // Encode images to base64 — use saved disk paths (content URIs may expire)
@@ -461,7 +419,7 @@ class ChatViewModel @Inject constructor(
                   isReasoningDone = !isReasoning,
                   toolCalls = toolCallsList.toList(),
                   toolResults = toolResultsList.toList(),
-                  locationData = lastLocationData,
+                  locationData = toolExecutor.lastLocationData,
                 )
               }
             }
@@ -478,7 +436,7 @@ class ChatViewModel @Inject constructor(
 
         // Persist final message
         val finalMsg = _messages.value.last()
-        lastLocationData = null // Don't carry map to next response
+        toolExecutor.lastLocationData = null // Don't carry map to next response
         android.util.Log.d("AIOPE2", "Final content len=${finalMsg.content.length} last100=${finalMsg.content.takeLast(100)}")
         val filesDirPath = getApplication<android.app.Application>().filesDir.absolutePath
         val genImagePaths = generatedImages.joinToString(",") { it.removePrefix("file://").removePrefix("$filesDirPath/") }
@@ -659,8 +617,8 @@ class ChatViewModel @Inject constructor(
           baseUrl = p.effectiveApiBase(),
           apiKey = p.apiKey,
           model = p.selectedModelId,
-          tools = if (useTools) buildToolDefs() else emptyList(),
-          onToolCall = { name, args -> executeToolCall(name, args) },
+          tools = if (useTools) toolExecutor.buildToolDefs() else emptyList(),
+          onToolCall = { name, args -> toolExecutor.execute(name, args) },
         )
 
         orchestrator.stream(chatMessages).collect { chunk ->
@@ -696,7 +654,7 @@ class ChatViewModel @Inject constructor(
           val allReasoning = if (isReasoning && currentReasoning.isNotEmpty()) reasoningBlocks + currentReasoning.toString() else reasoningBlocks.toList()
           withContext(Dispatchers.Main) {
             _messages.value = _messages.value.toMutableList().also {
-              it[it.lastIndex] = it.last().copy(content = sb.toString(), reasoning = allReasoning, isReasoningDone = !isReasoning, toolCalls = toolCallsList.toList(), toolResults = toolResultsList.toList(), locationData = lastLocationData)
+              it[it.lastIndex] = it.last().copy(content = sb.toString(), reasoning = allReasoning, isReasoningDone = !isReasoning, toolCalls = toolCallsList.toList(), toolResults = toolResultsList.toList(), locationData = toolExecutor.lastLocationData)
             }
           }
         }
@@ -718,67 +676,22 @@ class ChatViewModel @Inject constructor(
     }
   }
 
-  private var cachedDataCategories: String? = null
-
-  private fun fetchDataCategories(): String {
-    cachedDataCategories?.let { return it }
-    return try {
-      val p = providerStore.getActive()
-      val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
-      val u = java.net.URL("$gwBase/v1/data")
-      val conn = u.openConnection() as java.net.HttpURLConnection
-      if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
-      conn.connectTimeout = 5_000
-      conn.readTimeout = 5_000
-      val body = conn.inputStream.bufferedReader().readText()
-      conn.disconnect()
-      val cats = org.json.JSONObject(body).getJSONArray("categories")
-      val list = (0 until cats.length()).map { cats.getString(it) }.filter { it != "search_web" && it != "image_search" }.joinToString(", ")
-      cachedDataCategories = list
-      list
-    } catch (_: Exception) {
-      "air_quality, alerts, apod, asteroids, astronauts, cat, cat_breed, cat_breeds, cme, earth_events, earth_image, earthquakes, earthquakes_significant, epic, fires, geomagnetic, impact_risk, ip_location, iss, nasa_media, nasa_tech, ocean_temp, solar, solar_flares, sunrise_sunset, tides, time, uv, weather, weather_hourly"
-    }
-  }
-
-  private fun buildToolDefs() = listOf(
-    StreamingOrchestrator.ToolDef("run_sh", "Execute Android shell command", org.json.JSONObject("""{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}""")),
-    StreamingOrchestrator.ToolDef("run_proot", "Execute a command in the Alpine Linux proot environment. Use for apk, python, gcc, etc.", org.json.JSONObject("""{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}""")),
-    StreamingOrchestrator.ToolDef("read_file", "Read file contents", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""")),
-    StreamingOrchestrator.ToolDef("write_file", "Write file", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""")),
-    StreamingOrchestrator.ToolDef("list_directory", "List directory", org.json.JSONObject("""{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}""")),
-    StreamingOrchestrator.ToolDef("get_location", "Get the device's current GPS location. Call this FIRST when the user asks about nearby places or 'closest' anything, then use the coordinates with search_location.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
-    StreamingOrchestrator.ToolDef("open_intent", "Open a URL, app, or navigation intent from the device. Use for opening maps, web pages, dialing, etc. Examples: 'https://google.com', 'geo:43.6,-116.3', 'google.navigation:q=123+Main+St', 'tel:5551234567'", org.json.JSONObject("""{"type":"object","properties":{"uri":{"type":"string","description":"URI to open. Supports https://, geo:, google.navigation:q=, tel:, mailto:, etc."}},"required":["uri"]}""")),
-    StreamingOrchestrator.ToolDef("fetch_url", "Fetch a URL. Returns extracted text and any images found as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them to the user.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text+images from HTML"}},"required":["url"]}""")),
-    StreamingOrchestrator.ToolDef("query_data", "Query live real-time data. Returns JSON and any images as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them. Automatically uses device GPS for location-based queries. Pass 'extra' for searches (nasa_media, nasa_tech) or station IDs (tides, ocean_temp) or breed IDs (cat_breed). Available categories: ${fetchDataCategories()}", org.json.JSONObject("""{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query, station ID, or breed ID depending on category"}},"required":["category"]}""")),
-    StreamingOrchestrator.ToolDef("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}""")),
-    StreamingOrchestrator.ToolDef("search_web", "Search the web for current information, news, answers, or any topic. Returns results with titles, URLs, and snippets. Use when the user asks about recent events, facts you're unsure of, or anything requiring up-to-date information.", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}""")),
-    StreamingOrchestrator.ToolDef("search_images", "Search for images on the web. Returns image URLs with titles. Use when the user asks to find photos, pictures, or images of something.", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"Image search query"}},"required":["query"]}""")),
-    StreamingOrchestrator.ToolDef("browser_navigate", "Navigate the in-app browser to a URL. Opens a real WebView you can then interact with via browser_click, browser_fill, browser_eval, browser_content, browser_elements.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL to navigate to"}},"required":["url"]}""")),
-    StreamingOrchestrator.ToolDef("browser_content", "Get the current page text content, URL, and title from the in-app browser.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
-    StreamingOrchestrator.ToolDef("browser_elements", "List all interactive elements (links, buttons, inputs) on the current browser page with their selectors.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
-    StreamingOrchestrator.ToolDef("browser_click", "Click an element in the browser by CSS selector. IMPORTANT: Call browser_elements first to discover available selectors before clicking.", org.json.JSONObject("""{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of element to click"}},"required":["selector"]}""")),
-    StreamingOrchestrator.ToolDef("browser_fill", "Fill an input field in the browser by CSS selector. IMPORTANT: Call browser_elements first to discover available selectors before filling.", org.json.JSONObject("""{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of input element"},"value":{"type":"string","description":"Text to fill"}},"required":["selector","value"]}""")),
-    StreamingOrchestrator.ToolDef("browser_eval", "Execute JavaScript in the browser and return the result.", org.json.JSONObject("""{"type":"object","properties":{"script":{"type":"string","description":"JavaScript code to evaluate"}},"required":["script"]}""")),
-    StreamingOrchestrator.ToolDef("browser_back", "Go back in the browser history.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
-    StreamingOrchestrator.ToolDef("browser_scroll", "Scroll the browser page up or down.", org.json.JSONObject("""{"type":"object","properties":{"direction":{"type":"string","description":"'up' or 'down'"},"amount":{"type":"integer","description":"Pixels to scroll (default 500)"}},"required":["direction"]}""")),
-    StreamingOrchestrator.ToolDef("browser_open", "Open the browser panel so the user can see it.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
-    StreamingOrchestrator.ToolDef("browser_close", "Close the browser panel.", org.json.JSONObject("""{"type":"object","properties":{}}""")),
-    StreamingOrchestrator.ToolDef("browser_maximize", "Maximize or restore the browser panel. Pass maximize=true for fullscreen, false to restore split view.", org.json.JSONObject("""{"type":"object","properties":{"maximize":{"type":"boolean","description":"true to maximize, false to restore"}},"required":["maximize"]}""")),
-    StreamingOrchestrator.ToolDef("memory_store", "Store a fact or preference the user wants you to remember across conversations. Use a short descriptive key.", org.json.JSONObject("""{"type":"object","properties":{"key":{"type":"string","description":"Short key like 'user_name' or 'preferred_language'"},"content":{"type":"string","description":"The fact to remember"},"category":{"type":"string","description":"Optional: general, preference, learning, error"}},"required":["key","content"]}""")),
-    StreamingOrchestrator.ToolDef("memory_recall", "Search your persistent memory for stored facts. Call with empty query to list all memories.", org.json.JSONObject("""{"type":"object","properties":{"query":{"type":"string","description":"Search term, or empty to list all"}},"required":["query"]}""")),
-    StreamingOrchestrator.ToolDef("memory_forget", "Delete a specific memory by its key.", org.json.JSONObject("""{"type":"object","properties":{"key":{"type":"string","description":"Key of the memory to delete"}},"required":["key"]}""")),
-    StreamingOrchestrator.ToolDef("image_generate", "Generate an image from a text prompt. Use when the user asks you to draw, create, generate, or make an image/picture/illustration.", org.json.JSONObject("""{"type":"object","properties":{"prompt":{"type":"string","description":"Detailed image generation prompt"}},"required":["prompt"]}""")),
-    StreamingOrchestrator.ToolDef("analyze_image", "Analyze an image from a URL using vision. Use for browser screenshots, fetched images, or any image URL the user wants described.", org.json.JSONObject("""{"type":"object","properties":{"url":{"type":"string","description":"URL of the image to analyze"},"question":{"type":"string","description":"What to look for or ask about the image"}},"required":["url"]}""")),
-  ).filter { toolStore.isToolEnabled(it.name) } + buildMcpToolDefs()
-
-  private fun buildMcpToolDefs(): List<StreamingOrchestrator.ToolDef> = toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
-    mcpManager.getToolDefs(server.id)
-  }.filter { toolStore.isToolEnabled(it.name) }
-
   val mcpManager: McpManager by lazy { McpManager(toolStore).also { it.startHeartbeat() } }
 
-  private val locationProvider by lazy { com.aiope2.feature.chat.location.LocationProvider(getApplication()) }
+  private val toolExecutor by lazy {
+    ToolExecutor(
+      app = getApplication(),
+      providerStore = providerStore,
+      toolStore = toolStore,
+      chatDao = chatDao,
+      mcpManager = mcpManager,
+      locationProvider = com.aiope2.feature.chat.location.LocationProvider(getApplication()),
+      getBrowser = { getBrowser() },
+      onBrowserVisible = { setBrowserVisible(it) },
+      onBrowserMaximized = { setBrowserMaximized(it) },
+      resolveTaskModel = { resolveTaskModel(it) },
+    )
+  }
 
   private suspend fun buildSystemMessages(mc: com.aiope2.core.network.ModelConfig): MutableList<Pair<String, String>> {
     val msgs = mutableListOf<Pair<String, String>>()
@@ -829,411 +742,7 @@ class ChatViewModel @Inject constructor(
     }
     return msgs
   }
-  private var lastLocationData: LocationData? = null
   private fun getBrowser() = com.aiope2.feature.chat.browser.BrowserHolder.getOrCreate(getApplication())
-
-  private fun executeToolCall(name: String, args: Map<String, Any?>): String = when (name) {
-    "run_sh" -> com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "").let { if (it.length > 4000) it.take(4000) + "\n...(truncated)" else it }
-
-    "run_proot" -> {
-      val ctx = getApplication<android.app.Application>()
-      if (!com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(ctx)) {
-        "Alpine not installed. Set up proot in Settings first."
-      } else {
-        com.aiope2.core.terminal.shell.ProotExecutor.exec(ctx, args["command"]?.toString() ?: "").let { if (it.length > 4000) it.take(4000) + "\n...(truncated)" else it }
-      }
-    }
-
-    "read_file" -> try {
-      java.io.File(args["path"].toString()).readText().let { if (it.length > 50000) "File too large" else it }
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    "write_file" -> try {
-      val f = java.io.File(args["path"].toString())
-      f.parentFile?.mkdirs()
-      f.writeText(args["content"].toString())
-      "OK: Written ${args["content"].toString().length} bytes to ${f.absolutePath}"
-    } catch (e: Exception) {
-      "FAILED write_file: ${args["path"]} — ${e.message}"
-    }
-
-    "list_directory" -> try {
-      java.io.File(args["path"].toString()).listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" } ?: "Empty"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    "open_intent" -> try {
-      val uri = android.net.Uri.parse(args["uri"].toString())
-      val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-      getApplication<android.app.Application>().startActivity(intent)
-      "Opened: $uri"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    "fetch_url" -> try {
-      val fetchUrl = java.net.URL(args["url"].toString())
-      val mode = args["mode"]?.toString() ?: "text"
-      val conn = fetchUrl.openConnection() as java.net.HttpURLConnection
-      conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AIOPE/2.0")
-      conn.connectTimeout = 15_000
-      conn.readTimeout = 15_000
-      val ct = conn.contentType ?: ""
-      val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-      conn.disconnect()
-      val result = if (mode == "raw" || !ct.contains("html")) {
-        body
-      } else {
-        val base = "${fetchUrl.protocol}://${fetchUrl.host}"
-        // Extract images: <img src>, <meta og:image>
-        val imgs = mutableListOf<String>()
-        Regex("""<img[^>]+src=["']([^"']+)["'][^>]*(?:alt=["']([^"']*)["'])?""", RegexOption.IGNORE_CASE).findAll(body).forEach { m ->
-          val src = m.groupValues[1].let {
-            if (it.startsWith("http")) {
-              it
-            } else if (it.startsWith("/")) {
-              "$base$it"
-            } else {
-              "$base/$it"
-            }
-          }
-          if (src.matches(Regex(".*\\.(jpg|jpeg|png|gif|webp|svg)(\\?.*)?$", RegexOption.IGNORE_CASE)) || !src.contains(".js")) {
-            val alt = m.groupValues.getOrElse(2) { "" }.take(80)
-            imgs.add("![${alt.ifEmpty { "image" }}]($src)")
-          }
-        }
-        Regex("""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']""", RegexOption.IGNORE_CASE).findAll(body).forEach { m ->
-          val src = m.groupValues[1].let { if (it.startsWith("http")) it else "$base$it" }
-          if (imgs.none { it.contains(src) }) imgs.add("![og:image]($src)")
-        }
-        // Extract text
-        val cleaned = body.replace(Regex("<(script|style|nav|footer|header)[^>]*>[\\s\\S]*?</\\1>", RegexOption.IGNORE_CASE), "")
-        val text = android.text.Html.fromHtml(cleaned, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
-        val imgSection = if (imgs.isNotEmpty()) imgs.distinct().take(10).joinToString("\n") + "\n\n" else ""
-        imgSection + text
-      }
-      if (result.length > 12000) result.take(12000) + "\n...(truncated)" else result
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    "query_data" -> try {
-      val cat = args["category"]?.toString() ?: ""
-      val extra = args["extra"]?.toString() ?: ""
-      val needsLocation = cat in setOf("weather", "weather_hourly", "alerts", "air_quality", "uv", "solar", "sunrise_sunset", "time")
-      val lat: String
-      val lon: String
-      if (needsLocation) {
-        val loc = lastLocationData ?: kotlinx.coroutines.runBlocking {
-          locationProvider.getLastLocation()?.let { l ->
-            lastLocationData = LocationData(l.latitude, l.longitude, null, null, null, l.accuracy.toDouble())
-            lastLocationData
-          }
-        }
-        lat = loc?.latitude?.toString() ?: ""
-        lon = loc?.longitude?.toString() ?: ""
-      } else {
-        lat = ""
-        lon = ""
-      }
-      val p = providerStore.getActive()
-      val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
-      val u = java.net.URL("$gwBase/v1/data?q=$cat&lat=$lat&lon=$lon&extra=$extra")
-      val conn = u.openConnection() as java.net.HttpURLConnection
-      if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
-      conn.connectTimeout = 15_000
-      conn.readTimeout = 30_000
-      val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
-      val body = stream?.bufferedReader(Charsets.UTF_8)?.readText() ?: "Error: HTTP ${conn.responseCode}"
-      conn.disconnect()
-      val enriched = resolveDataImages(cat, body)
-      if (enriched.length > 12000) enriched.take(12000) + "\n...(truncated)" else enriched
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    "get_location" -> kotlinx.coroutines.runBlocking {
-      val loc = locationProvider.getFreshLocation() ?: locationProvider.getLastLocation()
-      if (loc != null) {
-        lastLocationData = LocationData(
-          latitude = loc.latitude,
-          longitude = loc.longitude,
-          altitude = if (loc.hasAltitude()) loc.altitude else null,
-          speed = if (loc.hasSpeed()) loc.speed.toDouble() else null,
-          bearing = if (loc.hasBearing()) loc.bearing.toDouble() else null,
-          accuracy = loc.accuracy.toDouble(),
-        )
-        val base = locationProvider.formatLocation(loc)
-        val address = locationProvider.reverseGeocode(loc)
-        if (address != null) "$base\n$address" else base
-      } else {
-        "Location unavailable -- check permissions or GPS"
-      }
-    }
-
-    "search_location" -> {
-      val query = args["query"]?.toString() ?: ""
-      val q = query.lowercase()
-      // Skip Geocoder for business/amenity/brand queries — go straight to Overpass
-      val businessTerms = listOf(
-        "near", "closest", "nearest", "nearby",
-        "restaurant", "food", "eat", "coffee", "cafe", "pizza", "burger",
-        "gas", "fuel", "pharmacy", "hotel", "motel", "grocery", "supermarket",
-        "bar", "pub", "gym", "bank", "atm", "parking", "hospital",
-        "mcdonald", "starbucks", "walmart", "target", "costco", "wendy",
-        "subway", "taco bell", "burger king", "chick-fil", "dunkin",
-      )
-      val isBusinessQuery = businessTerms.any { q.contains(it) }
-      try {
-        if (!isBusinessQuery) {
-          val geocoder = android.location.Geocoder(getApplication(), java.util.Locale.US)
-          val geoResults = geocoder.getFromLocationName(query, 5)
-          if (!geoResults.isNullOrEmpty()) {
-            val first = geoResults[0]
-            lastLocationData = LocationData(latitude = first.latitude, longitude = first.longitude)
-            geoResults.mapIndexed { i, addr ->
-              val line = addr.getAddressLine(0) ?: "${addr.locality ?: ""}, ${addr.adminArea ?: ""}, ${addr.countryName ?: ""}"
-              "${i + 1}. $line\n   Lat: ${addr.latitude}, Lng: ${addr.longitude}"
-            }.joinToString("\n")
-          } else {
-            searchPlaces(query)
-          }
-        } else {
-          searchPlaces(query)
-        }
-      } catch (e: Exception) {
-        try {
-          searchPlaces(query)
-        } catch (e2: Exception) {
-          "Error: ${e2.message}"
-        }
-      }
-    }
-
-    "search_web" -> executeToolCall("query_data", mapOf("category" to "search_web", "extra" to (args["query"]?.toString() ?: "")))
-
-    "search_images" -> executeToolCall("query_data", mapOf("category" to "image_search", "extra" to (args["query"]?.toString() ?: "")))
-
-    "browser_navigate" -> kotlinx.coroutines.runBlocking { getBrowser().navigate(args["url"]?.toString() ?: "") }
-
-    "browser_content" -> kotlinx.coroutines.runBlocking { getBrowser().getPageContent() }
-
-    "browser_elements" -> kotlinx.coroutines.runBlocking { getBrowser().getElements() }
-
-    "browser_click" -> kotlinx.coroutines.runBlocking { getBrowser().click(args["selector"]?.toString() ?: "") }
-
-    "browser_fill" -> kotlinx.coroutines.runBlocking { getBrowser().fill(args["selector"]?.toString() ?: "", args["value"]?.toString() ?: "") }
-
-    "browser_eval" -> kotlinx.coroutines.runBlocking { getBrowser().evaluateJs(args["script"]?.toString() ?: "") }
-
-    "browser_back" -> kotlinx.coroutines.runBlocking { if (getBrowser().goBack()) "Navigated back" else "No history to go back" }
-
-    "browser_scroll" -> kotlinx.coroutines.runBlocking { getBrowser().scroll(args["direction"]?.toString() ?: "down", (args["amount"] as? Number)?.toInt() ?: 500) }
-
-    "browser_open" -> {
-      setBrowserVisible(true)
-      "Browser opened"
-    }
-
-    "browser_close" -> {
-      setBrowserVisible(false)
-      setBrowserMaximized(false)
-      "Browser closed"
-    }
-
-    "browser_maximize" -> {
-      val max = args["maximize"] as? Boolean ?: true
-      setBrowserVisible(true)
-      setBrowserMaximized(max)
-      if (max) "Browser maximized" else "Browser restored"
-    }
-
-    "memory_store" -> kotlinx.coroutines.runBlocking {
-      val key = args["key"]?.toString() ?: return@runBlocking "Error: key required"
-      val content = args["content"]?.toString() ?: return@runBlocking "Error: content required"
-      val category = args["category"]?.toString() ?: "general"
-      chatDao.upsertMemory(com.aiope2.feature.chat.db.MemoryEntity(key = key, content = content, category = category))
-      "Stored memory: $key"
-    }
-
-    "memory_recall" -> kotlinx.coroutines.runBlocking {
-      val query = args["query"]?.toString() ?: ""
-      val memories = if (query.isBlank()) chatDao.getAllMemories() else chatDao.searchMemories(query)
-      if (memories.isEmpty()) {
-        "No memories found."
-      } else {
-        memories.joinToString("\n") { "- ${it.key}: ${it.content} [${it.category}]" }
-      }
-    }
-
-    "memory_forget" -> kotlinx.coroutines.runBlocking {
-      val key = args["key"]?.toString() ?: return@runBlocking "Error: key required"
-      chatDao.deleteMemory(key)
-      "Deleted memory: $key"
-    }
-
-    "image_generate" -> kotlinx.coroutines.runBlocking {
-      val prompt = args["prompt"]?.toString() ?: return@runBlocking "Error: prompt required"
-      try {
-        val (profile, modelId) = resolveTaskModel(com.aiope2.core.network.ModelTask.IMAGE_GENERATION)
-        val p = profile.copy(selectedModelId = modelId)
-        val result = sendImageGeneration(p, prompt)
-        if (result.startsWith("file://")) {
-          val filePath = result.removePrefix("file://")
-          val fileSize = java.io.File(filePath).length()
-          "Image generated successfully.\nFile: $result\nSize: $fileSize bytes\nModel: $modelId\nProvider: ${profile.effectiveApiBase()}\nPrompt: $prompt\nDisplay: ![generated image]($result)\nYou can verify this image by calling analyze_image with this file URL."
-        } else {
-          "Generation returned unexpected result: ${result.take(200)}"
-        }
-      } catch (e: Exception) {
-        "Image generation FAILED.\nModel: ${try {
-          resolveTaskModel(com.aiope2.core.network.ModelTask.IMAGE_GENERATION).second
-        } catch (_: Exception) {
-          "unknown"
-        }}\nPrompt: $prompt\nError: ${e.message}\nYou may retry this call."
-      }
-    }
-
-    "analyze_image" -> kotlinx.coroutines.runBlocking {
-      val url = args["url"]?.toString() ?: return@runBlocking "Error: url required"
-      val question = args["question"]?.toString() ?: "Describe this image in detail."
-      try {
-        val (profile, modelId) = resolveTaskModel(com.aiope2.core.network.ModelTask.IMAGE_RECOGNITION)
-        val imageBytes = java.net.URL(url).readBytes()
-        val b64 = android.util.Base64.encodeToString(imageBytes, android.util.Base64.NO_WRAP)
-        val orchestrator = StreamingOrchestrator(
-          baseUrl = profile.effectiveApiBase(),
-          apiKey = profile.apiKey,
-          model = modelId,
-        )
-        val sb = StringBuilder()
-        orchestrator.stream(listOf("user" to question), listOf(b64)).collect { chunk ->
-          if (chunk.content.isNotEmpty()) sb.append(chunk.content)
-        }
-        val analysis = sb.toString().ifBlank { "No description returned." }
-        "Image analysis complete.\nSource: $url\nModel: $modelId\nQuestion: $question\nResult: $analysis"
-      } catch (e: Exception) {
-        "Image analysis FAILED.\nSource: $url\nQuestion: $question\nError: ${e.message}\nYou may retry this call."
-      }
-    }
-
-    else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"
-  }
-
-  private fun resolveDataImages(category: String, json: String): String {
-    try {
-      val imgs = mutableListOf<String>()
-      extractImageUrls(org.json.JSONTokener(json).nextValue(), imgs)
-      return if (imgs.isNotEmpty()) imgs.distinct().take(5).joinToString("\n") + "\n\n" + json else json
-    } catch (_: Exception) {
-      return json
-    }
-  }
-
-  private fun extractImageUrls(obj: Any?, out: MutableList<String>) {
-    when (obj) {
-      is org.json.JSONObject -> {
-        val imgKeys = setOf("url", "hdurl", "href", "image_url", "img_src", "thumbnail", "preview", "media_url", "src", "image")
-        for (key in obj.keys()) {
-          val v = obj.opt(key)
-          if (v is String && key in imgKeys && v.matches(Regex("^https?://.*\\.(jpg|jpeg|png|gif|webp)(\\?.*)?$", RegexOption.IGNORE_CASE))) {
-            val label = obj.optString("title", obj.optString("caption", key))
-            out.add("![$label]($v)")
-          } else {
-            extractImageUrls(v, out)
-          }
-        }
-      }
-
-      is org.json.JSONArray -> for (i in 0 until minOf(obj.length(), 10)) extractImageUrls(obj.opt(i), out)
-    }
-  }
-  private fun searchPlaces(query: String): String {
-    var lat = lastLocationData?.latitude
-    var lng = lastLocationData?.longitude
-    if (lat == null || lng == null) {
-      val loc = kotlinx.coroutines.runBlocking { locationProvider.getFreshLocation() ?: locationProvider.getLastLocation() }
-      if (loc != null) {
-        lastLocationData = LocationData(latitude = loc.latitude, longitude = loc.longitude)
-        lat = loc.latitude
-        lng = loc.longitude
-      } else {
-        return "Location unavailable. Enable GPS and try again."
-      }
-    }
-
-    val q = query.trim().replace(Regex("\\s*(near|in|around|close to|closest to|nearest to)\\s+.*$", RegexOption.IGNORE_CASE), "").trim()
-    val encoded = java.net.URLEncoder.encode(q, "UTF-8")
-
-    // Try gateway first (has centralized Geoapify key)
-    try {
-      val p = providerStore.getActive()
-      val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
-      val gwUrl = "$gwBase/v1/data?q=places&query=$encoded&lat=$lat&lon=$lng"
-      val conn = java.net.URL(gwUrl).openConnection() as java.net.HttpURLConnection
-      if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
-      conn.connectTimeout = 10_000
-      conn.readTimeout = 15_000
-      if (conn.responseCode in 200..299) {
-        val body = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-        val wrapper = org.json.JSONObject(body)
-        val data = wrapper.optJSONObject("data")
-        if (data != null) return parseGeoapifyResults(data.toString(), query)
-      }
-    } catch (_: Exception) {}
-
-    // Fallback: direct Geoapify with local key
-    val apiKey = providerStore.getGeoapifyKey()
-    if (apiKey.isBlank()) return "Place search unavailable. Set Geoapify key in Settings or configure it on the gateway."
-    val url = "https://api.geoapify.com/v2/places?categories=commercial,catering,service,entertainment,leisure,sport,tourism,accommodation,education,healthcare&conditions=named&filter=circle:$lng,$lat,5000&bias=proximity:$lng,$lat&limit=5&name=$encoded&apiKey=$apiKey"
-    val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-    conn.connectTimeout = 15000
-    conn.readTimeout = 15000
-    if (conn.responseCode !in 200..299) {
-      val url2 = "https://api.geoapify.com/v1/geocode/search?text=${java.net.URLEncoder.encode(query, "UTF-8")}&bias=proximity:$lng,$lat&limit=5&apiKey=$apiKey"
-      val conn2 = java.net.URL(url2).openConnection() as java.net.HttpURLConnection
-      conn2.connectTimeout = 15000
-      conn2.readTimeout = 15000
-      if (conn2.responseCode !in 200..299) return "Search error: HTTP ${conn2.responseCode}"
-      return parseGeoapifyResults(conn2.inputStream.bufferedReader(Charsets.UTF_8).readText(), query)
-    }
-    return parseGeoapifyResults(conn.inputStream.bufferedReader(Charsets.UTF_8).readText(), query)
-  }
-
-  private fun parseGeoapifyResults(body: String, query: String): String {
-    val json = org.json.JSONObject(body)
-    val features = json.optJSONArray("features")
-    if (features == null || features.length() == 0) return "No results found for: $query"
-
-    val userLat = lastLocationData?.latitude
-    val userLng = lastLocationData?.longitude
-
-    val results = (0 until minOf(features.length(), 5)).map { i ->
-      val props = features.getJSONObject(i).getJSONObject("properties")
-      val name = props.optString("name", "").ifBlank { props.optString("formatted", "Unnamed") }
-      val addr = props.optString("formatted", "").ifBlank { null }
-      val phone = props.optString("contact:phone", "").ifBlank { props.optString("phone", "").ifBlank { null } }
-      val hours = props.optString("opening_hours", "").ifBlank { null }
-      val pLat = props.optDouble("lat", 0.0)
-      val pLng = props.optDouble("lon", 0.0)
-      val dist = if (userLat != null && userLng != null) haversineKm(userLat, userLng, pLat, pLng) else null
-      buildString {
-        append("${i + 1}. $name")
-        dist?.let { append(" (${"%.1f".format(it)} km)") }
-        if (addr != null && addr != name) append("\n   Address: $addr")
-        phone?.let { append("\n   Phone: $it") }
-        hours?.let { append("\n   Hours: $it") }
-        append("\n   Lat: $pLat, Lng: $pLng")
-      }
-    }
-
-    val firstProps = features.getJSONObject(0).getJSONObject("properties")
-    lastLocationData = LocationData(latitude = firstProps.optDouble("lat", 0.0), longitude = firstProps.optDouble("lon", 0.0))
-    return results.joinToString("\n")
-  }
 
   private fun padToSquare(bmp: android.graphics.Bitmap): android.graphics.Bitmap {
     val w = bmp.width
@@ -1245,13 +754,5 @@ class ChatViewModel @Inject constructor(
     canvas.drawColor(android.graphics.Color.BLACK)
     canvas.drawBitmap(bmp, ((size - w) / 2f), ((size - h) / 2f), null)
     return out
-  }
-
-  private fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-    val r = 6371.0
-    val dLat = Math.toRadians(lat2 - lat1)
-    val dLon = Math.toRadians(lon2 - lon1)
-    val a = Math.sin(dLat / 2).let { it * it } + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.sin(dLon / 2).let { it * it }
-    return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   }
 }
