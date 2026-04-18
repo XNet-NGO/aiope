@@ -8,6 +8,7 @@ data class ChatMessage(
   val isReasoningDone: Boolean = true,
   val toolCalls: List<String> = emptyList(),
   val toolResults: List<String> = emptyList(),
+  val toolErrors: List<String> = emptyList(),
   val imageUris: List<String> = emptyList(),
   val locationData: LocationData? = null,
   val translation: String? = null,

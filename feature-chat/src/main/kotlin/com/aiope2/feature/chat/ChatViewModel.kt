@@ -308,6 +308,7 @@ class ChatViewModel @Inject constructor(
         var isReasoning = false
         val toolCallsList = mutableListOf<String>()
         val toolResultsList = mutableListOf<String>()
+        val toolErrorsList = mutableListOf<String>()
 
         val toolDefs = if (useTools) toolExecutor.buildToolDefs() else emptyList()
 
@@ -397,7 +398,10 @@ class ChatViewModel @Inject constructor(
           }
 
           chunk.toolResults?.let { results ->
-            for (r in results) toolResultsList.add(r.result.take(2000))
+            for (r in results) {
+              toolResultsList.add(r.result.take(2000))
+              if (r.result.startsWith("Error:") || r.result.startsWith("FAILED")) toolErrorsList.add("${r.name}: ${r.result.take(200)}")
+            }
           }
 
           chunk.error?.let { sb.append("\nError: $it") }
@@ -428,6 +432,7 @@ class ChatViewModel @Inject constructor(
                   isReasoningDone = !isReasoning,
                   toolCalls = toolCallsList.toList(),
                   toolResults = toolResultsList.toList(),
+                  toolErrors = toolErrorsList.toList(),
                   locationData = toolExecutor.lastLocationData,
                 )
               }
@@ -612,6 +617,7 @@ class ChatViewModel @Inject constructor(
         var isReasoning = false
         val toolCallsList = mutableListOf<String>()
         val toolResultsList = mutableListOf<String>()
+        val toolErrorsList = mutableListOf<String>()
 
         val chatMessages = buildSystemMessages(mc)
         _messages.value.dropLast(1).forEach { msg ->
@@ -654,7 +660,12 @@ class ChatViewModel @Inject constructor(
             }
             for (c in calls) toolCallsList.add("${c.name}(${c.arguments.values.firstOrNull()?.toString()?.take(80) ?: ""})")
           }
-          chunk.toolResults?.let { results -> for (r in results) toolResultsList.add(r.result.take(2000)) }
+          chunk.toolResults?.let { results ->
+            for (r in results) {
+              toolResultsList.add(r.result.take(2000))
+              if (r.result.startsWith("Error:") || r.result.startsWith("FAILED")) toolErrorsList.add("${r.name}: ${r.result.take(200)}")
+            }
+          }
           chunk.error?.let { sb.append("\nError: $it") }
           if (chunk.isDone && isReasoning && currentReasoning.isNotEmpty()) {
             reasoningBlocks.add(currentReasoning.toString())
@@ -663,7 +674,7 @@ class ChatViewModel @Inject constructor(
           val allReasoning = if (isReasoning && currentReasoning.isNotEmpty()) reasoningBlocks + currentReasoning.toString() else reasoningBlocks.toList()
           withContext(Dispatchers.Main) {
             _messages.value = _messages.value.toMutableList().also {
-              it[it.lastIndex] = it.last().copy(content = sb.toString(), reasoning = allReasoning, isReasoningDone = !isReasoning, toolCalls = toolCallsList.toList(), toolResults = toolResultsList.toList(), locationData = toolExecutor.lastLocationData)
+              it[it.lastIndex] = it.last().copy(content = sb.toString(), reasoning = allReasoning, isReasoningDone = !isReasoning, toolCalls = toolCallsList.toList(), toolResults = toolResultsList.toList(), toolErrors = toolErrorsList.toList(), locationData = toolExecutor.lastLocationData)
             }
           }
         }

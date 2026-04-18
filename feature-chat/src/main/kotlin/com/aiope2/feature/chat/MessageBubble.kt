@@ -179,6 +179,16 @@ private fun AssistantBubble(
       Spacer(Modifier.height(8.dp))
     }
 
+    // Tool errors
+    if (message.toolErrors.isNotEmpty()) {
+      for (err in message.toolErrors) {
+        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+          Text("⚠ $err", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(8.dp))
+        }
+        Spacer(Modifier.height(4.dp))
+      }
+    }
+
     // Location
     if (message.locationData != null && message.content.isNotBlank()) {
       key(message.locationData) {
