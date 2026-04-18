@@ -63,3 +63,20 @@
 # Terminal JNI — accessed via reflection, R8 must not strip
 -keep class com.termux.terminal.JNI { *; }
 -keep class com.termux.terminal.** { *; }
+
+# jtokkit - loads BPE vocabularies from classpath resources
+-keep class com.knuddels.jtokkit.** { *; }
+-keepclassmembers class com.knuddels.jtokkit.** { *; }
+
+# OkHttp
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keep class okhttp3.** { *; }
+
+# MapLibre
+-keep class org.maplibre.** { *; }
+-keep class com.mapbox.** { *; }
+
+# Room
+-keep class * extends androidx.room.RoomDatabase
+-keep @androidx.room.Entity class *

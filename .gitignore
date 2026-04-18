@@ -55,3 +55,6 @@ google-services.json
 docs/api
 secrets.properties
 *.hprof
+
+release.jks
+keystore.properties
