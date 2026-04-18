@@ -51,28 +51,27 @@ object ShellDiscovery {
       ),
     )
 
-    // 2. Ubuntu proot — always show, mark if needs setup
-    val ubuntuInstalled = ProotBootstrap.isInstalled(ctx)
+    // 2. Alpine proot — always show, mark if needs setup
+    val alpineInstalled = ProotBootstrap.isInstalled(ctx)
     val prootBin = ProotBootstrap.findProotXed(ctx)
-    if (prootBin != null && ubuntuInstalled) {
+    if (prootBin != null && alpineInstalled) {
       val rootfs = ProotBootstrap.rootfsDir(ctx).absolutePath
-      // Ensure /root exists in rootfs
       java.io.File(rootfs, "root").mkdirs()
       shells.add(
         Shell(
-          id = "ubuntu",
-          name = "Ubuntu (proot)",
+          id = "alpine",
+          name = "Alpine (proot)",
           command = prootBin.absolutePath,
           args = buildProotArgs(rootfs, filesDir),
           env = buildProotEnv(filesDir, nativeDir),
-          cwd = "/root",
+          cwd = filesDir,
         ),
       )
     } else {
       shells.add(
         Shell(
-          id = "ubuntu",
-          name = "Ubuntu (setup needed)",
+          id = "alpine",
+          name = "Alpine (setup needed)",
           command = "",
           args = arrayOf(),
           env = arrayOf(),
@@ -118,7 +117,8 @@ object ShellDiscovery {
     bind(filesDir)
 
     val tmpDir = File(rootfs, "tmp").also { it.mkdirs() }
-    File(rootfs, "root").mkdirs()
+    val homeDir = File(filesDir, "home").also { it.mkdirs() }
+    bind(homeDir.absolutePath, "/root")
     bind(tmpDir.absolutePath, "/dev/shm")
     bind("/proc/self/fd/0", "/dev/stdin")
     bind("/proc/self/fd/1", "/dev/stdout")
@@ -135,7 +135,7 @@ object ShellDiscovery {
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME=/root", "USER=root", "TERM=xterm-256color",
         "TMPDIR=/tmp", "LANG=C.UTF-8", "LC_ALL=C.UTF-8",
-        "/bin/bash", "--login",
+        if (java.io.File(rootfs, "bin/bash").exists()) "/bin/bash" else "/bin/sh", "--login",
       ),
     )
     return args.toTypedArray()
@@ -144,6 +144,7 @@ object ShellDiscovery {
   private fun buildProotEnv(filesDir: String, nativeDir: String): Array<String> {
     val env = mutableListOf(
       "PROOT_TMP_DIR=$filesDir/tmp",
+      "PROOT_VERBOSE=-1",
       "LD_LIBRARY_PATH=$filesDir",
     )
     val loader = File(nativeDir, "libproot.so")

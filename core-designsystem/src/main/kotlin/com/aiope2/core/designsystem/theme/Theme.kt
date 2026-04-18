@@ -18,7 +18,7 @@ private val DarkColorScheme = darkColorScheme(
   onSurface = ON_SURFACE_DARK,
   onSurfaceVariant = ON_SURFACE_VARIANT_DARK,
   outlineVariant = OUTLINE_VARIANT_DARK,
-  error = ERROR_DARK
+  error = ERROR_DARK,
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -31,17 +31,14 @@ private val LightColorScheme = lightColorScheme(
   surfaceVariant = SURFACE_VARIANT_LIGHT,
   onSurface = ON_SURFACE_LIGHT,
   onSurfaceVariant = ON_SURFACE_VARIANT_LIGHT,
-  outlineVariant = OUTLINE_VARIANT_LIGHT
+  outlineVariant = OUTLINE_VARIANT_LIGHT,
 )
 
 private val LightBackgroundTheme = BackgroundTheme(color = BACKGROUND_LIGHT)
 private val DarkBackgroundTheme = BackgroundTheme(color = BACKGROUND_DARK)
 
 @Composable
-fun AiopeTheme(
-  darkTheme: Boolean = isSystemInDarkTheme(),
-  content: @Composable () -> Unit
-) {
+fun AiopeTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
   val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
   val backgroundTheme = if (darkTheme) DarkBackgroundTheme else LightBackgroundTheme
 
@@ -49,7 +46,7 @@ fun AiopeTheme(
     MaterialTheme(
       colorScheme = colorScheme,
       typography = Typography,
-      content = content
+      content = content,
     )
   }
 }

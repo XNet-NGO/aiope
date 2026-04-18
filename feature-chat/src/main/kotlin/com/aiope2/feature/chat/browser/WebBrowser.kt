@@ -38,14 +38,20 @@ class WebBrowser(context: Context) {
     setBackgroundColor(android.graphics.Color.BLACK)
     settings.userAgentString = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36 AIOPE/2"
     webViewClient = object : WebViewClient() {
-      override fun onPageStarted(v: WebView, url: String, fav: Bitmap?) { currentUrl.set(url) }
+      override fun onPageStarted(v: WebView, url: String, fav: Bitmap?) {
+        currentUrl.set(url)
+      }
       override fun onPageFinished(v: WebView, url: String) {
-        currentUrl.set(url); pageTitle.set(v.title ?: "")
-        loadDone?.invoke(); loadDone = null
+        currentUrl.set(url)
+        pageTitle.set(v.title ?: "")
+        loadDone?.invoke()
+        loadDone = null
       }
     }
     webChromeClient = object : WebChromeClient() {
-      override fun onProgressChanged(view: WebView, newProgress: Int) { loadProgress = newProgress }
+      override fun onProgressChanged(view: WebView, newProgress: Int) {
+        loadProgress = newProgress
+      }
     }
   }
 
@@ -84,21 +90,26 @@ class WebBrowser(context: Context) {
 
   /** Click an element by CSS selector. */
   suspend fun click(selector: String): String {
-    val result = evaluateJs("""
+    val result =
+      evaluateJs(
+        """
       (function(){
         var el = document.querySelector('$selector');
         if (!el) return 'Element not found: $selector';
         el.click();
         return 'Clicked: ' + (el.tagName || '') + ' ' + (el.textContent || '').substring(0,50);
       })()
-    """.trimIndent())
+        """.trimIndent(),
+      )
     return result
   }
 
   /** Fill an input element by CSS selector. */
   suspend fun fill(selector: String, value: String): String {
     val escaped = value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
-    val result = evaluateJs("""
+    val result =
+      evaluateJs(
+        """
       (function(){
         var el = document.querySelector('$selector');
         if (!el) return 'Element not found: $selector';
@@ -108,12 +119,14 @@ class WebBrowser(context: Context) {
         el.dispatchEvent(new Event('change', {bubbles:true}));
         return 'Filled: ' + (el.tagName || '') + ' with ' + el.value.substring(0,50);
       })()
-    """.trimIndent())
+        """.trimIndent(),
+      )
     return result
   }
 
   /** Get all interactive elements on the page for the LLM to reason about. */
-  suspend fun getElements(): String = evaluateJs("""
+  suspend fun getElements(): String = evaluateJs(
+    """
     (function(){
       var els = document.querySelectorAll('a,button,input,select,textarea,[role=button],[onclick]');
       var out = [];
@@ -133,7 +146,8 @@ class WebBrowser(context: Context) {
       }
       return out.join('\\n');
     })()
-  """.trimIndent())
+    """.trimIndent(),
+  )
 
   /** Capture screenshot as JPEG bytes. */
   fun screenshotSync(): ByteArray? {
@@ -148,20 +162,30 @@ class WebBrowser(context: Context) {
 
   /** Scroll the page. direction: "up" or "down", amount in pixels. */
   suspend fun scroll(direction: String, amount: Int = 500): String = evaluateJs(
-    "window.scrollBy(0, ${if (direction == "up") -amount else amount}); 'Scrolled $direction ${amount}px, now at ' + window.scrollY"
+    "window.scrollBy(0, ${if (direction == "up") -amount else amount}); 'Scrolled $direction ${amount}px, now at ' + window.scrollY",
   )
 
   suspend fun goBack(): Boolean = withTimeout(5_000) {
     suspendCancellableCoroutine { cont ->
-      handler.post { val can = webView.canGoBack(); if (can) webView.goBack(); cont.resume(can) }
+      handler.post {
+        val can = webView.canGoBack()
+        if (can) webView.goBack()
+        cont.resume(can)
+      }
     }
   }
   suspend fun goForward(): Boolean = withTimeout(5_000) {
     suspendCancellableCoroutine { cont ->
-      handler.post { val can = webView.canGoForward(); if (can) webView.goForward(); cont.resume(can) }
+      handler.post {
+        val can = webView.canGoForward()
+        if (can) webView.goForward()
+        cont.resume(can)
+      }
     }
   }
   fun currentUrl(): String = currentUrl.get()
   fun title(): String = pageTitle.get()
-  fun destroy() { handler.post { webView.destroy() } }
+  fun destroy() {
+    handler.post { webView.destroy() }
+  }
 }

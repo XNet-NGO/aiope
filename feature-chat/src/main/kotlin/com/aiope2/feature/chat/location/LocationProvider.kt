@@ -24,13 +24,13 @@ class LocationProvider(private val context: Context) {
     LocationServices.getFusedLocationProviderClient(context)
 
   private val highAccuracyRequest = LocationRequest.Builder(
-    Priority.PRIORITY_HIGH_ACCURACY, 5_000L
+    Priority.PRIORITY_HIGH_ACCURACY,
+    5_000L,
   ).setMinUpdateIntervalMillis(2_000L)
     .setMaxUpdateDelayMillis(10_000L)
     .build()
 
-  private fun hasPermission(): Boolean =
-    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+  private fun hasPermission(): Boolean = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
   /** Get last known location — immediate, battery-efficient */
   @SuppressWarnings("MissingPermission")
@@ -61,7 +61,10 @@ class LocationProvider(private val context: Context) {
   /** Live location updates as a Flow */
   @SuppressWarnings("MissingPermission")
   fun locationUpdates(): Flow<Location> = callbackFlow {
-    if (!hasPermission()) { close(); return@callbackFlow }
+    if (!hasPermission()) {
+      close()
+      return@callbackFlow
+    }
     val callback = object : LocationCallback() {
       override fun onLocationResult(result: LocationResult) {
         result.lastLocation?.let { trySend(it) }
@@ -84,21 +87,23 @@ class LocationProvider(private val context: Context) {
   }
 
   /** Reverse geocode to get address/city */
-  fun reverseGeocode(loc: Location): String? {
-    return try {
-      val geocoder = android.location.Geocoder(context, java.util.Locale.US)
-      val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
-      if (!addresses.isNullOrEmpty()) {
-        val addr = addresses[0]
-        buildString {
-          addr.getAddressLine(0)?.let { append("Address: $it\n") }
-            ?: run {
-              addr.locality?.let { append("City: $it\n") }
-              addr.adminArea?.let { append("State: $it\n") }
-              addr.countryName?.let { append("Country: $it\n") }
-            }
-        }.trimEnd()
-      } else null
-    } catch (_: Exception) { null }
+  fun reverseGeocode(loc: Location): String? = try {
+    val geocoder = android.location.Geocoder(context, java.util.Locale.US)
+    val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
+    if (!addresses.isNullOrEmpty()) {
+      val addr = addresses[0]
+      buildString {
+        addr.getAddressLine(0)?.let { append("Address: $it\n") }
+          ?: run {
+            addr.locality?.let { append("City: $it\n") }
+            addr.adminArea?.let { append("State: $it\n") }
+            addr.countryName?.let { append("Country: $it\n") }
+          }
+      }.trimEnd()
+    } else {
+      null
+    }
+  } catch (_: Exception) {
+    null
   }
 }

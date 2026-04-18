@@ -1,10 +1,17 @@
 package com.aiope2.ui
 
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -35,7 +42,7 @@ fun SplashScreen(onFinished: () -> Unit) {
     Canvas(Modifier.size(280.dp)) {
       val cx = size.width / 2f
       val cy = size.height / 2f
-      val scale = size.width / 280f  // scale factor for density
+      val scale = size.width / 280f // scale factor for density
       val hexCount = 18
       val hexSize = 28f * scale
       val spiralSpacing = 42f * scale
@@ -48,7 +55,11 @@ fun SplashScreen(onFinished: () -> Unit) {
         val hy = cy + (radius * sin(angle)).toFloat()
 
         val alpha = (1f - frac * 0.6f).coerceIn(0.15f, 1f)
-        val color = when (i % 3) { 0 -> Purple; 1 -> PurpleLight; else -> PurpleDark }
+        val color = when (i % 3) {
+          0 -> Purple
+          1 -> PurpleLight
+          else -> PurpleDark
+        }
 
         val path = Path()
         for (j in 0..5) {

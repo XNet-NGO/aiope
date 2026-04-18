@@ -21,14 +21,7 @@ import org.ramani.compose.Symbol
 import org.ramani.compose.UiSettings
 
 @Composable
-fun LocationCard(
-  latitude: Double,
-  longitude: Double,
-  altitude: Double? = null,
-  speed: Double? = null,
-  bearing: Double? = null,
-  accuracy: Double? = null
-) {
+fun LocationCard(latitude: Double, longitude: Double, altitude: Double? = null, speed: Double? = null, bearing: Double? = null, accuracy: Double? = null) {
   // Consume ALL scroll and fling so parent LazyColumn never steals from the map
   val consumeAll = remember {
     object : NestedScrollConnection {
@@ -41,18 +34,19 @@ fun LocationCard(
   Card(
     modifier = Modifier.fillMaxWidth().padding(4.dp),
     shape = RoundedCornerShape(8.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
   ) {
-    Box(modifier = Modifier
-      .fillMaxWidth()
-      .height(260.dp)
-      .clip(RoundedCornerShape(8.dp))
-      .nestedScroll(consumeAll)
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .height(260.dp)
+        .clip(RoundedCornerShape(8.dp))
+        .nestedScroll(consumeAll),
     ) {
       val initialPos = remember {
         CameraPosition(
           target = org.maplibre.android.geometry.LatLng(latitude, longitude),
-          zoom = 15.5
+          zoom = 15.5,
         )
       }
       val style = remember {
@@ -67,19 +61,19 @@ fun LocationCard(
           doubleTapGesturesEnabled = true,
           quickZoomGesturesEnabled = true,
           isLogoEnabled = false,
-          isAttributionEnabled = false
+          isAttributionEnabled = false,
         )
       }
       MapLibre(
         modifier = Modifier.fillMaxSize(),
         styleBuilder = style,
         cameraPosition = initialPos,
-        uiSettings = ui
+        uiSettings = ui,
       ) {
         Symbol(
           center = org.maplibre.android.geometry.LatLng(latitude, longitude),
           color = "Red",
-          size = 1.4f
+          size = 1.4f,
         )
       }
     }

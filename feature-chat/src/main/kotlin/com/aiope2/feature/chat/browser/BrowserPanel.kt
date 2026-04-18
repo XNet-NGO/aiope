@@ -24,8 +24,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /** Singleton browser instance shared between panel UI and tool calls. */
 object BrowserHolder {
@@ -64,7 +62,10 @@ fun BrowserPanel(maximized: Boolean = false, onToggleMaximize: () -> Unit = {}, 
     while (true) {
       delay(200)
       val cur = browser.currentUrl()
-      if (cur != url) { url = cur; if (!editing) urlInput = cur }
+      if (cur != url) {
+        url = cur
+        if (!editing) urlInput = cur
+      }
       progress = browser.loadProgress
     }
   }
@@ -73,7 +74,7 @@ fun BrowserPanel(maximized: Boolean = false, onToggleMaximize: () -> Unit = {}, 
   Column(modifier.background(Color.Black)) {
     Row(
       Modifier.fillMaxWidth().background(Color(0xFF141414)).padding(horizontal = 4.dp, vertical = 2.dp),
-      verticalAlignment = Alignment.CenterVertically
+      verticalAlignment = Alignment.CenterVertically,
     ) {
       // Left: Back
       IconButton(onClick = { scope.launch { browser.goBack() } }, modifier = Modifier.size(32.dp)) {
@@ -82,7 +83,10 @@ fun BrowserPanel(maximized: Boolean = false, onToggleMaximize: () -> Unit = {}, 
       // Center: URL input
       BasicTextField(
         value = urlInput,
-        onValueChange = { urlInput = it; editing = true },
+        onValueChange = {
+          urlInput = it
+          editing = true
+        },
         singleLine = true,
         textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 12.sp),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
@@ -94,7 +98,7 @@ fun BrowserPanel(maximized: Boolean = false, onToggleMaximize: () -> Unit = {}, 
         decorationBox = { inner ->
           if (urlInput.isEmpty()) Text("Enter URL…", color = Color(0xFF666666), fontSize = 12.sp)
           inner()
-        }
+        },
       )
       // Right: Forward, Refresh, Maximize
       IconButton(onClick = { scope.launch { browser.goForward() } }, modifier = Modifier.size(32.dp)) {
@@ -107,7 +111,8 @@ fun BrowserPanel(maximized: Boolean = false, onToggleMaximize: () -> Unit = {}, 
         Icon(
           if (maximized) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
           if (maximized) "Restore" else "Maximize",
-          Modifier.size(16.dp), tint = Color.White
+          Modifier.size(16.dp),
+          tint = Color.White,
         )
       }
     }
@@ -117,7 +122,7 @@ fun BrowserPanel(maximized: Boolean = false, onToggleMaximize: () -> Unit = {}, 
         progress = { progress / 100f },
         modifier = Modifier.fillMaxWidth().height(2.dp),
         color = Color(0xFF00E5FF),
-        trackColor = Color.Transparent
+        trackColor = Color.Transparent,
       )
     }
     AndroidView(
@@ -126,7 +131,7 @@ fun BrowserPanel(maximized: Boolean = false, onToggleMaximize: () -> Unit = {}, 
         (wv.parent as? android.view.ViewGroup)?.removeView(wv)
         wv
       },
-      modifier = Modifier.fillMaxSize()
+      modifier = Modifier.fillMaxSize(),
     )
   }
 }

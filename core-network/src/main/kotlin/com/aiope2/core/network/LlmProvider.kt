@@ -74,7 +74,10 @@ data class ModelDef(
   val supportsVision: Boolean = false,
   val supportsAudio: Boolean = false,
   val supportsVideo: Boolean = false,
+  val supportsReasoning: Boolean = false,
   val outputModality: String = "text",
+  val maxOutput: Int = 0,
+  val family: String = "",
 )
 
 /** Provider profile — only connection info + selected model + per-model configs */
@@ -95,8 +98,7 @@ data class ProviderProfile(
   }
 
   /** Get or create config for the selected model */
-  fun activeModelConfig(): ModelConfig =
-    modelConfigs[selectedModelId] ?: ModelConfig(modelId = selectedModelId)
+  fun activeModelConfig(): ModelConfig = modelConfigs[selectedModelId] ?: ModelConfig(modelId = selectedModelId)
 
   fun toJson() = JSONObject().apply {
     put("id", id)

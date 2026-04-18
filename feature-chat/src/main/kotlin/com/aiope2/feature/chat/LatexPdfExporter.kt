@@ -24,8 +24,11 @@ object LatexPdfExporter {
         view.postDelayed({
           val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
           val adapter = view.createPrintDocumentAdapter("AIOPE_LaTeX_Export")
-          printManager.print("AIOPE LaTeX Export", adapter,
-            PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.NA_LETTER).build())
+          printManager.print(
+            "AIOPE LaTeX Export",
+            adapter,
+            PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.NA_LETTER).build(),
+          )
         }, 1500)
       }
     }
@@ -172,21 +175,19 @@ $body
     return "<p>$s</p>"
   }
 
-  private fun transpileTables(input: String): String {
-    return Regex("(?s)\\\\begin\\{tabular\\}\\{[^}]*\\}(.*?)\\\\end\\{tabular\\}").replace(input) { m ->
-      val body = m.groupValues[1].trim()
-      val rows = body.split("\\\\").map { it.trim() }.filter { it.isNotEmpty() && it != "\\hline" }
-      val sb = StringBuilder("<table>")
-      for ((i, row) in rows.withIndex()) {
-        if (row == "\\hline") continue
-        val cells = row.replace("\\hline", "").split("&").map { it.trim() }
-        val tag = if (i == 0) "th" else "td"
-        sb.append("<tr>")
-        for (cell in cells) sb.append("<$tag>$cell</$tag>")
-        sb.append("</tr>")
-      }
-      sb.append("</table>")
-      sb.toString()
+  private fun transpileTables(input: String): String = Regex("(?s)\\\\begin\\{tabular\\}\\{[^}]*\\}(.*?)\\\\end\\{tabular\\}").replace(input) { m ->
+    val body = m.groupValues[1].trim()
+    val rows = body.split("\\\\").map { it.trim() }.filter { it.isNotEmpty() && it != "\\hline" }
+    val sb = StringBuilder("<table>")
+    for ((i, row) in rows.withIndex()) {
+      if (row == "\\hline") continue
+      val cells = row.replace("\\hline", "").split("&").map { it.trim() }
+      val tag = if (i == 0) "th" else "td"
+      sb.append("<tr>")
+      for (cell in cells) sb.append("<$tag>$cell</$tag>")
+      sb.append("</tr>")
     }
+    sb.append("</table>")
+    sb.toString()
   }
 }

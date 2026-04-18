@@ -37,24 +37,23 @@ internal class GestureAndScaleRecognizer(context: Context, val mListener: Listen
 
   init {
 
-    mGestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-      override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
-        return mListener.onScroll(e2, dx, dy)
-      }
+    mGestureDetector = GestureDetector(
+      context,
+      object : GestureDetector.SimpleOnGestureListener() {
+        override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean = mListener.onScroll(e2, dx, dy)
 
-      override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
-        return mListener.onFling(e2, velocityX, velocityY)
-      }
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean = mListener.onFling(e2, velocityX, velocityY)
 
-      override fun onDown(e: MotionEvent): Boolean {
-        return mListener.onDown(e.x, e.y)
-      }
+        override fun onDown(e: MotionEvent): Boolean = mListener.onDown(e.x, e.y)
 
-      override fun onLongPress(e: MotionEvent) {
-        mListener.onLongPress(e)
-        isAfterLongPress = true
-      }
-    }, null, true /* ignoreMultitouch */)
+        override fun onLongPress(e: MotionEvent) {
+          mListener.onLongPress(e)
+          isAfterLongPress = true
+        }
+      },
+      null,
+      true, // ignoreMultitouch
+    )
 
     mGestureDetector.setOnDoubleTapListener(object : GestureDetector.OnDoubleTapListener {
       override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
@@ -65,9 +64,7 @@ internal class GestureAndScaleRecognizer(context: Context, val mListener: Listen
         return mListener.onSingleTapUp(e)
       }
 
-      override fun onDoubleTap(e: MotionEvent): Boolean {
-        return mListener.onDoubleTap(e)
-      }
+      override fun onDoubleTap(e: MotionEvent): Boolean = mListener.onDoubleTap(e)
 
       override fun onDoubleTapEvent(e: MotionEvent): Boolean {
         // For treating double tap as MOUSE_LEFT_BUTTON_MOVED event
@@ -79,6 +76,7 @@ internal class GestureAndScaleRecognizer(context: Context, val mListener: Listen
           when (e.action) {
             MotionEvent.ACTION_DOWN ->
               mGestureDetector.setIsLongpressEnabled(false)
+
             MotionEvent.ACTION_UP ->
               mGestureDetector.setIsLongpressEnabled(true)
           }
@@ -88,19 +86,18 @@ internal class GestureAndScaleRecognizer(context: Context, val mListener: Listen
       }
     })
 
-    mScaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-      override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
-        return true
-      }
+    mScaleDetector = ScaleGestureDetector(
+      context,
+      object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScaleBegin(detector: ScaleGestureDetector): Boolean = true
 
-      override fun onScale(detector: ScaleGestureDetector): Boolean {
-        return mListener.onScale(detector.focusX, detector.focusY, detector.scaleFactor)
-      }
-    })
+        override fun onScale(detector: ScaleGestureDetector): Boolean = mListener.onScale(detector.focusX, detector.focusY, detector.scaleFactor)
+      },
+    )
 
     // For treating double tap as MOUSE_LEFT_BUTTON_MOVED event
     // e.g in vim, we can change window size with fingers moving.
-    mScaleDetector.isQuickScaleEnabled = false;
+    mScaleDetector.isQuickScaleEnabled = false
   }
 
   fun onTouchEvent(event: MotionEvent) {
@@ -121,5 +118,4 @@ internal class GestureAndScaleRecognizer(context: Context, val mListener: Listen
 
   val isInProgress: Boolean
     get() = mScaleDetector.isInProgress
-
 }

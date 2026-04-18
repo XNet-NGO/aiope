@@ -59,3 +59,7 @@
 
 # See https://issuetracker.google.com/issues/265188224
 -keep,allowshrinking class * extends androidx.compose.ui.node.ModifierNodeElement {}
+
+# Terminal JNI — accessed via reflection, R8 must not strip
+-keep class com.termux.terminal.JNI { *; }
+-keep class com.termux.terminal.** { *; }
