@@ -337,11 +337,11 @@ class ChatViewModel @Inject constructor(
             // Append tool call summaries so the model recalls what tools it ran
             if (role == "assistant" && msg.toolCalls.isNotEmpty()) {
               val toolSummary = msg.toolCalls.mapIndexed { i, call ->
-                val result = msg.toolResults.getOrNull(i)?.take(500) ?: "(no result)"
+                val result = msg.toolResults.getOrNull(i)?.take(500)?.replace('\n', ' ') ?: "(no result)"
                 val name = call.substringBefore("(").substringBefore(" ").trim()
-                "[$name → $result]"
-              }.joinToString("\n")
-              content = "[Tool calls:\n$toolSummary]\n$content"
+                "$name → $result"
+              }.joinToString(" | ")
+              content = "[Tools: $toolSummary]\n$content"
             }
             trimmed.add(0, role to content)
           }
@@ -653,11 +653,11 @@ class ChatViewModel @Inject constructor(
               var content = msg.content
               if (msg.toolCalls.isNotEmpty()) {
                 val toolSummary = msg.toolCalls.mapIndexed { i, call ->
-                  val result = msg.toolResults.getOrNull(i)?.take(500) ?: "(no result)"
+                  val result = msg.toolResults.getOrNull(i)?.take(500)?.replace('\n', ' ') ?: "(no result)"
                   val name = call.substringBefore("(").substringBefore(" ").trim()
-                  "[$name → $result]"
-                }.joinToString("\n")
-                content = "[Tool calls:\n$toolSummary]\n$content"
+                  "$name → $result"
+                }.joinToString(" | ")
+                content = "[Tools: $toolSummary]\n$content"
               }
               chatMessages.add("assistant" to content)
             }

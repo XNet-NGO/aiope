@@ -42,6 +42,8 @@ class StreamingOrchestrator(
     private val PARALLEL_SAFE = setOf(
       "read_file", "list_directory", "query_data", "search_web", "search_images",
       "fetch_url", "memory_recall", "get_location", "browser_content", "browser_elements",
+      "search_location", "read_calendar", "read_contacts", "read_sms", "clipboard_read",
+      "device_info", "analyze_image", "image_generate",
     )
   }
 

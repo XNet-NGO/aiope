@@ -65,9 +65,14 @@ internal fun AgentScreen(dao: ChatDao, onBack: () -> Unit) {
     ) {
       AGENT_SECTIONS.forEach { section ->
         item(key = "header_${section.key}") {
-          Column(Modifier.padding(top = 16.dp, bottom = 4.dp)) {
-            Text(section.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Text(section.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Row(Modifier.padding(top = 16.dp, bottom = 4.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+              Text(section.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+              Text(section.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = { section.subsections.forEach { sub -> save("$AGENT_PREFIX${sub.key}", sub.default) } }) {
+              Icon(Icons.Default.Refresh, "Reset ${section.title}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
           }
         }
         section.subsections.forEach { sub ->
