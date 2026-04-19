@@ -4,6 +4,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -77,6 +79,8 @@ fun ThemeProvider(content: @Composable () -> Unit) {
       primaryContainer = primaryColor.copy(alpha = 0.3f),
       secondaryContainer = (secondaryColor ?: primaryColor).copy(alpha = 0.3f),
     )
+  } else if (android.os.Build.VERSION.SDK_INT >= 31 && mode == "system") {
+    if (isDark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
   } else if (isDark) {
     darkColorScheme()
   } else {
