@@ -1,66 +1,28 @@
-# AIOPE2 Agent Harness Improvement Proposals
+# AIOPE2 Agent Harness: Architectural Analysis & Roadmap
 
-This document outlines architectural and functional improvements for the client-side agent harness, based on the analysis of `StreamingOrchestrator.kt`.
+## 1. The Orchestration Engine
+- **Reasoning Loop**: The harness uses a `while` loop in `StreamingOrchestrator` allowing multiple tool calls per turn.
+- **Parallel Execution**: Tools in the `PARALLEL_SAFE` set are executed concurrently using Kotlin coroutines.
+- **Proposal**: Expand the safe set to include read-only device APIs (e.g., `read_calendar`, `read_contacts`).
+- **Proposal**: Implement semantic context trimming instead of the current "drop-last-3" approach to preserve critical information.
 
-## 1. Optimization of Parallel Execution (`PARALLEL_SAFE`)
-Currently, the harness uses a static set of tools that can be executed concurrently. To reduce latency during complex agent workflows, we should expand this list.
+## 2. Visual & Interactive Pipeline
+- **Aiope-UI**: JSON-based dynamic UI elements rendered as native components.
+- **Custom Markdown**: A pipeline extending Markwon with LaTeX, structured tables, and smart-link resolution.
+- **Proposal**: Integrate executable code blocks directly into the markdown renderer, linking to the `TerminalRenderer`.
+- **Proposal**: Implement interactive data-tables with sorting and filtering.
 
-### Proposed Additions:
-- `read_calendar`: Read-only operation.
-- `read_contacts`: Read-only operation.
-- `device_info`: Static system query.
-- `memory_recall`: Read-only database query.
+## 3. Terminal & Session State
+- **TerminalRenderer**: High-performance canvas-based emulator with JetBrains Mono support.
+- **TerminalSessionHolder**: Manages persistent `TerminalSession` objects, allowing shells to survive across user turns.
+- **Proposal**: Build a bridge between `StreamingOrchestrator` and `TerminalSessionHolder` to allow the agent to inject commands into and monitor active user shells.
 
-### Benefit:
-Allows the agent to gather a complete "environmental snapshot" (location, schedule, contacts, device status) in a single parallel burst, reducing the number of orchestration rounds.
+## 4. The PRoot Local-Loop
+- **Native Integration**: The client bundles `libproot.so` and `libproot-xed.so`.
+- **ProotExecutor**: A native bridge allowing the app to run virtualized Linux rootfs locally on the device.
+- **Proposal**: Implement a `run_local_linux` tool to shift heavy computation and system tooling from remote servers to the local device hardware.
 
----
-
-## 2. Semantic Context Trimming
-The current trimming strategy is a "sliding window" that drops or truncates all but the last 3 tool results. This can lead to "amnesia" where the agent forgets a critical piece of data found in round 1 while performing round 5.
-
-### Proposed Change:
-Implement a **Priority-Based Trimming** system:
-- **Pinned Results**: Allow the agent to mark a tool result as `pinned` (via a special tag in the response), preventing it from being truncated.
-- **Semantic Scoring**: Use a small local embedding or keyword-matching system to keep tool results that are most relevant to the current `goal` string, regardless of their position in the history.
-
-### Benefit:
-Maintains long-term coherence in multi-step reasoning chains without blowing out the context window.
-
----
-
-## 3. Dynamic Tool Provisioning (Just-In-Time Tools)
-The agent currently operates with a fixed toolset defined at compile-time. This limits extensibility.
-
-### Proposed Change:
-Implement a **Tool Manifest** system where the client can register new tools at runtime (e.g., via a plugin APK or a JSON manifest).
-- **Tool Request**: The agent can emit a special `REQUEST_TOOL` signal.
-- **Dynamic Injection**: The harness searches available plugins and injects the tool definition into the system prompt for the next round.
-
-### Benefit:
-Allows the agent to evolve its capabilities without requiring a full app update.
-
----
-
-## 4. Rich UI Feedback Loops
-The transition between tool calls is currently "silent" until the final response is rendered.
-
-### Proposed Change:
-Integrate **Interim State Indicators** into `aiope-ui`:
-- **Status Badges**: While a tool is running, the harness pushes a temporary `badge` or `progress` component to the UI (e.g., `Searching Web... 🔄`).
-- **Tool-Specific UI**: Instead of just text results, allow tools to return `aiope-ui` fragments directly (e.g., a `table` of search results) that the user can interact with before the agent even finishes its final thought.
-
-### Benefit:
-Eliminates the "black box" feeling during long tool-use chains and improves perceived performance.
-
----
-
-## 5. User-Interruptible Loops
-Currently, the `while` loop in `StreamingOrchestrator` runs until completion or max rounds.
-
-### Proposed Change:
-Introduce a **Pause/Confirm** mechanism:
-- **Confirmation Gates**: For "unsafe" tools (e.g., `delete_sms`, `send_sms`), the harness should automatically inject a `confirm` button via `aiope-ui` and pause the loop until the user approves.
-
-### Benefit:
-Prevents catastrophic agent errors and increases user trust.
+## 5. The Unified Tool Matrix
+- **Broad Capability**: 40+ tools across Shell/PRoot, File System, Device Integration, Web Intelligence, Personal Assistant, and Live Data (`query_data`).
+- **MCP Support**: Integration with `McpManager` allows for the dynamic discovery and use of external Model Context Protocol servers.
+- **Proposal**: Design "Complex Workflows" where the agent chains disparate tools (e.g., Weather -> Calendar -> Location -> Event -> SMS) in one autonomous turn.

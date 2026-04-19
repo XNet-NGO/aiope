@@ -263,18 +263,6 @@ internal fun ProfileEditor(
             saveModelConfig()
           })
         }
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-          value = mc.systemPromptOverride ?: "",
-          onValueChange = {
-            mc = mc.copy(systemPromptOverride = it.ifBlank { null })
-            saveModelConfig()
-          },
-          label = { Text("System Prompt") },
-          modifier = Modifier.fillMaxWidth(),
-          minLines = 3,
-          maxLines = 6,
-        )
       }
 
       // ══════════════════════════════════════════════════════════════

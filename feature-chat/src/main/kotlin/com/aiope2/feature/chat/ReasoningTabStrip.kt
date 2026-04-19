@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -68,7 +69,7 @@ internal fun ReasoningTabStrip(reasoning: List<String>, isReasoningDone: Boolean
           shape = RoundedCornerShape(12.dp),
           color = Color(0xFF111111),
         ) {
-          Box(Modifier.padding(10.dp).heightIn(max = 120.dp)) {
+          Box(Modifier.padding(10.dp).heightIn(max = 120.dp).verticalScroll(rememberScrollState())) {
             val lines = text.lines()
             val display = if (isActive && lines.size > 4) lines.takeLast(4).joinToString("\n") else text
             SelectionContainer {

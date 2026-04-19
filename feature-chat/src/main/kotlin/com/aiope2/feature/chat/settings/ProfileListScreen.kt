@@ -40,6 +40,7 @@ internal fun ProfileList(
   onSelect: (ProviderProfile) -> Unit,
   onEdit: (ProviderProfile) -> Unit,
   onAdd: () -> Unit,
+  onAgent: () -> Unit,
   onTasks: () -> Unit,
   onTools: () -> Unit,
   onMcp: () -> Unit,
@@ -54,6 +55,12 @@ internal fun ProfileList(
   }) { pad ->
     LazyColumn(Modifier.fillMaxSize().padding(pad)) {
       item {
+        ListItem(
+          headlineContent = { Text("Agent") },
+          supportingContent = { Text("Customize the system prompt and agent behavior", style = MaterialTheme.typography.bodySmall) },
+          modifier = Modifier.clickable { onAgent() },
+        )
+        HorizontalDivider()
         ListItem(
           headlineContent = { Text("Default Models per Task") },
           supportingContent = { Text("Set different models for chat, agent, titles, etc.", style = MaterialTheme.typography.bodySmall) },

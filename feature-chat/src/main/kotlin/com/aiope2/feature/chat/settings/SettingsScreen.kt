@@ -3,10 +3,11 @@ package com.aiope2.feature.chat.settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import com.aiope2.core.network.ProviderProfile
+import com.aiope2.feature.chat.db.ChatDao
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, onBack: () -> Unit) {
+fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: ChatDao, onBack: () -> Unit) {
   var screen by remember { mutableStateOf("list") }
   var editId by remember { mutableStateOf<String?>(null) }
   var profiles by remember { mutableStateOf(providerStore.getAll()) }
@@ -27,10 +28,12 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, onBack: (
         editId = it.id
         screen = "edit"
       },
-      onAdd = { screen = "pick" }, onTasks = { screen = "tasks" }, onTools = { screen = "tools" }, onMcp = { screen = "mcp" }, onBack = onBack,
+      onAdd = { screen = "pick" }, onAgent = { screen = "agent" }, onTasks = { screen = "tasks" }, onTools = { screen = "tools" }, onMcp = { screen = "mcp" }, onBack = onBack,
     )
 
     "tools" -> ToolToggleScreen(toolStore, onBack = { screen = "list" })
+
+    "agent" -> AgentScreen(dao = chatDao, onBack = { screen = "list" })
 
     "mcp" -> McpServerScreen(toolStore, onBack = { screen = "list" })
 

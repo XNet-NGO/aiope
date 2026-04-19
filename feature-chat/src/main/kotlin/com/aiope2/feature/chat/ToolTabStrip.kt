@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -84,7 +85,7 @@ internal fun ToolTabStrip(calls: List<String>, results: List<String>, errors: Li
           shape = RoundedCornerShape(12.dp),
           color = if (selHasError) cs.errorContainer.copy(alpha = 0.15f) else Color(0xFF111111),
         ) {
-          Column(Modifier.padding(10.dp).heightIn(max = 160.dp)) {
+          Column(Modifier.padding(10.dp).heightIn(max = 160.dp).verticalScroll(rememberScrollState())) {
             SelectionContainer {
               Text(calls[selectedIdx], fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant.copy(alpha = 0.5f), fontFamily = FontFamily.Monospace)
             }

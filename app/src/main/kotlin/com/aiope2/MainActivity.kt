@@ -28,6 +28,8 @@ class MainActivity : ComponentActivity() {
 
   @Inject lateinit var toolStore: ToolStore
 
+  @Inject lateinit var chatDao: com.aiope2.feature.chat.db.ChatDao
+
   private val runtimePermissions = buildList {
     add(Manifest.permission.CAMERA)
     add(Manifest.permission.RECORD_AUDIO)
@@ -95,6 +97,6 @@ class MainActivity : ComponentActivity() {
     // Start foreground service
     startForegroundService(Intent(this, AiopeForegroundService::class.java))
 
-    setContent { AiopeMain(composeNavigator = composeNavigator, providerStore = providerStore, toolStore = toolStore) }
+    setContent { AiopeMain(composeNavigator = composeNavigator, providerStore = providerStore, toolStore = toolStore, chatDao = chatDao) }
   }
 }

@@ -332,7 +332,19 @@ class ChatViewModel @Inject constructor(
             Role.SYSTEM -> "system"
             else -> null
           }
-          if (role != null) trimmed.add(0, role to msg.content)
+          if (role != null) {
+            var content = msg.content
+            // Append tool call summaries so the model recalls what tools it ran
+            if (role == "assistant" && msg.toolCalls.isNotEmpty()) {
+              val toolSummary = msg.toolCalls.mapIndexed { i, call ->
+                val result = msg.toolResults.getOrNull(i)?.take(500) ?: "(no result)"
+                val name = call.substringBefore("(").substringBefore(" ").trim()
+                "[$name → $result]"
+              }.joinToString("\n")
+              content = "[Tool calls:\n$toolSummary]\n$content"
+            }
+            trimmed.add(0, role to content)
+          }
         }
         chatMessages.addAll(trimmed)
         chatMessages.add("user" to text)
@@ -636,7 +648,20 @@ class ChatViewModel @Inject constructor(
         _messages.value.dropLast(1).forEach { msg ->
           when (msg.role) {
             Role.USER -> chatMessages.add("user" to msg.content)
-            Role.ASSISTANT -> chatMessages.add("assistant" to msg.content)
+
+            Role.ASSISTANT -> {
+              var content = msg.content
+              if (msg.toolCalls.isNotEmpty()) {
+                val toolSummary = msg.toolCalls.mapIndexed { i, call ->
+                  val result = msg.toolResults.getOrNull(i)?.take(500) ?: "(no result)"
+                  val name = call.substringBefore("(").substringBefore(" ").trim()
+                  "[$name → $result]"
+                }.joinToString("\n")
+                content = "[Tool calls:\n$toolSummary]\n$content"
+              }
+              chatMessages.add("assistant" to content)
+            }
+
             else -> {}
           }
         }
@@ -728,51 +753,8 @@ class ChatViewModel @Inject constructor(
 
   private suspend fun buildSystemMessages(mc: com.aiope2.core.network.ModelConfig): MutableList<Pair<String, String>> {
     val msgs = mutableListOf<Pair<String, String>>()
-    mc.systemPromptOverride?.let { if (it.isNotBlank()) msgs.add("system" to it) }
-    if (toolStore.isDynamicUiEnabled()) {
-      msgs.add(
-        "system" to buildString {
-          append("## Dynamic UI\n")
-          append("You can enhance your chat responses with interactive UI elements using aiope-ui blocks. ")
-          append("Proactively use them whenever you need input from the user — don't just ask in plain text if a form, selector, or buttons would be more natural. ")
-          append("Use aiope-ui whenever collecting data, offering choices, presenting structured information, or guiding multi-step workflows. ")
-          append("You can mix aiope-ui blocks with regular markdown text naturally — use markdown for explanations and aiope-ui for interactive elements.\n\n")
-          append("Format: wrap a JSON object in ```aiope-ui fences.\n\n")
-          append("Components: column, row, card, text, button, text_input, checkbox, switch, select, radio_group, slider, chip_group, table, list, divider, image, icon, code, progress, alert, tabs, accordion, quote, badge, stat.\n")
-          append("- text: {\"type\":\"text\",\"value\":\"...\",\"style\":\"headline|title|body|caption\",\"bold\":true,\"italic\":true,\"color\":\"primary|secondary|error|violet|green|amber\"} — do NOT use markdown formatting (**, *, #) in text values; use bold/italic/style properties instead\n")
-          append("- button: {\"type\":\"button\",\"label\":\"...\",\"action\":{...},\"variant\":\"filled|outlined|text|tonal\"} — always include a label\n")
-          append("- text_input: {\"type\":\"text_input\",\"id\":\"...\",\"label\":\"...\",\"placeholder\":\"...\"}\n")
-          append("- checkbox: {\"type\":\"checkbox\",\"id\":\"...\",\"label\":\"...\",\"checked\":false}\n")
-          append("- switch: {\"type\":\"switch\",\"id\":\"...\",\"label\":\"...\",\"checked\":false}\n")
-          append("- select: {\"type\":\"select\",\"id\":\"...\",\"label\":\"...\",\"options\":[\"A\",\"B\"],\"selected\":\"A\"}\n")
-          append("- radio_group: {\"type\":\"radio_group\",\"id\":\"...\",\"label\":\"...\",\"options\":[\"A\",\"B\"]}\n")
-          append("- slider: {\"type\":\"slider\",\"id\":\"...\",\"label\":\"...\",\"value\":50,\"min\":0,\"max\":100,\"step\":10}\n")
-          append("- chip_group: {\"type\":\"chip_group\",\"id\":\"...\",\"chips\":[{\"label\":\"Tag\",\"value\":\"tag\"}],\"selection\":\"single|multi|none\"}\n")
-          append("- list: {\"type\":\"list\",\"items\":[...],\"ordered\":false} — do NOT include bullet characters in item text\n")
-          append("- table: {\"type\":\"table\",\"headers\":[\"Col1\",\"Col2\"],\"rows\":[[\"a\",\"b\"]]}\n")
-          append("- icon: {\"type\":\"icon\",\"name\":\"home|star|check|warning|info|...\",\"size\":24,\"color\":\"primary\"} — you can also use any emoji as the name\n")
-          append("- code: {\"type\":\"code\",\"code\":\"...\",\"language\":\"kotlin\"}\n")
-          append("- progress: {\"type\":\"progress\",\"value\":0.5,\"label\":\"50%\"}\n")
-          append("- alert: {\"type\":\"alert\",\"message\":\"...\",\"title\":\"...\",\"severity\":\"info|success|warning|error\"}\n")
-          append("- tabs: {\"type\":\"tabs\",\"tabs\":[{\"label\":\"Tab 1\",\"children\":[...]},{\"label\":\"Tab 2\",\"children\":[...]}]}\n")
-          append("- accordion: {\"type\":\"accordion\",\"title\":\"...\",\"children\":[...],\"expanded\":false}\n")
-          append("- quote: {\"type\":\"quote\",\"text\":\"...\",\"source\":\"Author\"}\n")
-          append("- badge: {\"type\":\"badge\",\"value\":\"3\",\"color\":\"primary\"}\n")
-          append("- stat: {\"type\":\"stat\",\"value\":\"\$1,234\",\"label\":\"Revenue\",\"description\":\"12% increase\"}\n\n")
-          append("Actions (on buttons):\n")
-          append("- callback: {\"type\":\"callback\",\"event\":\"event_name\",\"data\":{\"key\":\"val\"},\"collectFrom\":[\"input_id\"]} — collects input values and sends them back\n")
-          append("- toggle: {\"type\":\"toggle\",\"targetId\":\"element_id\"} — shows/hides an element\n")
-          append("- open_url: {\"type\":\"open_url\",\"url\":\"https://...\"}\n")
-          append("- copy_to_clipboard: {\"type\":\"copy_to_clipboard\",\"text\":\"...\"}\n\n")
-          append("Layout tips:\n")
-          append("- Put buttons INSIDE cards, directly below related content — never group all buttons separately at the bottom\n")
-          append("- Use rows for groups of buttons or chips — rows wrap automatically\n")
-          append("- Keep button labels short (1-3 words)\n")
-          append("- Form inputs only store state locally. Their values are ONLY sent when a button's collectFrom includes their id. Always pair form inputs with a submit button.\n\n")
-          append("Example:\n```aiope-ui\n{\"type\":\"column\",\"children\":[{\"type\":\"text\",\"value\":\"Your name?\",\"style\":\"title\"},{\"type\":\"text_input\",\"id\":\"name\",\"placeholder\":\"Enter name\"},{\"type\":\"button\",\"label\":\"Submit\",\"action\":{\"type\":\"callback\",\"event\":\"submit\",\"collectFrom\":[\"name\"]}}]}\n```\n")
-        },
-      )
-    }
+    val prompt = com.aiope2.feature.chat.settings.buildAgentPrompt(chatDao)
+    if (prompt.isNotBlank()) msgs.add("system" to prompt)
     return msgs
   }
   private fun getBrowser() = com.aiope2.feature.chat.browser.BrowserHolder.getOrCreate(getApplication())
