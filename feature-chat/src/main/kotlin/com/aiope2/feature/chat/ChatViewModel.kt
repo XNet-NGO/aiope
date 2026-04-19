@@ -799,7 +799,7 @@ class ChatViewModel @Inject constructor(
     ).also { te ->
       _subagentManager = com.aiope2.feature.chat.engine.SubagentManager(
         createOrchestrator = { tools, onToolCall ->
-          val taskStore = com.aiope2.core.network.TaskModelStore(ctx)
+          val taskStore = com.aiope2.core.network.TaskModelStore(getApplication())
           val tc = taskStore.getTaskConfig(com.aiope2.core.network.ModelTask.SUBAGENT)
           val p = if (tc.profileId != null) providerStore.getById(tc.profileId!!) ?: providerStore.getActive() else providerStore.getActive()
           val modelId = tc.modelId ?: p.selectedModelId
