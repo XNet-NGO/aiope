@@ -45,7 +45,7 @@ class ProviderStore @Inject constructor(
         mc("zen/big-pickle", tools = true, vision = false, audio = false, video = false),
         mc("cline/z-ai-glm-5", tools = true, vision = false, audio = false, video = false, ctx = 200_000),
         mc("google-ai-studio/models-gemma-4-31b-it", tools = true, vision = true, ctx = 256_000),
-        mc("google-ai-studio/models-gemma-4-26b-a4b-it", vision = true, ctx = 256_000),
+        mc("google-ai-studio/models-gemma-4-26b-a4b-it", tools = true, vision = true, ctx = 256_000),
         mc("google-ai-studio/models-gemma-3-27b-it", tools = false, vision = true, audio = false, video = false, ctx = 128_000),
         mc("google-ai-studio/models-gemma-3-12b-it", tools = false, vision = true, audio = false, video = false, ctx = 128_000, reasoning = null),
         mc("google-ai-studio/models-gemma-3-4b-it", tools = false, vision = true, audio = false, video = false, ctx = 128_000, reasoning = null),
