@@ -213,6 +213,7 @@ class ToolExecutor(
 
     // Calendar
     "read_calendar" -> try {
+      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_CALENDAR)) return@execute "Calendar permission denied."
       val days = (args["days"] as? Number)?.toInt() ?: 7
       val now = System.currentTimeMillis()
       val end = now + days * 86400000L
@@ -267,6 +268,7 @@ class ToolExecutor(
 
     // Contacts
     "read_contacts" -> try {
+      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_CONTACTS)) return@execute "Contacts permission denied."
       val query = args["query"]?.toString() ?: ""
       val sel = if (query.isNotBlank()) "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?" else null
       val selArgs = if (query.isNotBlank()) arrayOf("%$query%") else null
@@ -322,6 +324,7 @@ class ToolExecutor(
 
     // SMS
     "read_sms" -> try {
+      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_SMS)) return@execute "SMS permission denied."
       val limit = (args["limit"] as? Number)?.toInt() ?: 10
       val cursor = app.contentResolver.query(android.provider.Telephony.Sms.CONTENT_URI, arrayOf("address", "body", "date", "type"), null, null, "date DESC LIMIT $limit")
       val msgs = mutableListOf<String>()
@@ -338,6 +341,7 @@ class ToolExecutor(
     }
 
     "send_sms" -> try {
+      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.SEND_SMS)) return@execute "SMS permission denied."
       val to = args["to"]?.toString() ?: return@execute "Error: 'to' phone number required"
       val body = args["body"]?.toString() ?: return@execute "Error: 'body' required"
       android.telephony.SmsManager.getDefault().sendTextMessage(to, null, body, null, null)
