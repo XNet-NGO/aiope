@@ -123,7 +123,7 @@ fun ThemeProvider(content: @Composable () -> Unit) {
     aiBubbleColor = prefs.aiBubbleColor.collectAsState(initial = null).value?.let { Color(it) },
     userTextColor = prefs.userTextColor.collectAsState(initial = null).value?.let { Color(it) },
     aiTextColor = prefs.aiTextColor.collectAsState(initial = null).value?.let { Color(it) },
-    useCustomBubbles = prefs.useCustomBubbles.collectAsState(initial = false).value,
+    useCustomBubbles = isCustom && prefs.useCustomBubbles.collectAsState(initial = false).value,
     userBubbleOpacity = prefs.userBubbleOpacity.collectAsState(initial = 1f).value,
     aiBubbleOpacity = prefs.aiBubbleOpacity.collectAsState(initial = 1f).value,
     showThinking = prefs.showThinking.collectAsState(initial = true).value,
