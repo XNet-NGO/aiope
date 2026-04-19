@@ -266,10 +266,10 @@ private fun EmptyState(onSend: (String, List<String>) -> Unit, modifier: Modifie
   val suggestions = listOf(
     "What's the weather like right now?",
     "Find the closest coffee shop",
-    "Run apt install python3 in proot",
-    "Fetch and summarize https://news.ycombinator.com",
+    "Search the web for today's top news",
     "Show me today's NASA astronomy photo",
-    "List files in /sdcard/Download",
+    "Generate an image of a sunset over mountains",
+    "Remember that my favorite color is blue",
   )
   val purple = Color(0xFF00E5FF)
   Column(
