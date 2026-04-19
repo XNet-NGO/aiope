@@ -63,6 +63,8 @@ class ProviderStore @Inject constructor(
     // Default subagent to the efficient MoE model
     val taskStore = com.aiope2.core.network.TaskModelStore(ctx)
     taskStore.setTaskConfig(com.aiope2.core.network.ModelTask.SUBAGENT, com.aiope2.core.network.TaskModelConfig("subagent", default.id, "google-ai-studio/models-gemma-4-26b-a4b-it"))
+    // Default Geoapify key for location search
+    if (getGeoapifyKey().isBlank()) setGeoapifyKey("d8acb75c06c04ab5a95b498a6a7090c0")
   }
 
   /** One-time migration from SharedPreferences */
