@@ -173,20 +173,8 @@ private fun AssistantBubble(
 
     // Tool calls
     if (message.toolCalls.isNotEmpty()) {
-      ToolTabStrip(message.toolCalls, message.toolResults)
+      ToolTabStrip(message.toolCalls, message.toolResults, message.toolErrors)
       Spacer(Modifier.height(8.dp))
-    }
-
-    // Tool errors
-    if (message.toolErrors.isNotEmpty()) {
-      for (err in message.toolErrors) {
-        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
-          SelectionContainer {
-            Text("⚠ $err", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(8.dp))
-          }
-        }
-        Spacer(Modifier.height(4.dp))
-      }
     }
 
     // Location
