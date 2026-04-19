@@ -45,6 +45,9 @@ class ThemePrefs(private val ctx: Context) {
     val UI_OPACITY = floatPreferencesKey("ui_opacity")
     val UI_COLOR = intPreferencesKey("ui_color")
     val USE_UI_COLOR = booleanPreferencesKey("use_ui_color")
+    val PRIMARY_TEXT_COLOR = intPreferencesKey("primary_text_color")
+    val SECONDARY_TEXT_COLOR = intPreferencesKey("secondary_text_color")
+    val USE_CUSTOM_TEXT = booleanPreferencesKey("use_custom_text")
   }
 
   private val ds = ctx.themeDataStore
@@ -77,6 +80,9 @@ class ThemePrefs(private val ctx: Context) {
   val uiOpacity: Flow<Float> = ds.data.map { it[UI_OPACITY] ?: 1f }
   val uiColor: Flow<Int?> = ds.data.map { it[UI_COLOR] }
   val useUiColor: Flow<Boolean> = ds.data.map { it[USE_UI_COLOR] ?: false }
+  val primaryTextColor: Flow<Int?> = ds.data.map { it[PRIMARY_TEXT_COLOR] }
+  val secondaryTextColor: Flow<Int?> = ds.data.map { it[SECONDARY_TEXT_COLOR] }
+  val useCustomText: Flow<Boolean> = ds.data.map { it[USE_CUSTOM_TEXT] ?: false }
 
   suspend fun <T> set(key: androidx.datastore.preferences.core.Preferences.Key<T>, value: T) {
     ds.edit { it[key] = value }

@@ -65,6 +65,9 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
   val uiOpacity by prefs.uiOpacity.collectAsState(initial = 1f)
   val useUiColor by prefs.useUiColor.collectAsState(initial = false)
   val uiColor by prefs.uiColor.collectAsState(initial = null)
+  val useCustomText by prefs.useCustomText.collectAsState(initial = false)
+  val primaryTextColor by prefs.primaryTextColor.collectAsState(initial = null)
+  val secondaryTextColor by prefs.secondaryTextColor.collectAsState(initial = null)
 
   val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
     if (uri != null) {
@@ -189,6 +192,14 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
       ToggleRow("Custom UI color", useUiColor) { scope.launch { prefs.set(ThemePrefs.USE_UI_COLOR, it) } }
       if (useUiColor) {
         ColorRow(selected = uiColor) { scope.launch { prefs.set(ThemePrefs.UI_COLOR, it) } }
+      }
+      Spacer(Modifier.height(4.dp))
+      ToggleRow("Custom text colors", useCustomText) { scope.launch { prefs.set(ThemePrefs.USE_CUSTOM_TEXT, it) } }
+      if (useCustomText) {
+        Text("Primary text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ColorRow(selected = primaryTextColor) { scope.launch { prefs.set(ThemePrefs.PRIMARY_TEXT_COLOR, it) } }
+        Text("Secondary text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ColorRow(selected = secondaryTextColor) { scope.launch { prefs.set(ThemePrefs.SECONDARY_TEXT_COLOR, it) } }
       }
 
       Spacer(Modifier.height(24.dp))

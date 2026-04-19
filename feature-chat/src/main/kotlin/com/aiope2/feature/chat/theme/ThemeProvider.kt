@@ -39,6 +39,9 @@ data class ThemeState(
   val uiOpacity: Float = 1f,
   val uiColor: Color? = null,
   val useUiColor: Boolean = false,
+  val primaryTextColor: Color? = null,
+  val secondaryTextColor: Color? = null,
+  val useCustomText: Boolean = false,
 )
 
 val LocalThemeState = compositionLocalOf { ThemeState() }
@@ -76,8 +79,12 @@ fun ThemeProvider(content: @Composable () -> Unit) {
 
   val useUiColor = prefs.useUiColor.collectAsState(initial = false).value
   val uiColor = prefs.uiColor.collectAsState(initial = null).value?.let { Color(it) }
-  val finalScheme = if (useUiColor && uiColor != null) {
-    colorScheme.copy(
+  val useCustomText = prefs.useCustomText.collectAsState(initial = false).value
+  val pTextColor = prefs.primaryTextColor.collectAsState(initial = null).value?.let { Color(it) }
+  val sTextColor = prefs.secondaryTextColor.collectAsState(initial = null).value?.let { Color(it) }
+  var finalScheme = colorScheme
+  if (useUiColor && uiColor != null) {
+    finalScheme = finalScheme.copy(
       surface = uiColor,
       background = uiColor,
       surfaceVariant = uiColor.copy(alpha = 0.7f),
@@ -85,8 +92,13 @@ fun ThemeProvider(content: @Composable () -> Unit) {
       surfaceContainerHigh = uiColor,
       surfaceContainerLow = uiColor,
     )
-  } else {
-    colorScheme
+  }
+  if (useCustomText && pTextColor != null) {
+    finalScheme = finalScheme.copy(
+      onSurface = pTextColor,
+      onBackground = pTextColor,
+      onSurfaceVariant = sTextColor ?: pTextColor.copy(alpha = 0.7f),
+    )
   }
 
   val state = ThemeState(
@@ -112,6 +124,9 @@ fun ThemeProvider(content: @Composable () -> Unit) {
     uiOpacity = prefs.uiOpacity.collectAsState(initial = 1f).value,
     uiColor = prefs.uiColor.collectAsState(initial = null).value?.let { Color(it) },
     useUiColor = prefs.useUiColor.collectAsState(initial = false).value,
+    primaryTextColor = prefs.primaryTextColor.collectAsState(initial = null).value?.let { Color(it) },
+    secondaryTextColor = prefs.secondaryTextColor.collectAsState(initial = null).value?.let { Color(it) },
+    useCustomText = prefs.useCustomText.collectAsState(initial = false).value,
   )
 
   CompositionLocalProvider(LocalThemeState provides state) {

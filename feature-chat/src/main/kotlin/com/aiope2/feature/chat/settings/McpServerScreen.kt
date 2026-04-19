@@ -95,7 +95,7 @@ internal fun McpServerScreen(toolStore: ToolStore, onBack: () -> Unit) {
         val cs = MaterialTheme.colorScheme
         Card(
           Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clickable { editServerId = s.id },
-          colors = CardDefaults.cardColors(containerColor = cs.surfaceVariant.copy(0.4f)),
+          colors = CardDefaults.cardColors(containerColor = cs.surfaceVariant),
         ) {
           Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             val dotColor = mcpDotColor(s, cs)
