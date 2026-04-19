@@ -66,6 +66,7 @@ internal fun McpServerScreen(toolStore: ToolStore, onBack: () -> Unit) {
   val _bgActive1 = com.aiope2.feature.chat.theme.LocalThemeState.current.useBackground
   Scaffold(containerColor = if (_bgActive1) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.MaterialTheme.colorScheme.background, topBar = {
     TopAppBar(
+      colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = if (com.aiope2.feature.chat.theme.LocalThemeState.current.useBackground) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.MaterialTheme.colorScheme.surface),
       title = { Text("MCP Servers") },
       navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
       actions = {
@@ -222,20 +223,24 @@ private fun McpServerDetailPage(
     }
   }
 
-  Scaffold(topBar = {
-    TopAppBar(
-      title = { Text(if (isNew) "Add MCP Server" else name.ifBlank { "(unnamed)" }) },
-      navigationIcon = {
-        IconButton(onClick = {
-          save()
-          onBack()
-        }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-      },
-      actions = {
-        if (!isNew) IconButton(onClick = { showDeleteConfirm = true }) { Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
-      },
-    )
-  }) { pad ->
+  Scaffold(
+    containerColor = if (com.aiope2.feature.chat.theme.LocalThemeState.current.useBackground) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.background,
+    topBar = {
+      TopAppBar(
+        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = if (com.aiope2.feature.chat.theme.LocalThemeState.current.useBackground) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.MaterialTheme.colorScheme.surface),
+        title = { Text(if (isNew) "Add MCP Server" else name.ifBlank { "(unnamed)" }) },
+        navigationIcon = {
+          IconButton(onClick = {
+            save()
+            onBack()
+          }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+        },
+        actions = {
+          if (!isNew) IconButton(onClick = { showDeleteConfirm = true }) { Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
+        },
+      )
+    },
+  ) { pad ->
     val cs = MaterialTheme.colorScheme
     LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 16.dp)) {
       // Status bar

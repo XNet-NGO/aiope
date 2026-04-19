@@ -62,6 +62,8 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
   val showStatusTags by prefs.showStatusTags.collectAsState(initial = true)
   val showToolActivity by prefs.showToolActivity.collectAsState(initial = true)
   val uiOpacity by prefs.uiOpacity.collectAsState(initial = 1f)
+  val useUiColor by prefs.useUiColor.collectAsState(initial = false)
+  val uiColor by prefs.uiColor.collectAsState(initial = null)
 
   val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
     if (uri != null) {
@@ -85,6 +87,7 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
     containerColor = if (prefs.useBackground.collectAsState(initial = false).value) Color.Transparent else MaterialTheme.colorScheme.background,
     topBar = {
       TopAppBar(
+        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = if (com.aiope2.feature.chat.theme.LocalThemeState.current.useBackground) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.MaterialTheme.colorScheme.surface),
         title = { Text("Theme") },
         navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
       )
@@ -181,6 +184,11 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
       Spacer(Modifier.height(4.dp))
       Text("UI opacity: ${(uiOpacity * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
       Slider(value = uiOpacity, onValueChange = { scope.launch { prefs.set(ThemePrefs.UI_OPACITY, it) } }, valueRange = 0.1f..1f)
+      Spacer(Modifier.height(4.dp))
+      ToggleRow("Custom UI color", useUiColor) { scope.launch { prefs.set(ThemePrefs.USE_UI_COLOR, it) } }
+      if (useUiColor) {
+        ColorRow(selected = uiColor) { scope.launch { prefs.set(ThemePrefs.UI_COLOR, it) } }
+      }
 
       Spacer(Modifier.height(24.dp))
     }

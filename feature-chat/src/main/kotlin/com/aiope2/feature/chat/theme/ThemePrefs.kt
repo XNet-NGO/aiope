@@ -43,6 +43,8 @@ class ThemePrefs(private val ctx: Context) {
     val SHOW_STATUS_TAGS = booleanPreferencesKey("show_status_tags")
     val SHOW_TOOL_ACTIVITY = booleanPreferencesKey("show_tool_activity")
     val UI_OPACITY = floatPreferencesKey("ui_opacity")
+    val UI_COLOR = intPreferencesKey("ui_color")
+    val USE_UI_COLOR = booleanPreferencesKey("use_ui_color")
   }
 
   private val ds = ctx.themeDataStore
@@ -73,6 +75,8 @@ class ThemePrefs(private val ctx: Context) {
   val showStatusTags: Flow<Boolean> = ds.data.map { it[SHOW_STATUS_TAGS] ?: true }
   val showToolActivity: Flow<Boolean> = ds.data.map { it[SHOW_TOOL_ACTIVITY] ?: true }
   val uiOpacity: Flow<Float> = ds.data.map { it[UI_OPACITY] ?: 1f }
+  val uiColor: Flow<Int?> = ds.data.map { it[UI_COLOR] }
+  val useUiColor: Flow<Boolean> = ds.data.map { it[USE_UI_COLOR] ?: false }
 
   suspend fun <T> set(key: androidx.datastore.preferences.core.Preferences.Key<T>, value: T) {
     ds.edit { it[key] = value }
