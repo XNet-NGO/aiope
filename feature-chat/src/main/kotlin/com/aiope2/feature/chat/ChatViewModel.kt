@@ -753,7 +753,11 @@ class ChatViewModel @Inject constructor(
     "memory_recall",
   )
 
-  lateinit var subagentManager: com.aiope2.feature.chat.engine.SubagentManager
+  private var _subagentManager: com.aiope2.feature.chat.engine.SubagentManager? = null
+  val subagentManager: com.aiope2.feature.chat.engine.SubagentManager get() {
+    if (_subagentManager == null) toolExecutor // force lazy init which sets _subagentManager
+    return _subagentManager!!
+  }
 
   private val toolExecutor by lazy {
     ToolExecutor(
@@ -769,7 +773,7 @@ class ChatViewModel @Inject constructor(
       resolveTaskModel = { resolveTaskModel(it) },
       getAgentMode = { _agentMode.value },
     ).also { te ->
-      subagentManager = com.aiope2.feature.chat.engine.SubagentManager(
+      _subagentManager = com.aiope2.feature.chat.engine.SubagentManager(
         scope = viewModelScope,
         createOrchestrator = { tools, onToolCall ->
           val p = providerStore.getActive()
@@ -797,7 +801,7 @@ class ChatViewModel @Inject constructor(
           }
         }
       }
-      te.subagentManager = subagentManager
+      te.subagentManager = _subagentManager
     }
   }
 
