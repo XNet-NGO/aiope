@@ -52,6 +52,8 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
   val videoLoop by prefs.videoLoop.collectAsState(initial = true)
   val videoRotation by prefs.videoRotation.collectAsState(initial = 0)
   val useCustomBubbles by prefs.useCustomBubbles.collectAsState(initial = false)
+  val userBubbleOpacity by prefs.userBubbleOpacity.collectAsState(initial = 1f)
+  val aiBubbleOpacity by prefs.aiBubbleOpacity.collectAsState(initial = 1f)
   val userBubbleColor by prefs.userBubbleColor.collectAsState(initial = null)
   val aiBubbleColor by prefs.aiBubbleColor.collectAsState(initial = null)
   val userTextColor by prefs.userTextColor.collectAsState(initial = null)
@@ -158,6 +160,11 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
         ColorRow(selected = aiBubbleColor) { scope.launch { prefs.set(ThemePrefs.AI_BUBBLE_COLOR, it) } }
         Text("AI text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         ColorRow(selected = aiTextColor) { scope.launch { prefs.set(ThemePrefs.AI_TEXT_COLOR, it) } }
+        Spacer(Modifier.height(4.dp))
+        Text("User bubble opacity: ${(userBubbleOpacity * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Slider(value = userBubbleOpacity, onValueChange = { scope.launch { prefs.set(ThemePrefs.USER_BUBBLE_OPACITY, it) } }, valueRange = 0.05f..1f)
+        Text("AI bubble opacity: ${(aiBubbleOpacity * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Slider(value = aiBubbleOpacity, onValueChange = { scope.launch { prefs.set(ThemePrefs.AI_BUBBLE_OPACITY, it) } }, valueRange = 0.05f..1f)
       }
 
       HorizontalDivider(Modifier.padding(vertical = 4.dp))

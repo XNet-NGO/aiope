@@ -17,6 +17,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.rememberAsyncImagePainter
 
@@ -24,24 +25,25 @@ import coil.compose.rememberAsyncImagePainter
 fun ChatBackground(theme: ThemeState, modifier: Modifier = Modifier) {
   if (!theme.useBackground || theme.backgroundUri.isNullOrBlank()) return
 
-  Box(modifier.fillMaxSize()) {
-    val rotMod = if (theme.videoRotation != 0) {
-      val isPortraitRotation = theme.videoRotation == 90 || theme.videoRotation == 270
-      Modifier.fillMaxSize().graphicsLayer {
-        rotationZ = theme.videoRotation.toFloat()
-        if (isPortraitRotation) {
-          // Scale up to fill after rotation
-          val scale = maxOf(size.width / size.height, size.height / size.width)
-          scaleX = scale
-          scaleY = scale
-        }
-      }
-    } else {
-      Modifier.fillMaxSize()
+  // graphicsLayer for rotation — applied identically to image and video
+  val rotMod = Modifier.fillMaxSize().graphicsLayer {
+    rotationZ = theme.videoRotation.toFloat()
+    if (theme.videoRotation == 90 || theme.videoRotation == 270) {
+      val scale = maxOf(size.width / size.height, size.height / size.width)
+      scaleX = scale
+      scaleY = scale
     }
+  }
 
+  Box(modifier.fillMaxSize()) {
     if (theme.backgroundMediaType == "video") {
-      VideoBackground(uri = theme.backgroundUri, opacity = theme.backgroundOpacity, muted = theme.videoMuted, loop = theme.videoLoop, modifier = rotMod)
+      VideoBackground(
+        uri = theme.backgroundUri,
+        opacity = theme.backgroundOpacity,
+        muted = theme.videoMuted,
+        loop = theme.videoLoop,
+        modifier = rotMod,
+      )
     } else {
       Image(
         painter = rememberAsyncImagePainter(Uri.parse(theme.backgroundUri)),
@@ -86,6 +88,8 @@ private fun VideoBackground(uri: String, opacity: Float, muted: Boolean, loop: B
         this.player = player
         useController = false
         setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+        // Crop-fill: no stretch, fills entire view, clips overflow
+        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
       }
     },
     modifier = modifier.alpha(opacity),

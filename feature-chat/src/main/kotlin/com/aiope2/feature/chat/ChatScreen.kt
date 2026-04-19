@@ -167,7 +167,7 @@ private fun ChatContent(
 ) {
   var showModelPicker by remember { mutableStateOf(false) }
   val theme = com.aiope2.feature.chat.theme.LocalThemeState.current
-  Box(modifier.background(if (theme.isDark) Color(0xFF000000) else Color(0xFFF5F5F5))) {
+  Box(modifier.background(MaterialTheme.colorScheme.background)) {
     com.aiope2.feature.chat.theme.ChatBackground(theme)
     Column(Modifier.fillMaxSize()) {
       // ── Toolbar ──
