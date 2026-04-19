@@ -56,37 +56,37 @@ internal fun ProfileList(
       item {
         ListItem(
           headlineContent = { Text("Providers") },
-          supportingContent = { Text("API providers, endpoints, and models", style = MaterialTheme.typography.bodySmall) },
+          supportingContent = { Text("API providers, endpoints, and models", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
           modifier = Modifier.clickable { onProviders() },
         )
         HorizontalDivider()
         ListItem(
           headlineContent = { Text("Agent") },
-          supportingContent = { Text("Customize the system prompt and agent behavior", style = MaterialTheme.typography.bodySmall) },
+          supportingContent = { Text("Customize the system prompt and agent behavior", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
           modifier = Modifier.clickable { onAgent() },
         )
         HorizontalDivider()
         ListItem(
           headlineContent = { Text("Default Models per Task") },
-          supportingContent = { Text("Set different models for chat, agent, titles, etc.", style = MaterialTheme.typography.bodySmall) },
+          supportingContent = { Text("Set different models for chat, agent, titles, etc.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
           modifier = Modifier.clickable { onTasks() },
         )
         HorizontalDivider()
         ListItem(
           headlineContent = { Text("MCP Servers") },
-          supportingContent = { Text("Add remote tool servers via Model Context Protocol", style = MaterialTheme.typography.bodySmall) },
+          supportingContent = { Text("Add remote tool servers via Model Context Protocol", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
           modifier = Modifier.clickable { onMcp() },
         )
         HorizontalDivider()
         ListItem(
           headlineContent = { Text("Theme") },
-          supportingContent = { Text("Colors, background, bubbles, display options", style = MaterialTheme.typography.bodySmall) },
+          supportingContent = { Text("Colors, background, bubbles, display options", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
           modifier = Modifier.clickable { onTheme() },
         )
         HorizontalDivider()
         ListItem(
           headlineContent = { Text("Tools") },
-          supportingContent = { Text("Enable or disable individual tools", style = MaterialTheme.typography.bodySmall) },
+          supportingContent = { Text("Enable or disable individual tools", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
           modifier = Modifier.clickable { onTools() },
         )
         HorizontalDivider()
@@ -123,7 +123,7 @@ internal fun ProfileList(
           }
           ListItem(
             headlineContent = { Text("Export Settings") },
-            supportingContent = { Text("Backup providers, tools, agent, memories", style = MaterialTheme.typography.bodySmall) },
+            supportingContent = { Text("Backup providers, tools, agent, memories", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
             modifier = Modifier.clickable {
               scope.launch(Dispatchers.IO) {
                 val json = SettingsPorter.export(chatDao)
@@ -137,7 +137,7 @@ internal fun ProfileList(
           HorizontalDivider()
           ListItem(
             headlineContent = { Text("Import Settings") },
-            supportingContent = { Text(importStatus.ifBlank { "Restore from a backup file" }, style = MaterialTheme.typography.bodySmall) },
+            supportingContent = { Text(importStatus.ifBlank { "Restore from a backup file" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
             modifier = Modifier.clickable { importLauncher.launch("application/json") },
           )
           HorizontalDivider()
@@ -155,7 +155,7 @@ internal fun ProfileList(
             Text(
               status.value,
               style = MaterialTheme.typography.bodySmall,
-              color = if (installed.value) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+              color = if (installed.value) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
             )
           },
           trailingContent = {
@@ -223,7 +223,7 @@ internal fun TemplatePicker(onPick: (BuiltinProvider) -> Unit, onBack: () -> Uni
       items(ProviderTemplates.ALL) { b ->
         ListItem(
           headlineContent = { Text("${b.icon} ${b.displayName}") },
-          supportingContent = { Text(b.apiBase ?: "Custom endpoint", style = MaterialTheme.typography.bodySmall) },
+          supportingContent = { Text(b.apiBase ?: "Custom endpoint", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
           modifier = Modifier.clickable { onPick(b) },
         )
       }

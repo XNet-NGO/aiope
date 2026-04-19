@@ -189,7 +189,7 @@ private fun ChatContent(
               onClick = { showModelPicker = !showModelPicker },
               contentPadding = PaddingValues(horizontal = 8.dp),
             ) {
-              Text(modelLabel, fontSize = 12.sp, maxLines = 1)
+              Text(modelLabel, fontSize = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurface)
               Icon(Icons.Default.ArrowDropDown, null, modifier = Modifier.size(16.dp))
             }
             DropdownMenu(expanded = showModelPicker, onDismissRequest = { showModelPicker = false }) {
