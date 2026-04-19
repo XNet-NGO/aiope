@@ -9,6 +9,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -24,21 +25,36 @@ fun ChatBackground(theme: ThemeState, modifier: Modifier = Modifier) {
   if (!theme.useBackground || theme.backgroundUri.isNullOrBlank()) return
 
   Box(modifier.fillMaxSize()) {
+    val rotMod = if (theme.videoRotation != 0) {
+      val isPortraitRotation = theme.videoRotation == 90 || theme.videoRotation == 270
+      Modifier.fillMaxSize().graphicsLayer {
+        rotationZ = theme.videoRotation.toFloat()
+        if (isPortraitRotation) {
+          // Scale up to fill after rotation
+          val scale = maxOf(size.width / size.height, size.height / size.width)
+          scaleX = scale
+          scaleY = scale
+        }
+      }
+    } else {
+      Modifier.fillMaxSize()
+    }
+
     if (theme.backgroundMediaType == "video") {
-      VideoBackground(uri = theme.backgroundUri, opacity = theme.backgroundOpacity, muted = theme.videoMuted, loop = theme.videoLoop)
+      VideoBackground(uri = theme.backgroundUri, opacity = theme.backgroundOpacity, muted = theme.videoMuted, loop = theme.videoLoop, modifier = rotMod)
     } else {
       Image(
         painter = rememberAsyncImagePainter(Uri.parse(theme.backgroundUri)),
         contentDescription = null,
         contentScale = ContentScale.Crop,
-        modifier = Modifier.fillMaxSize().alpha(theme.backgroundOpacity),
+        modifier = rotMod.alpha(theme.backgroundOpacity),
       )
     }
   }
 }
 
 @Composable
-private fun VideoBackground(uri: String, opacity: Float, muted: Boolean, loop: Boolean) {
+private fun VideoBackground(uri: String, opacity: Float, muted: Boolean, loop: Boolean, modifier: Modifier = Modifier) {
   val ctx = LocalContext.current
   val player = remember {
     ExoPlayer.Builder(ctx)
@@ -72,6 +88,6 @@ private fun VideoBackground(uri: String, opacity: Float, muted: Boolean, loop: B
         setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
       }
     },
-    modifier = Modifier.fillMaxSize().alpha(opacity),
+    modifier = modifier.alpha(opacity),
   )
 }

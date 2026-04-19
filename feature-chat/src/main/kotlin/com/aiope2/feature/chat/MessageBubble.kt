@@ -207,97 +207,106 @@ private fun AssistantBubble(
 
     // Content (skip if it's just a generated image file path)
     if (message.content.isNotBlank() && !(message.content.startsWith("file://") && message.imageUris.isNotEmpty())) {
-      val content = message.content.trimEnd()
-      val mdTheme = rememberMarkdownTheme(cs, com.aiope2.feature.chat.theme.LocalThemeState.current)
-      // Detect aiope-ui blocks (complete = has closing ```)
-      val hasUiBlock = content.contains("```aiope-ui")
-      val uiBlockComplete = hasUiBlock && Regex("""```aiope-ui\s*\n[\s\S]*?```""").containsMatchIn(content)
-      val uiBlockStreaming = hasUiBlock && !uiBlockComplete
+      val aiBubbleColor = if (theme.useCustomBubbles && theme.aiBubbleColor != null) theme.aiBubbleColor else MaterialTheme.colorScheme.surface
+      Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = aiBubbleColor,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Column(Modifier.padding(if (theme.useCustomBubbles) 12.dp else 0.dp)) {
+          val content = message.content.trimEnd()
+          val mdTheme = rememberMarkdownTheme(cs, com.aiope2.feature.chat.theme.LocalThemeState.current)
+          // Detect aiope-ui blocks (complete = has closing ```)
+          val hasUiBlock = content.contains("```aiope-ui")
+          val uiBlockComplete = hasUiBlock && Regex("""```aiope-ui\s*\n[\s\S]*?```""").containsMatchIn(content)
+          val uiBlockStreaming = hasUiBlock && !uiBlockComplete
 
-      // Show shimmer while aiope-ui block is streaming
-      if (uiBlockStreaming) {
-        Surface(
-          modifier = Modifier.fillMaxWidth().clickable {},
-          shape = RoundedCornerShape(16.dp),
-          color = Color(0xFF111111),
-        ) {
-          Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ShimmerText("Building UI…", cs)
-            Spacer(Modifier.width(6.dp))
-            LoadingDots()
-          }
-        }
-        // Render any text before the aiope-ui block
-        val beforeBlock = content.substringBefore("```aiope-ui").trim()
-        if (beforeBlock.isNotBlank()) {
-          UniversalMarkdown(content = beforeBlock, theme = mdTheme, animateStreaming = isStreaming, modifier = Modifier.fillMaxWidth())
-        }
-      } else {
-        // Split into markdown segments and aiope-ui blocks
-        val uiBlockPattern = remember { Regex("""```aiope-ui\s*\n([\s\S]*?)```""") }
-        val segments = remember(content) {
-          val result = mutableListOf<Pair<String, String?>>()
-          var lastEnd = 0
-          uiBlockPattern.findAll(content).forEach { match ->
-            val before = content.substring(lastEnd, match.range.first).trim()
-            if (before.isNotEmpty()) result.add(before to null)
-            result.add("" to match.groupValues[1].trim())
-            lastEnd = match.range.last + 1
-          }
-          val after = content.substring(lastEnd).trim()
-          if (after.isNotEmpty()) result.add(after to null)
-          if (result.isEmpty()) result.add(content to null)
-          result
-        }
-        segments.forEach { (text, uiJson) ->
-          if (uiJson != null) {
-            val node = remember(uiJson) { com.aiope2.feature.chat.dynamicui.AiopeUiParser.parse(uiJson) }
-            if (node != null) {
-              SelectionContainer {
-                com.aiope2.feature.chat.dynamicui.AiopeUiRenderer(
-                  node = node,
-                  isInteractive = !isStreaming,
-                  onCallback = { event, data -> onUiCallback?.invoke(event, data) },
-                  modifier = Modifier.padding(vertical = 4.dp),
+          // Show shimmer while aiope-ui block is streaming
+          if (uiBlockStreaming) {
+            Surface(
+              modifier = Modifier.fillMaxWidth().clickable {},
+              shape = RoundedCornerShape(16.dp),
+              color = MaterialTheme.colorScheme.surface,
+            ) {
+              Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                ShimmerText("Building UI…", cs)
+                Spacer(Modifier.width(6.dp))
+                LoadingDots()
+              }
+            }
+            // Render any text before the aiope-ui block
+            val beforeBlock = content.substringBefore("```aiope-ui").trim()
+            if (beforeBlock.isNotBlank()) {
+              UniversalMarkdown(content = beforeBlock, theme = mdTheme, animateStreaming = isStreaming, modifier = Modifier.fillMaxWidth())
+            }
+          } else {
+            // Split into markdown segments and aiope-ui blocks
+            val uiBlockPattern = remember { Regex("""```aiope-ui\s*\n([\s\S]*?)```""") }
+            val segments = remember(content) {
+              val result = mutableListOf<Pair<String, String?>>()
+              var lastEnd = 0
+              uiBlockPattern.findAll(content).forEach { match ->
+                val before = content.substring(lastEnd, match.range.first).trim()
+                if (before.isNotEmpty()) result.add(before to null)
+                result.add("" to match.groupValues[1].trim())
+                lastEnd = match.range.last + 1
+              }
+              val after = content.substring(lastEnd).trim()
+              if (after.isNotEmpty()) result.add(after to null)
+              if (result.isEmpty()) result.add(content to null)
+              result
+            }
+            segments.forEach { (text, uiJson) ->
+              if (uiJson != null) {
+                val node = remember(uiJson) { com.aiope2.feature.chat.dynamicui.AiopeUiParser.parse(uiJson) }
+                if (node != null) {
+                  SelectionContainer {
+                    com.aiope2.feature.chat.dynamicui.AiopeUiRenderer(
+                      node = node,
+                      isInteractive = !isStreaming,
+                      onCallback = { event, data -> onUiCallback?.invoke(event, data) },
+                      modifier = Modifier.padding(vertical = 4.dp),
+                    )
+                  }
+                }
+              } else if (text.isNotBlank()) {
+                UniversalMarkdown(
+                  content = text,
+                  theme = mdTheme,
+                  animateStreaming = true,
+                  modifier = Modifier.fillMaxWidth(),
+                  onExportPdf = { latex -> LatexPdfExporter.export(ctx, latex) },
+                  onRunCode = onRunCode,
+                  onImageContent = { url, alt ->
+                    val imgCtx = LocalContext.current
+                    coil.compose.AsyncImage(
+                      model = url,
+                      contentDescription = alt,
+                      modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .combinedClickable(onClick = {}, onLongClick = {
+                          kotlin.concurrent.thread {
+                            try {
+                              val bmp = if (url.startsWith("file://")) {
+                                android.graphics.BitmapFactory.decodeFile(url.removePrefix("file://"))
+                              } else {
+                                java.net.URL(url).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+                              }
+                              if (bmp != null) saveImageToGallery(imgCtx, bmp)
+                            } catch (_: Exception) {}
+                          }
+                        }),
+                      contentScale = ContentScale.FillWidth,
+                    )
+                  },
                 )
               }
             }
-          } else if (text.isNotBlank()) {
-            UniversalMarkdown(
-              content = text,
-              theme = mdTheme,
-              animateStreaming = true,
-              modifier = Modifier.fillMaxWidth(),
-              onExportPdf = { latex -> LatexPdfExporter.export(ctx, latex) },
-              onRunCode = onRunCode,
-              onImageContent = { url, alt ->
-                val imgCtx = LocalContext.current
-                coil.compose.AsyncImage(
-                  model = url,
-                  contentDescription = alt,
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .combinedClickable(onClick = {}, onLongClick = {
-                      kotlin.concurrent.thread {
-                        try {
-                          val bmp = if (url.startsWith("file://")) {
-                            android.graphics.BitmapFactory.decodeFile(url.removePrefix("file://"))
-                          } else {
-                            java.net.URL(url).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
-                          }
-                          if (bmp != null) saveImageToGallery(imgCtx, bmp)
-                        } catch (_: Exception) {}
-                      }
-                    }),
-                  contentScale = ContentScale.FillWidth,
-                )
-              },
-            )
-          }
-        }
-      } // else (not streaming)
+          } // else (not streaming)
+        } // Column
+      } // Surface
     }
 
     // Action row: copy + retry + menu
@@ -438,7 +447,7 @@ private fun ReasoningBlock(reasoning: String, isStreaming: Boolean) {
       expanded = !expanded
     },
     shape = RoundedCornerShape(16.dp),
-    color = Color(0xFF111111),
+    color = MaterialTheme.colorScheme.surface,
   ) {
     Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
       Row(verticalAlignment = Alignment.CenterVertically) {
@@ -549,7 +558,7 @@ private fun ToolCallsBlock(calls: List<String>, results: List<String>) {
       Surface(
         modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
         shape = RoundedCornerShape(16.dp),
-        color = Color(0xFF111111),
+        color = MaterialTheme.colorScheme.surface,
       ) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
           Row(verticalAlignment = Alignment.CenterVertically) {
@@ -662,26 +671,27 @@ private fun MessageMenu(
 @Composable
 private fun rememberMarkdownTheme(cs: ColorScheme, theme: com.aiope2.feature.chat.theme.ThemeState = com.aiope2.feature.chat.theme.ThemeState()): MarkdownTheme = remember(cs, theme) {
   val textColor = if (theme.useCustomBubbles && theme.aiTextColor != null) theme.aiTextColor else cs.onSurface
+  val isDark = theme.isDark
   MarkdownTheme(
     textColor = textColor,
     headingColor = textColor,
-    linkColor = Color(0xFF00E5FF),
-    listBulletColor = Color(0xFF9E9E9E),
-    codeTextColor = Color(0xFFE0E0E0),
-    codeBgColor = Color(0xFF111111),
-    codeBorderColor = Color(0xFF2A2A2A),
-    codeLabelColor = Color(0xFF00E5FF).copy(alpha = 0.8f),
-    inlineCodeTextColor = Color(0xFFFFB300),
-    inlineCodeBgColor = Color(0xFF1A1A1A),
-    blockQuoteBorderColor = Color(0xFF2A2A2A),
-    blockQuoteTextColor = Color(0xFF9E9E9E),
-    tableHeaderBgColor = Color(0xFF1A1A1A),
-    tableBodyBgColor = Color(0xFF111111),
-    tableBorderColor = Color(0xFF333333),
+    linkColor = cs.primary,
+    listBulletColor = cs.onSurfaceVariant,
+    codeTextColor = if (isDark) Color(0xFFE0E0E0) else Color(0xFF1A1A1A),
+    codeBgColor = if (isDark) Color(0xFF111111) else Color(0xFFF0F0F0),
+    codeBorderColor = cs.outlineVariant,
+    codeLabelColor = cs.primary.copy(alpha = 0.8f),
+    inlineCodeTextColor = if (isDark) Color(0xFFFFB300) else Color(0xFFE65100),
+    inlineCodeBgColor = if (isDark) Color(0xFF1A1A1A) else Color(0xFFEEEEEE),
+    blockQuoteBorderColor = cs.outlineVariant,
+    blockQuoteTextColor = cs.onSurfaceVariant,
+    tableHeaderBgColor = if (isDark) Color(0xFF1A1A1A) else Color(0xFFE8E8E8),
+    tableBodyBgColor = if (isDark) Color(0xFF111111) else Color(0xFFF5F5F5),
+    tableBorderColor = cs.outlineVariant,
     tableHeaderTextColor = cs.onSurface,
     tableBodyTextColor = cs.onSurface,
-    hrColor = Color(0xFF2A2A2A),
-    checkboxColor = Color(0xFF00E5FF),
+    hrColor = cs.outlineVariant,
+    checkboxColor = cs.primary,
   )
 }
 

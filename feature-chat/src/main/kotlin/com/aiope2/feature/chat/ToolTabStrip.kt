@@ -53,7 +53,7 @@ internal fun ToolTabStrip(calls: List<String>, results: List<String>, errors: Li
           modifier = Modifier.widthIn(min = 48.dp, max = 140.dp).heightIn(min = 34.dp)
             .clickable { selectedIdx = if (isSelected) -1 else idx },
           shape = RoundedCornerShape(12.dp),
-          color = if (isSelected) Color(0xFF1A1A2E) else Color(0xFF111111),
+          color = if (isSelected) cs.surfaceVariant else cs.surface,
           border = if (isSelected) {
             androidx.compose.foundation.BorderStroke(1.dp, statusColor.copy(alpha = 0.6f))
           } else {
@@ -83,7 +83,7 @@ internal fun ToolTabStrip(calls: List<String>, results: List<String>, errors: Li
         Surface(
           modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
           shape = RoundedCornerShape(12.dp),
-          color = if (selHasError) cs.errorContainer.copy(alpha = 0.15f) else Color(0xFF111111),
+          color = if (selHasError) cs.errorContainer.copy(alpha = 0.15f) else cs.surface,
         ) {
           Column(Modifier.padding(10.dp).heightIn(max = 160.dp).verticalScroll(rememberScrollState())) {
             SelectionContainer {

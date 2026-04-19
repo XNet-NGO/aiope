@@ -27,6 +27,7 @@ class ThemePrefs(private val ctx: Context) {
     val BACKGROUND_OPACITY = floatPreferencesKey("background_opacity")
     val VIDEO_MUTED = booleanPreferencesKey("video_muted")
     val VIDEO_LOOP = booleanPreferencesKey("video_loop")
+    val VIDEO_ROTATION = intPreferencesKey("video_rotation") // 0, 90, 180, 270
 
     // Bubble colors
     val USER_BUBBLE_COLOR = intPreferencesKey("user_bubble_color")
@@ -55,6 +56,7 @@ class ThemePrefs(private val ctx: Context) {
   val backgroundOpacity: Flow<Float> = ds.data.map { it[BACKGROUND_OPACITY] ?: 0.3f }
   val videoMuted: Flow<Boolean> = ds.data.map { it[VIDEO_MUTED] ?: true }
   val videoLoop: Flow<Boolean> = ds.data.map { it[VIDEO_LOOP] ?: true }
+  val videoRotation: Flow<Int> = ds.data.map { it[VIDEO_ROTATION] ?: 0 }
 
   val userBubbleColor: Flow<Int?> = ds.data.map { it[USER_BUBBLE_COLOR] }
   val aiBubbleColor: Flow<Int?> = ds.data.map { it[AI_BUBBLE_COLOR] }

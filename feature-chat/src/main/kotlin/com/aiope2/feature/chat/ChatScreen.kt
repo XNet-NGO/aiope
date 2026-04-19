@@ -171,7 +171,7 @@ private fun ChatContent(
     com.aiope2.feature.chat.theme.ChatBackground(theme)
     Column(Modifier.fillMaxSize()) {
       // ── Toolbar ──
-      Surface(color = Color(0xFF141414)) {
+      Surface(color = MaterialTheme.colorScheme.surface) {
         Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
           // Left: Chats icon + Share
           Row(modifier = Modifier.align(Alignment.CenterStart)) {
@@ -244,7 +244,7 @@ private fun ChatContent(
           }
         }
       }
-      HorizontalDivider(color = Color(0xFF2A2A2A))
+      HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
       // ── Mode toggle ──
       Row(
@@ -294,10 +294,10 @@ private fun ChatContent(
         )
       }
 
-      HorizontalDivider(color = Color(0xFF2A2A2A))
+      HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
       // ── Input ──
-      Surface(color = Color(0xFF141414)) {
+      Surface(color = MaterialTheme.colorScheme.surface) {
         ChatInput(onSend = onSend, onStop = onStop, isStreaming = isStreaming, editText = editText, onEditTextChange = onEditTextChange)
       }
     }
@@ -524,10 +524,10 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
       maxLines = 6,
       enabled = !isStreaming,
       colors = OutlinedTextFieldDefaults.colors(
-        unfocusedContainerColor = Color(0xFF0A0A0A),
-        focusedContainerColor = Color(0xFF0A0A0A),
-        unfocusedBorderColor = Color(0xFF2A2A2A),
-        focusedBorderColor = Color(0xFF00E5FF).copy(alpha = 0.5f),
+        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
       ),
       shape = RoundedCornerShape(16.dp),
     )
@@ -535,7 +535,7 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
       // Attach — opens system file picker (all types)
       IconButton(onClick = { launcher.launch("*/*") }) {
-        Icon(Icons.Default.AttachFile, "Attach", tint = Color.White)
+        Icon(Icons.Default.AttachFile, "Attach", tint = MaterialTheme.colorScheme.onSurface)
       }
       // Camera — capture photo
       val cameraUri = remember { mutableStateOf<android.net.Uri?>(null) }
@@ -548,7 +548,7 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
         cameraUri.value = uri
         photoLauncher.launch(uri)
       }) {
-        Icon(Icons.Default.CameraAlt, "Camera", tint = Color.White)
+        Icon(Icons.Default.CameraAlt, "Camera", tint = MaterialTheme.colorScheme.onSurface)
       } // Mic — launches Android speech recognizer
       val speechLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
@@ -568,14 +568,14 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
           speechLauncher.launch(intent)
         } catch (_: Exception) {}
       }) {
-        Icon(Icons.Default.Mic, "Voice", tint = Color.White)
+        Icon(Icons.Default.Mic, "Voice", tint = MaterialTheme.colorScheme.onSurface)
       }
       // Clear
       IconButton(onClick = {
         text = ""
         pendingImages.clear()
       }) {
-        Icon(Icons.Default.Clear, "Clear", tint = Color.White)
+        Icon(Icons.Default.Clear, "Clear", tint = MaterialTheme.colorScheme.onSurface)
       }
       Spacer(Modifier.weight(1f))
       // Send / Stop

@@ -50,6 +50,7 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
   val backgroundOpacity by prefs.backgroundOpacity.collectAsState(initial = 0.3f)
   val videoMuted by prefs.videoMuted.collectAsState(initial = true)
   val videoLoop by prefs.videoLoop.collectAsState(initial = true)
+  val videoRotation by prefs.videoRotation.collectAsState(initial = 0)
   val useCustomBubbles by prefs.useCustomBubbles.collectAsState(initial = false)
   val userBubbleColor by prefs.userBubbleColor.collectAsState(initial = null)
   val aiBubbleColor by prefs.aiBubbleColor.collectAsState(initial = null)
@@ -125,6 +126,14 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
         if (backgroundMediaType == "video") {
           ToggleRow("Mute video", videoMuted) { scope.launch { prefs.set(ThemePrefs.VIDEO_MUTED, it) } }
           ToggleRow("Loop video", videoLoop) { scope.launch { prefs.set(ThemePrefs.VIDEO_LOOP, it) } }
+        }
+        Text("Rotation", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+          listOf(0, 90, 180, 270).forEachIndexed { i, deg ->
+            SegmentedButton(selected = videoRotation == deg, onClick = { scope.launch { prefs.set(ThemePrefs.VIDEO_ROTATION, deg) } }, shape = SegmentedButtonDefaults.itemShape(i, 4)) {
+              Text("$deg°", fontSize = 12.sp)
+            }
+          }
         }
         OutlinedButton(onClick = {
           scope.launch {
