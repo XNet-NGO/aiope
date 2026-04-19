@@ -502,7 +502,7 @@ class ToolExecutor(
       }
       val cleaned = body.replace(Regex("<(script|style|nav|footer|header)[^>]*>[\\s\\S]*?</\\1>", RegexOption.IGNORE_CASE), "")
       val text = android.text.Html.fromHtml(cleaned, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
-      (if (imgs.isNotEmpty()) imgs.distinct().take(10).joinToString("\n") + "\n\n" else "") + text
+      (if (imgs.isNotEmpty()) imgs.distinct().take(20).joinToString("\n") + "\n\n" else "") + text
     }
     if (result.length > fetchLimit) result.take(fetchLimit) + "\n...(truncated)" else result
   } catch (e: Exception) {
@@ -706,7 +706,7 @@ class ToolExecutor(
   private fun resolveDataImages(json: String): String = try {
     val imgs = mutableListOf<String>()
     extractImageUrls(org.json.JSONTokener(json).nextValue(), imgs)
-    if (imgs.isNotEmpty()) imgs.distinct().take(5).joinToString("\n") + "\n\n" + json else json
+    if (imgs.isNotEmpty()) imgs.distinct().take(20).joinToString("\n") + "\n\n" + json else json
   } catch (_: Exception) {
     json
   }
@@ -721,7 +721,7 @@ class ToolExecutor(
         }
       }
 
-      is org.json.JSONArray -> for (i in 0 until minOf(obj.length(), 10)) extractImageUrls(obj.opt(i), out)
+      is org.json.JSONArray -> for (i in 0 until minOf(obj.length(), 20)) extractImageUrls(obj.opt(i), out)
     }
   }
 
