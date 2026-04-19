@@ -89,6 +89,7 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
 
   Scaffold(
     containerColor = if (prefs.useBackground.collectAsState(initial = false).value) Color.Transparent else MaterialTheme.colorScheme.background,
+    contentColor = MaterialTheme.colorScheme.onSurface,
     topBar = {
       TopAppBar(
         colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = if (com.aiope2.feature.chat.theme.LocalThemeState.current.useBackground) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.MaterialTheme.colorScheme.surface),
@@ -215,7 +216,7 @@ private fun SectionHeader(text: String) {
 @Composable
 private fun ToggleRow(label: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
   Row(Modifier.fillMaxWidth().clickable { onToggle(!checked) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-    Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
+    Text(label, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
     Switch(checked = checked, onCheckedChange = onToggle)
   }
 }

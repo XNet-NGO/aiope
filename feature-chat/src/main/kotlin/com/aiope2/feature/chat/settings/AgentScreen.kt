@@ -43,6 +43,7 @@ internal fun AgentScreen(dao: ChatDao, onBack: () -> Unit) {
   val _bgActive = com.aiope2.feature.chat.theme.LocalThemeState.current.useBackground
   Scaffold(
     containerColor = if (_bgActive) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.MaterialTheme.colorScheme.background,
+    contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
     topBar = {
       TopAppBar(
         colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = if (com.aiope2.feature.chat.theme.LocalThemeState.current.useBackground) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.MaterialTheme.colorScheme.surface),

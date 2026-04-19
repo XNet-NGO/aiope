@@ -45,7 +45,7 @@ internal fun ProfileList(
 ) {
   val theme = com.aiope2.feature.chat.theme.LocalThemeState.current
   val scaffoldColor = if (theme.useBackground) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.background
-  Scaffold(containerColor = scaffoldColor, topBar = {
+  Scaffold(containerColor = scaffoldColor, contentColor = MaterialTheme.colorScheme.onSurface, topBar = {
     TopAppBar(
       title = { Text("Settings") },
       colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = if (theme.useBackground) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surface),
@@ -213,7 +213,7 @@ internal fun ProfileList(
 @Composable
 internal fun TemplatePicker(onPick: (BuiltinProvider) -> Unit, onBack: () -> Unit) {
   val _bgActive = com.aiope2.feature.chat.theme.LocalThemeState.current.useBackground
-  Scaffold(containerColor = if (_bgActive) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.background, topBar = {
+  Scaffold(containerColor = if (_bgActive) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onSurface, topBar = {
     TopAppBar(
       title = { Text("Add Provider") },
       navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },

@@ -28,6 +28,7 @@ internal fun ProviderListScreen(
   val _bgActive = com.aiope2.feature.chat.theme.LocalThemeState.current.useBackground
   Scaffold(
     containerColor = if (_bgActive) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.background,
+    contentColor = MaterialTheme.colorScheme.onSurface,
     topBar = {
       TopAppBar(
         colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = if (com.aiope2.feature.chat.theme.LocalThemeState.current.useBackground) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.MaterialTheme.colorScheme.surface),
