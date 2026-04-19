@@ -59,6 +59,17 @@ class ToolExecutor(
     td("memory_forget", "Delete a specific memory by its key.", """{"type":"object","properties":{"key":{"type":"string","description":"Key of the memory to delete"}},"required":["key"]}"""),
     td("image_generate", "Generate an image from a text prompt. Use when the user asks you to draw, create, generate, or make an image/picture/illustration.", """{"type":"object","properties":{"prompt":{"type":"string","description":"Detailed image generation prompt"}},"required":["prompt"]}"""),
     td("analyze_image", "Analyze an image from a URL using vision. Use for browser screenshots, fetched images, or any image URL the user wants described.", """{"type":"object","properties":{"url":{"type":"string","description":"URL of the image to analyze"},"question":{"type":"string","description":"What to look for or ask about the image"}},"required":["url"]}"""),
+    td("read_calendar", "Read upcoming calendar events from the device.", """{"type":"object","properties":{"days":{"type":"integer","description":"Number of days ahead to look (default 7)"}},"required":[]}"""),
+    td("create_event", "Create a calendar event. Opens the calendar app with pre-filled details.", """{"type":"object","properties":{"title":{"type":"string"},"start_time":{"type":"string","description":"Start time, e.g. '2025-04-20T14:00' or '2:00 PM'"},"end_time":{"type":"string","description":"End time"},"location":{"type":"string"},"description":{"type":"string"}},"required":["title"]}"""),
+    td("set_alarm", "Set an alarm on the device.", """{"type":"object","properties":{"hour":{"type":"integer","description":"Hour (0-23)"},"minutes":{"type":"integer","description":"Minutes (0-59)"},"message":{"type":"string","description":"Alarm label"},"skip_ui":{"type":"boolean","description":"Set silently without opening clock app"}},"required":["hour","minutes"]}"""),
+    td("read_contacts", "Search or list contacts from the device.", """{"type":"object","properties":{"query":{"type":"string","description":"Name to search for, or empty to list all"}},"required":[]}"""),
+    td("send_notification", "Post a notification on the device. Use for reminders.", """{"type":"object","properties":{"title":{"type":"string"},"body":{"type":"string","description":"Notification text"}},"required":["body"]}"""),
+    td("clipboard_copy", "Copy text to the device clipboard.", """{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"""),
+    td("clipboard_read", "Read the current clipboard contents.", """{"type":"object","properties":{}}"""),
+    td("read_sms", "Read recent SMS messages from the device.", """{"type":"object","properties":{"limit":{"type":"integer","description":"Number of messages to read (default 10)"}},"required":[]}"""),
+    td("send_sms", "Send an SMS text message.", """{"type":"object","properties":{"to":{"type":"string","description":"Phone number"},"body":{"type":"string","description":"Message text"}},"required":["to","body"]}"""),
+    td("device_info", "Get device info: battery, storage, RAM, network, model.", """{"type":"object","properties":{}}"""),
+    td("media_control", "Control media playback (play/pause, next, previous, stop).", """{"type":"object","properties":{"action":{"type":"string","description":"One of: play_pause, next, previous, stop"}},"required":["action"]}"""),
   ).filter { toolStore.isToolEnabled(it.name) } + toolStore.getMcpServers().filter { it.enabled }.flatMap { mcpManager.getToolDefs(it.id) }.filter { toolStore.isToolEnabled(it.name) }
 
   private fun td(name: String, desc: String, params: String) = StreamingOrchestrator.ToolDef(name, desc, org.json.JSONObject(params))
@@ -199,6 +210,185 @@ class ToolExecutor(
     "image_generate" -> executeImageGenerate(args)
 
     "analyze_image" -> executeAnalyzeImage(args)
+
+    // Calendar
+    "read_calendar" -> try {
+      val days = (args["days"] as? Number)?.toInt() ?: 7
+      val now = System.currentTimeMillis()
+      val end = now + days * 86400000L
+      val cursor = app.contentResolver.query(android.provider.CalendarContract.Events.CONTENT_URI, arrayOf("title", "dtstart", "dtend", "eventLocation", "description"), "dtstart >= ? AND dtstart <= ?", arrayOf(now.toString(), end.toString()), "dtstart ASC")
+      val events = mutableListOf<String>()
+      cursor?.use {
+        while (it.moveToNext()) {
+          val t = it.getString(0) ?: "Untitled"
+          val s = java.text.SimpleDateFormat("EEE MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(1)))
+          val loc = it.getString(3)?.takeIf { l -> l.isNotBlank() }
+          events.add("- $t @ $s${loc?.let { " ($it)" } ?: ""}")
+        }
+      }
+      if (events.isEmpty()) "No events in the next $days days." else "Events (next $days days):\n${events.joinToString("\n")}"
+    } catch (e: Exception) {
+      "Error: ${e.message}. Calendar permission may be needed."
+    }
+
+    "create_event" -> try {
+      val title = args["title"]?.toString() ?: return@execute "Error: title required"
+      val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
+        data = android.provider.CalendarContract.Events.CONTENT_URI
+        putExtra(android.provider.CalendarContract.Events.TITLE, title)
+        args["description"]?.toString()?.let { putExtra(android.provider.CalendarContract.Events.DESCRIPTION, it) }
+        args["location"]?.toString()?.let { putExtra(android.provider.CalendarContract.Events.EVENT_LOCATION, it) }
+        args["start_time"]?.toString()?.let { putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, parseTime(it)) }
+        args["end_time"]?.toString()?.let { putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, parseTime(it)) }
+        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      app.startActivity(intent)
+      "Calendar event creation opened: $title"
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
+    // Alarms
+    "set_alarm" -> try {
+      val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
+        args["hour"]?.let { putExtra(android.provider.AlarmClock.EXTRA_HOUR, (it as Number).toInt()) }
+        args["minutes"]?.let { putExtra(android.provider.AlarmClock.EXTRA_MINUTES, (it as Number).toInt()) }
+        args["message"]?.toString()?.let { putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, it) }
+        putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, args["skip_ui"] as? Boolean ?: false)
+        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      app.startActivity(intent)
+      val h = (args["hour"] as? Number)?.toInt()
+      val m = (args["minutes"] as? Number)?.toInt()
+      if (h != null && m != null) "Alarm set for ${"%d:%02d".format(h, m)}" else "Alarm creation opened"
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
+    // Contacts
+    "read_contacts" -> try {
+      val query = args["query"]?.toString() ?: ""
+      val sel = if (query.isNotBlank()) "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?" else null
+      val selArgs = if (query.isNotBlank()) arrayOf("%$query%") else null
+      val cursor = app.contentResolver.query(android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI, arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER), sel, selArgs, "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC")
+      val contacts = mutableListOf<String>()
+      cursor?.use {
+        while (it.moveToNext() && contacts.size < 20) {
+          contacts.add("${it.getString(0)}: ${it.getString(1)}")
+        }
+      }
+      if (contacts.isEmpty()) "No contacts found${if (query.isNotBlank()) " matching '$query'" else ""}." else contacts.joinToString("\n")
+    } catch (e: Exception) {
+      "Error: ${e.message}. Contacts permission may be needed."
+    }
+
+    // Notifications
+    "send_notification" -> try {
+      val title = args["title"]?.toString() ?: "AIOPE"
+      val body = args["body"]?.toString() ?: return@execute "Error: body required"
+      val channelId = "aiope_tools"
+      val nm = app.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+      if (android.os.Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(android.app.NotificationChannel(channelId, "Tool Notifications", android.app.NotificationManager.IMPORTANCE_DEFAULT))
+      val n = android.app.Notification.Builder(app, channelId).setContentTitle(title).setContentText(body).setSmallIcon(android.R.drawable.ic_dialog_info).setAutoCancel(true).build()
+      nm.notify(System.currentTimeMillis().toInt(), n)
+      "Notification sent: $title"
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
+    // Clipboard
+    "clipboard_copy" -> try {
+      val text = args["text"]?.toString() ?: return@execute "Error: text required"
+      val cm = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+      android.os.Handler(android.os.Looper.getMainLooper()).post { cm.setPrimaryClip(android.content.ClipData.newPlainText("AIOPE", text)) }
+      "Copied to clipboard (${text.length} chars)"
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
+    "clipboard_read" -> try {
+      val cm = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+      var result = ""
+      val latch = java.util.concurrent.CountDownLatch(1)
+      android.os.Handler(android.os.Looper.getMainLooper()).post {
+        result = cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+        latch.countDown()
+      }
+      latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+      if (result.isBlank()) "Clipboard is empty" else result
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
+    // SMS
+    "read_sms" -> try {
+      val limit = (args["limit"] as? Number)?.toInt() ?: 10
+      val cursor = app.contentResolver.query(android.provider.Telephony.Sms.CONTENT_URI, arrayOf("address", "body", "date", "type"), null, null, "date DESC LIMIT $limit")
+      val msgs = mutableListOf<String>()
+      cursor?.use {
+        while (it.moveToNext()) {
+          val dir = if (it.getInt(3) == 1) "←" else "→"
+          val time = java.text.SimpleDateFormat("MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(2)))
+          msgs.add("$dir ${it.getString(0)} ($time): ${it.getString(1).take(200)}")
+        }
+      }
+      if (msgs.isEmpty()) "No SMS messages found." else msgs.joinToString("\n")
+    } catch (e: Exception) {
+      "Error: ${e.message}. SMS permission may be needed."
+    }
+
+    "send_sms" -> try {
+      val to = args["to"]?.toString() ?: return@execute "Error: 'to' phone number required"
+      val body = args["body"]?.toString() ?: return@execute "Error: 'body' required"
+      android.telephony.SmsManager.getDefault().sendTextMessage(to, null, body, null, null)
+      "SMS sent to $to"
+    } catch (e: Exception) {
+      "Error: ${e.message}. SMS permission may be needed."
+    }
+
+    // Device info
+    "device_info" -> try {
+      val bm = app.getSystemService(android.content.Context.BATTERY_SERVICE) as android.os.BatteryManager
+      val battery = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+      val charging = bm.isCharging
+      val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+      val freeGb = "%.1f".format(stat.availableBytes / 1073741824.0)
+      val totalGb = "%.1f".format(stat.totalBytes / 1073741824.0)
+      val cm = app.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+      val net = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) }
+      val conn = when {
+        net == null -> "Offline"
+        net.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "WiFi"
+        net.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular"
+        else -> "Connected"
+      }
+      val am = app.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+      val mem = android.app.ActivityManager.MemoryInfo()
+      am.getMemoryInfo(mem)
+      val ramFree = "%.1f".format(mem.availMem / 1073741824.0)
+      val ramTotal = "%.1f".format(mem.totalMem / 1073741824.0)
+      "Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\nAndroid: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})\nBattery: $battery%${if (charging) " ⚡charging" else ""}\nStorage: $freeGb / $totalGb GB free\nRAM: $ramFree / $ramTotal GB free\nNetwork: $conn"
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
+    // Media control
+    "media_control" -> try {
+      val action = args["action"]?.toString() ?: "play_pause"
+      val keyCode = when (action) {
+        "play", "pause", "play_pause" -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+        "next" -> android.view.KeyEvent.KEYCODE_MEDIA_NEXT
+        "previous", "prev" -> android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS
+        "stop" -> android.view.KeyEvent.KEYCODE_MEDIA_STOP
+        else -> return@execute "Unknown action: $action. Use play_pause, next, previous, stop."
+      }
+      val am = app.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+      am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyCode))
+      am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, keyCode))
+      "Media: $action"
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
 
     else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"
   }
@@ -458,6 +648,13 @@ class ToolExecutor(
 
       is org.json.JSONArray -> for (i in 0 until minOf(obj.length(), 10)) extractImageUrls(obj.opt(i), out)
     }
+  }
+
+  private fun parseTime(s: String): Long = try {
+    val fmts = listOf("yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm", "MM/dd/yyyy HH:mm", "MMM d yyyy h:mm a", "h:mm a")
+    fmts.firstNotNullOfOrNull { fmt -> runCatching { java.text.SimpleDateFormat(fmt, java.util.Locale.US).parse(s)?.time }.getOrNull() } ?: s.toLong()
+  } catch (_: Exception) {
+    System.currentTimeMillis() + 3600000
   }
 
   private fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
