@@ -101,13 +101,27 @@ internal fun ProfileList(
               }
             }
           }
+          var exportJson by remember { mutableStateOf("") }
+          val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json"),
+          ) { uri ->
+            if (uri != null && exportJson.isNotBlank()) {
+              scope.launch(Dispatchers.IO) {
+                ctx.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(exportJson) }
+                withContext(Dispatchers.Main) { importStatus = "Exported successfully" }
+              }
+            }
+          }
           ListItem(
             headlineContent = { Text("Export Settings") },
             supportingContent = { Text("Backup providers, tools, agent, memories", style = MaterialTheme.typography.bodySmall) },
             modifier = Modifier.clickable {
               scope.launch(Dispatchers.IO) {
                 val json = SettingsPorter.export(chatDao)
-                withContext(Dispatchers.Main) { SettingsPorter.shareExport(ctx, json) }
+                withContext(Dispatchers.Main) {
+                  exportJson = json
+                  exportLauncher.launch("aiope-settings.json")
+                }
               }
             },
           )
