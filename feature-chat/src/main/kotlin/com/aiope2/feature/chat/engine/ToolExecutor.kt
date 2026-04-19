@@ -61,13 +61,16 @@ class ToolExecutor(
     td("analyze_image", "Analyze an image from a URL using vision. Use for browser screenshots, fetched images, or any image URL the user wants described.", """{"type":"object","properties":{"url":{"type":"string","description":"URL of the image to analyze"},"question":{"type":"string","description":"What to look for or ask about the image"}},"required":["url"]}"""),
     td("read_calendar", "Read upcoming calendar events from the device.", """{"type":"object","properties":{"days":{"type":"integer","description":"Number of days ahead to look (default 7)"}},"required":[]}"""),
     td("create_event", "Create a calendar event. Opens the calendar app with pre-filled details.", """{"type":"object","properties":{"title":{"type":"string"},"start_time":{"type":"string","description":"Start time, e.g. '2025-04-20T14:00' or '2:00 PM'"},"end_time":{"type":"string","description":"End time"},"location":{"type":"string"},"description":{"type":"string"}},"required":["title"]}"""),
+    td("delete_event", "Delete a calendar event by its ID (from read_calendar).", """{"type":"object","properties":{"event_id":{"type":"integer","description":"Event ID from read_calendar"}},"required":["event_id"]}"""),
     td("set_alarm", "Set an alarm on the device.", """{"type":"object","properties":{"hour":{"type":"integer","description":"Hour (0-23)"},"minutes":{"type":"integer","description":"Minutes (0-59)"},"message":{"type":"string","description":"Alarm label"},"skip_ui":{"type":"boolean","description":"Set silently without opening clock app"}},"required":["hour","minutes"]}"""),
+    td("dismiss_alarm", "Dismiss/cancel an alarm by its label.", """{"type":"object","properties":{"message":{"type":"string","description":"Alarm label to dismiss"}},"required":["message"]}"""),
     td("read_contacts", "Search or list contacts from the device.", """{"type":"object","properties":{"query":{"type":"string","description":"Name to search for, or empty to list all"}},"required":[]}"""),
     td("send_notification", "Post a notification on the device. Use for reminders.", """{"type":"object","properties":{"title":{"type":"string"},"body":{"type":"string","description":"Notification text"}},"required":["body"]}"""),
     td("clipboard_copy", "Copy text to the device clipboard.", """{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"""),
     td("clipboard_read", "Read the current clipboard contents.", """{"type":"object","properties":{}}"""),
     td("read_sms", "Read recent SMS messages from the device.", """{"type":"object","properties":{"limit":{"type":"integer","description":"Number of messages to read (default 10)"}},"required":[]}"""),
     td("send_sms", "Send an SMS text message.", """{"type":"object","properties":{"to":{"type":"string","description":"Phone number"},"body":{"type":"string","description":"Message text"}},"required":["to","body"]}"""),
+    td("delete_sms", "Delete an SMS message by its ID (from read_sms).", """{"type":"object","properties":{"sms_id":{"type":"integer","description":"SMS ID from read_sms"}},"required":["sms_id"]}"""),
     td("device_info", "Get device info: battery, storage, RAM, network, model.", """{"type":"object","properties":{}}"""),
     td("media_control", "Control media playback (play/pause, next, previous, stop).", """{"type":"object","properties":{"action":{"type":"string","description":"One of: play_pause, next, previous, stop"}},"required":["action"]}"""),
   ).filter { toolStore.isToolEnabled(it.name) } + toolStore.getMcpServers().filter { it.enabled }.flatMap { mcpManager.getToolDefs(it.id) }.filter { toolStore.isToolEnabled(it.name) }
@@ -217,14 +220,15 @@ class ToolExecutor(
       val days = (args["days"] as? Number)?.toInt() ?: 7
       val now = System.currentTimeMillis()
       val end = now + days * 86400000L
-      val cursor = app.contentResolver.query(android.provider.CalendarContract.Events.CONTENT_URI, arrayOf("title", "dtstart", "dtend", "eventLocation", "description"), "dtstart >= ? AND dtstart <= ?", arrayOf(now.toString(), end.toString()), "dtstart ASC")
+      val cursor = app.contentResolver.query(android.provider.CalendarContract.Events.CONTENT_URI, arrayOf("_id", "title", "dtstart", "dtend", "eventLocation", "description"), "dtstart >= ? AND dtstart <= ?", arrayOf(now.toString(), end.toString()), "dtstart ASC")
       val events = mutableListOf<String>()
       cursor?.use {
         while (it.moveToNext()) {
-          val t = it.getString(0) ?: "Untitled"
-          val s = java.text.SimpleDateFormat("EEE MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(1)))
-          val loc = it.getString(3)?.takeIf { l -> l.isNotBlank() }
-          events.add("- $t @ $s${loc?.let { " ($it)" } ?: ""}")
+          val id = it.getLong(0)
+          val t = it.getString(1) ?: "Untitled"
+          val s = java.text.SimpleDateFormat("EEE MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(2)))
+          val loc = it.getString(4)?.takeIf { l -> l.isNotBlank() }
+          events.add("- [id:$id] $t @ $s${loc?.let { " ($it)" } ?: ""}")
         }
       }
       if (events.isEmpty()) "No events in the next $days days." else "Events (next $days days):\n${events.joinToString("\n")}"
@@ -245,6 +249,16 @@ class ToolExecutor(
       }
       app.startActivity(intent)
       "Calendar event creation opened: $title"
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
+    "delete_event" -> try {
+      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.WRITE_CALENDAR)) return@execute "Calendar permission denied."
+      val id = (args["event_id"] as? Number)?.toLong() ?: args["event_id"]?.toString()?.toLongOrNull() ?: return@execute "Error: event_id required"
+      val uri = android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, id)
+      val rows = app.contentResolver.delete(uri, null, null)
+      if (rows > 0) "Deleted calendar event (id: $id)" else "Event not found (id: $id)"
     } catch (e: Exception) {
       "Error: ${e.message}"
     }
@@ -277,6 +291,24 @@ class ToolExecutor(
       val h = (args["hour"] as? Number)?.toInt()
       val m = (args["minutes"] as? Number)?.toInt()
       if (h != null && m != null) "Alarm set for ${"%d:%02d".format(h, m)}" else "Alarm creation opened"
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+
+    "dismiss_alarm" -> try {
+      val intent = android.content.Intent(android.provider.AlarmClock.ACTION_DISMISS_ALARM).apply {
+        args["message"]?.toString()?.let {
+          putExtra(android.provider.AlarmClock.EXTRA_ALARM_SEARCH_MODE, android.provider.AlarmClock.ALARM_SEARCH_MODE_LABEL)
+          putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, it)
+        }
+        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      if (intent.resolveActivity(app.packageManager) != null) {
+        app.startActivity(intent)
+        "Alarm dismiss requested"
+      } else {
+        "No clock app available to dismiss alarms"
+      }
     } catch (e: Exception) {
       "Error: ${e.message}"
     }
@@ -341,13 +373,14 @@ class ToolExecutor(
     "read_sms" -> try {
       if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_SMS)) return@execute "SMS permission denied."
       val limit = (args["limit"] as? Number)?.toInt() ?: 10
-      val cursor = app.contentResolver.query(android.provider.Telephony.Sms.CONTENT_URI, arrayOf("address", "body", "date", "type"), null, null, "date DESC LIMIT $limit")
+      val cursor = app.contentResolver.query(android.provider.Telephony.Sms.CONTENT_URI, arrayOf("_id", "address", "body", "date", "type"), null, null, "date DESC LIMIT $limit")
       val msgs = mutableListOf<String>()
       cursor?.use {
         while (it.moveToNext()) {
-          val dir = if (it.getInt(3) == 1) "←" else "→"
-          val time = java.text.SimpleDateFormat("MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(2)))
-          msgs.add("$dir ${it.getString(0)} ($time): ${it.getString(1).take(200)}")
+          val id = it.getLong(0)
+          val dir = if (it.getInt(4) == 1) "←" else "→"
+          val time = java.text.SimpleDateFormat("MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(3)))
+          msgs.add("[id:$id] $dir ${it.getString(1)} ($time): ${it.getString(2).take(200)}")
         }
       }
       if (msgs.isEmpty()) "No SMS messages found." else msgs.joinToString("\n")
@@ -363,6 +396,16 @@ class ToolExecutor(
       "SMS sent to $to"
     } catch (e: Exception) {
       "Error: ${e.message}. SMS permission may be needed."
+    }
+
+    "delete_sms" -> try {
+      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_SMS)) return@execute "SMS permission denied."
+      val id = (args["sms_id"] as? Number)?.toLong() ?: args["sms_id"]?.toString()?.toLongOrNull() ?: return@execute "Error: sms_id required"
+      val uri = android.content.ContentUris.withAppendedId(android.provider.Telephony.Sms.CONTENT_URI, id)
+      val rows = app.contentResolver.delete(uri, null, null)
+      if (rows > 0) "Deleted SMS (id: $id)" else "SMS not found (id: $id)"
+    } catch (e: Exception) {
+      "Error: ${e.message}"
     }
 
     // Device info
