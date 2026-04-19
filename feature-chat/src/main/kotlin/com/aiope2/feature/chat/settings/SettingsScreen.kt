@@ -19,7 +19,7 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: 
 
   when (screen) {
     "list" -> ProfileList(
-      profiles, activeId, providerStore,
+      profiles, activeId, providerStore, chatDao,
       onSelect = {
         providerStore.setActive(it.id)
         activeId = it.id

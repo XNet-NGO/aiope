@@ -150,23 +150,46 @@ class ChatViewModel @Inject constructor(
     }
   }
 
-  fun shareConversation() {
+  fun shareConversation(asJson: Boolean = false) {
     val msgs = _messages.value
     if (msgs.isEmpty()) return
-    val text = msgs.joinToString("\n\n") { msg ->
-      val prefix = when (msg.role) {
-        Role.USER -> "User"
-        Role.ASSISTANT -> "Assistant"
-        else -> msg.role.value.replaceFirstChar { it.uppercase() }
+    val ctx = getApplication<android.app.Application>()
+    val (text, mime) = if (asJson) {
+      val arr = org.json.JSONArray()
+      msgs.forEach { m ->
+        arr.put(
+          org.json.JSONObject().put("role", m.role.value).put("content", m.content)
+            .apply { if (m.toolCalls.isNotEmpty()) put("tool_calls", org.json.JSONArray(m.toolCalls)) },
+        )
       }
-      "$prefix:\n${msg.content}"
+      org.json.JSONObject().put("title", conversationId).put("exported", System.currentTimeMillis()).put("messages", arr).toString(2) to "application/json"
+    } else {
+      val md = buildString {
+        append("# AIOPE Conversation\n\n")
+        msgs.forEach { m ->
+          when (m.role) {
+            Role.USER -> append("## User\n\n${m.content}\n\n")
+            Role.ASSISTANT -> append("## Assistant\n\n${m.content}\n\n")
+            Role.SYSTEM -> append("> _System: ${m.content.take(200)}_\n\n")
+            else -> append("## ${m.role.value}\n\n${m.content}\n\n")
+          }
+          if (m.toolCalls.isNotEmpty()) {
+            append("<details><summary>Tools used</summary>\n\n")
+            m.toolCalls.forEachIndexed { i, call ->
+              val result = m.toolResults.getOrNull(i)?.take(300) ?: ""
+              append("- `$call`\n  → $result\n")
+            }
+            append("\n</details>\n\n")
+          }
+        }
+      }
+      md to "text/markdown"
     }
     val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-      type = "text/plain"
+      type = mime
       putExtra(android.content.Intent.EXTRA_TEXT, text)
-      putExtra(android.content.Intent.EXTRA_SUBJECT, "AIOPE 2 Conversation")
+      putExtra(android.content.Intent.EXTRA_SUBJECT, "AIOPE Conversation")
     }
-    val ctx = getApplication<android.app.Application>()
     ctx.startActivity(android.content.Intent.createChooser(intent, "Share conversation").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
   }
   fun deleteConversation(id: String) {

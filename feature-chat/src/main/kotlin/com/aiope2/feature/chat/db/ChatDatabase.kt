@@ -123,6 +123,9 @@ interface ChatDao {
   @Query("SELECT * FROM tool_toggles WHERE toolId = :toolId")
   suspend fun getToolToggle(toolId: String): ToolToggleEntity?
 
+  @Query("SELECT * FROM tool_toggles")
+  suspend fun getToolToggles(): List<ToolToggleEntity>
+
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun upsertToolToggle(toggle: ToolToggleEntity)
 
@@ -152,6 +155,12 @@ interface ChatDao {
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun upsertSetting(setting: SettingsKvEntity)
+
+  @Query("SELECT * FROM settings_kv WHERE key LIKE :prefix || '%'")
+  suspend fun getSettingsByPrefix(prefix: String): List<SettingsKvEntity>
+
+  @Query("DELETE FROM providers")
+  suspend fun deleteAllProviders()
 }
 
 @Database(

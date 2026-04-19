@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aiope2.core.network.*
+import com.aiope2.feature.chat.db.ChatDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,6 +38,7 @@ internal fun ProfileList(
   profiles: List<ProviderProfile>,
   activeId: String,
   providerStore: ProviderStore,
+  chatDao: ChatDao? = null,
   onSelect: (ProviderProfile) -> Unit,
   onEdit: (ProviderProfile) -> Unit,
   onAdd: () -> Unit,
@@ -79,6 +81,44 @@ internal fun ProfileList(
           modifier = Modifier.clickable { onTools() },
         )
         HorizontalDivider()
+
+        // Export / Import
+        if (chatDao != null) {
+          val scope = rememberCoroutineScope()
+          val ctx = androidx.compose.ui.platform.LocalContext.current
+          var importStatus by remember { mutableStateOf("") }
+          val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+          ) { uri ->
+            if (uri != null) {
+              scope.launch(Dispatchers.IO) {
+                try {
+                  SettingsPorter.importFromUri(ctx, chatDao, uri, replace = false)
+                  withContext(Dispatchers.Main) { importStatus = "Imported successfully" }
+                } catch (e: Exception) {
+                  withContext(Dispatchers.Main) { importStatus = "Error: ${e.message?.take(40)}" }
+                }
+              }
+            }
+          }
+          ListItem(
+            headlineContent = { Text("Export Settings") },
+            supportingContent = { Text("Backup providers, tools, agent, memories", style = MaterialTheme.typography.bodySmall) },
+            modifier = Modifier.clickable {
+              scope.launch(Dispatchers.IO) {
+                val json = SettingsPorter.export(chatDao)
+                withContext(Dispatchers.Main) { SettingsPorter.shareExport(ctx, json) }
+              }
+            },
+          )
+          HorizontalDivider()
+          ListItem(
+            headlineContent = { Text("Import Settings") },
+            supportingContent = { Text(importStatus.ifBlank { "Restore from a backup file" }, style = MaterialTheme.typography.bodySmall) },
+            modifier = Modifier.clickable { importLauncher.launch("application/json") },
+          )
+          HorizontalDivider()
+        }
       }
       item {
         val ctx = androidx.compose.ui.platform.LocalContext.current
