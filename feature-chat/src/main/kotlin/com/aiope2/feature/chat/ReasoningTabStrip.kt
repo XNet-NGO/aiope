@@ -4,7 +4,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
@@ -32,12 +34,15 @@ internal fun ReasoningTabStrip(reasoning: List<String>, isReasoningDone: Boolean
 
   Column(Modifier.fillMaxWidth()) {
     // Tab row
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(
+      Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+      horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
       reasoning.forEachIndexed { idx, _ ->
         val isActive = idx == activeIdx && !isReasoningDone
         val isSelected = idx == selectedIdx
         Surface(
-          modifier = Modifier.weight(1f).heightIn(min = 34.dp).clickable { selectedIdx = if (isSelected) -1 else idx },
+          modifier = Modifier.widthIn(min = 40.dp).heightIn(min = 34.dp).clickable { selectedIdx = if (isSelected) -1 else idx },
           shape = RoundedCornerShape(12.dp),
           color = if (isSelected) Color(0xFF1A1A2E) else Color(0xFF111111),
           border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, cs.primary.copy(alpha = 0.4f)) else null,
