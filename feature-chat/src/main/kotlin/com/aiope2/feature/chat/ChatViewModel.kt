@@ -774,7 +774,6 @@ class ChatViewModel @Inject constructor(
       getAgentMode = { _agentMode.value },
     ).also { te ->
       _subagentManager = com.aiope2.feature.chat.engine.SubagentManager(
-        scope = viewModelScope,
         createOrchestrator = { tools, onToolCall ->
           val p = providerStore.getActive()
           com.aiope2.feature.chat.engine.StreamingOrchestrator(
@@ -786,33 +785,13 @@ class ChatViewModel @Inject constructor(
           )
         },
         buildMessages = { prompt ->
-          listOf("system" to "You are a research subagent. Use your tools to search, read, and explore. Summarize findings concisely.", "user" to prompt)
+          listOf("system" to "You are a research subagent. Use your tools to search, read, and explore. Summarize your findings concisely in a single response. Do not ask questions.", "user" to prompt)
         },
         getReadOnlyTools = { te.buildToolDefs().filter { it.name in subagentReadOnlyTools } },
         executeReadOnlyTool = { name, args ->
           if (name in subagentReadOnlyTools) te.execute(name, args) else "Tool '$name' not available to subagents"
         },
-      ).also { mgr ->
-        mgr.onTaskFinished = { task ->
-          val status = if (task.stage == com.aiope2.feature.chat.engine.SubagentManager.Stage.FINISHED) "completed" else "failed"
-          val summary = task.result.take(3000)
-          val content = if (status == "completed") {
-            "Subagent research on \"${task.description}\" completed. Findings:\n$summary"
-          } else {
-            "Subagent \"${task.description}\" failed: ${task.error}"
-          }
-          // Add as system message — included in context for next turn, collapsed in UI
-          viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
-            _messages.value = _messages.value.toMutableList().also {
-              it.add(ChatMessage(role = Role.SYSTEM, content = content))
-            }
-            // If not currently streaming, auto-trigger the main agent to process findings
-            if (!_isStreaming.value) {
-              send("Process the subagent research results above and incorporate the findings.")
-            }
-          }
-        }
-      }
+      )
       te.subagentManager = _subagentManager
     }
   }

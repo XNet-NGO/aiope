@@ -357,24 +357,6 @@ private fun MessageList(
     LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 60.dp)) {
       items(messages.size, key = { messages[it].id }) { idx ->
         val msg = messages[idx]
-        // Subagent results: show as compact indicator, not full bubble
-        if (msg.role == Role.SYSTEM && msg.content.startsWith("Subagent research on")) {
-          var expanded by remember { mutableStateOf(false) }
-          val title = msg.content.lines().first()
-          Text(
-            text = if (expanded) msg.content.take(1500) else "📋 $title",
-            fontSize = 11.sp,
-            color = Color(0xFF888888),
-            modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(horizontal = 8.dp, vertical = 4.dp),
-            maxLines = if (expanded) 40 else 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-          )
-          return@items
-        }
-        if (msg.role == Role.SYSTEM && msg.content.startsWith("Subagent \"")) {
-          Text("⚠️ ${msg.content}", fontSize = 11.sp, color = Color(0xFF888888), modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
-          return@items
-        }
         MessageBubble(
           message = msg,
           isLastStreaming = isStreaming && idx == messages.lastIndex && msg.role == Role.ASSISTANT,
@@ -397,16 +379,9 @@ private fun MessageList(
           },
           onUiCallback = if (msg.role == Role.ASSISTANT) onUiCallback else null,
           onRunCode = onRunCode,
+          subagentTasks = if (isStreaming && idx == messages.lastIndex && msg.role == Role.ASSISTANT) subagentTasks else emptyList(),
         )
         Spacer(Modifier.height(8.dp))
-      }
-      // Subagent task cards
-      if (subagentTasks.isNotEmpty()) {
-        item(key = "subagent_header") {
-          subagentTasks.forEach { task ->
-            com.aiope2.feature.chat.engine.SubagentCard(task)
-          }
-        }
       }
       item(key = "bottom_anchor") { Spacer(Modifier.height(1.dp)) }
     }

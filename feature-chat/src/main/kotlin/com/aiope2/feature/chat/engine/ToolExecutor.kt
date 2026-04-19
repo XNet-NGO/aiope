@@ -468,11 +468,10 @@ class ToolExecutor(
       }
 
       "task" -> {
-        val mgr = subagentManager ?: return@execute "Subagent system not available"
+        val mgr = subagentManager ?: return@execute "Tool 'task' not available"
         val desc = args["description"]?.toString() ?: "research"
         val prompt = args["prompt"]?.toString() ?: return@execute "Error: prompt required"
-        val taskId = mgr.spawn(desc, prompt)
-        "Subagent spawned: task_id=$taskId, description=\"$desc\". It will run in the background. Check results when the UI shows it as finished."
+        kotlinx.coroutines.runBlocking { mgr.runBlocking(desc, prompt) }
       }
 
       else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"

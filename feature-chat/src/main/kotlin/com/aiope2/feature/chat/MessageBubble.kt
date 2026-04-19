@@ -58,6 +58,7 @@ fun MessageBubble(
   onTranslate: ((String) -> Unit)? = null,
   onUiCallback: ((String, Map<String, String>) -> Unit)? = null,
   onRunCode: ((code: String, language: String) -> Unit)? = null,
+  subagentTasks: List<com.aiope2.feature.chat.engine.SubagentManager.SubagentTask> = emptyList(),
 ) {
   val isUser = message.role == Role.USER
   val ctx = LocalContext.current
@@ -69,7 +70,7 @@ fun MessageBubble(
     if (isUser) {
       UserBubble(message, ctx, showMenu, { showMenu = it }, onEdit, onRetry, onCompact, onFork)
     } else {
-      AssistantBubble(message, ctx, isLastStreaming, onRetry, onCompact, onFork, onTranslate, onUiCallback, onRunCode)
+      AssistantBubble(message, ctx, isLastStreaming, onRetry, onCompact, onFork, onTranslate, onUiCallback, onRunCode, subagentTasks)
     }
   }
 }
@@ -164,6 +165,7 @@ private fun AssistantBubble(
   onTranslate: ((String) -> Unit)? = null,
   onUiCallback: ((String, Map<String, String>) -> Unit)? = null,
   onRunCode: ((code: String, language: String) -> Unit)? = null,
+  subagentTasks: List<com.aiope2.feature.chat.engine.SubagentManager.SubagentTask> = emptyList(),
 ) {
   val cs = MaterialTheme.colorScheme
   Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)) {
@@ -171,6 +173,12 @@ private fun AssistantBubble(
     if (message.reasoning.isNotEmpty()) {
       ReasoningTabStrip(message.reasoning, message.isReasoningDone)
       Spacer(Modifier.height(8.dp))
+    }
+
+    // Subagent task cards (rendered above tool tabs when active)
+    if (subagentTasks.isNotEmpty() && message.toolCalls.any { it.contains("task") }) {
+      subagentTasks.forEach { task -> com.aiope2.feature.chat.engine.SubagentCard(task) }
+      Spacer(Modifier.height(4.dp))
     }
 
     // Tool calls
