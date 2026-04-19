@@ -91,8 +91,8 @@ private fun UserBubble(
 ) {
   val cs = MaterialTheme.colorScheme
   val theme = com.aiope2.feature.chat.theme.LocalThemeState.current
-  val bubbleColor = if (theme.useCustomBubbles && theme.userBubbleColor != null) theme.userBubbleColor.copy(alpha = theme.userBubbleOpacity) else Color(0xFF00E5FF).copy(alpha = if (theme.useCustomBubbles) theme.userBubbleOpacity else 0.12f)
-  val textColor = if (theme.useCustomBubbles && theme.userTextColor != null) theme.userTextColor else cs.onSurface
+  val bubbleColor = if (theme.useCustomBubbles && theme.userBubbleColor != null) theme.userBubbleColor.copy(alpha = theme.userBubbleOpacity) else cs.primaryContainer
+  val textColor = if (theme.useCustomBubbles && theme.userTextColor != null) theme.userTextColor else cs.onPrimaryContainer
   val screenW = LocalConfiguration.current.screenWidthDp.dp
   Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), horizontalArrangement = Arrangement.End) {
     Surface(
@@ -208,7 +208,7 @@ private fun AssistantBubble(
 
     // Content (skip if it's just a generated image file path)
     if (message.content.isNotBlank() && !(message.content.startsWith("file://") && message.imageUris.isNotEmpty())) {
-      val aiBubbleColor = if (theme.useCustomBubbles && theme.aiBubbleColor != null) theme.aiBubbleColor.copy(alpha = theme.aiBubbleOpacity) else MaterialTheme.colorScheme.surface.copy(alpha = if (theme.useCustomBubbles) theme.aiBubbleOpacity else 1f)
+      val aiBubbleColor = if (theme.useCustomBubbles && theme.aiBubbleColor != null) theme.aiBubbleColor.copy(alpha = theme.aiBubbleOpacity) else MaterialTheme.colorScheme.surfaceVariant
       Surface(
         shape = RoundedCornerShape(16.dp),
         color = aiBubbleColor,
@@ -671,7 +671,7 @@ private fun MessageMenu(
 
 @Composable
 private fun rememberMarkdownTheme(cs: ColorScheme, theme: com.aiope2.feature.chat.theme.ThemeState = com.aiope2.feature.chat.theme.ThemeState()): MarkdownTheme = remember(cs, theme) {
-  val textColor = if (theme.useCustomBubbles && theme.aiTextColor != null) theme.aiTextColor else cs.onSurface
+  val textColor = if (theme.useCustomBubbles && theme.aiTextColor != null) theme.aiTextColor else cs.onSurfaceVariant
   val isDark = theme.isDark
   val bubbleAlpha = if (theme.useCustomBubbles) theme.aiBubbleOpacity else 1f
   MarkdownTheme(
