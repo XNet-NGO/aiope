@@ -51,7 +51,7 @@ fun LocationCard(latitude: Double, longitude: Double, altitude: Double? = null, 
 
 @Composable
 private fun MapContent(latitude: Double, longitude: Double) {
-  val initialPos = remember {
+  val initialPos = remember(latitude, longitude) {
     CameraPosition(target = org.maplibre.android.geometry.LatLng(latitude, longitude), zoom = 15.5)
   }
   val style = remember {
