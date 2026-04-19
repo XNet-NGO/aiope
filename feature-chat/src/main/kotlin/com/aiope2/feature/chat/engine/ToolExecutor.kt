@@ -97,362 +97,365 @@ class ToolExecutor(
     }
   }
 
-  fun execute(name: String, args: Map<String, Any?>): String = when (name) {
-    "run_sh" -> com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "").let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+  fun execute(name: String, args: Map<String, Any?>): String {
+    if (!toolStore.isToolEnabled(name)) return "Tool '$name' is disabled."
+    return when (name) {
+      "run_sh" -> com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "").let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
 
-    "run_proot" -> if (!com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(app)) {
-      "Alpine not installed. Set up proot in Settings first."
-    } else {
-      com.aiope2.core.terminal.shell.ProotExecutor.exec(app, args["command"]?.toString() ?: "").let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
-    }
-
-    "read_file" -> try {
-      java.io.File(args["path"].toString()).readText().let { if (it.length > fileReadLimit) "File too large" else it }
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    "write_file" -> try {
-      val f = java.io.File(args["path"].toString())
-      f.parentFile?.mkdirs()
-      f.writeText(args["content"].toString())
-      "OK: Written ${args["content"].toString().length} bytes to ${f.absolutePath}"
-    } catch (e: Exception) {
-      "FAILED write_file: ${args["path"]} — ${e.message}"
-    }
-
-    "list_directory" -> try {
-      java.io.File(args["path"].toString()).listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" } ?: "Empty"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    "open_intent" -> try {
-      val uri = android.net.Uri.parse(args["uri"].toString())
-      app.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-      "Opened: $uri"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    "get_location" -> kotlinx.coroutines.runBlocking {
-      val loc = locationProvider.getFreshLocation() ?: locationProvider.getLastLocation()
-      if (loc != null) {
-        lastLocationData = LocationData(loc.latitude, loc.longitude, if (loc.hasAltitude()) loc.altitude else null, if (loc.hasSpeed()) loc.speed.toDouble() else null, if (loc.hasBearing()) loc.bearing.toDouble() else null, loc.accuracy.toDouble())
-        locationUsedThisTurn = true
-        val base = locationProvider.formatLocation(loc)
-        val address = locationProvider.reverseGeocode(loc)
-        if (address != null) "$base\n$address" else base
+      "run_proot" -> if (!com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(app)) {
+        "Alpine not installed. Set up proot in Settings first."
       } else {
-        "Location unavailable -- check permissions or GPS"
+        com.aiope2.core.terminal.shell.ProotExecutor.exec(app, args["command"]?.toString() ?: "").let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
       }
-    }
 
-    "search_location" -> executeSearchLocation(args["query"]?.toString() ?: "")
+      "read_file" -> try {
+        java.io.File(args["path"].toString()).readText().let { if (it.length > fileReadLimit) "File too large" else it }
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
 
-    "search_web" -> execute("query_data", mapOf("category" to "search_web", "extra" to (args["query"]?.toString() ?: "")))
+      "write_file" -> try {
+        val f = java.io.File(args["path"].toString())
+        f.parentFile?.mkdirs()
+        f.writeText(args["content"].toString())
+        "OK: Written ${args["content"].toString().length} bytes to ${f.absolutePath}"
+      } catch (e: Exception) {
+        "FAILED write_file: ${args["path"]} — ${e.message}"
+      }
 
-    "search_images" -> execute("query_data", mapOf("category" to "image_search", "extra" to (args["query"]?.toString() ?: "")))
+      "list_directory" -> try {
+        java.io.File(args["path"].toString()).listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" } ?: "Empty"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
 
-    "fetch_url" -> executeFetchUrl(args)
+      "open_intent" -> try {
+        val uri = android.net.Uri.parse(args["uri"].toString())
+        app.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        "Opened: $uri"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
 
-    "query_data" -> executeQueryData(args)
-
-    "browser_navigate" -> kotlinx.coroutines.runBlocking { getBrowser().navigate(args["url"]?.toString() ?: "") }
-
-    "browser_content" -> kotlinx.coroutines.runBlocking { getBrowser().getPageContent() }
-
-    "browser_elements" -> kotlinx.coroutines.runBlocking { getBrowser().getElements() }
-
-    "browser_click" -> kotlinx.coroutines.runBlocking { getBrowser().click(args["selector"]?.toString() ?: "") }
-
-    "browser_fill" -> kotlinx.coroutines.runBlocking { getBrowser().fill(args["selector"]?.toString() ?: "", args["value"]?.toString() ?: "") }
-
-    "browser_eval" -> kotlinx.coroutines.runBlocking { getBrowser().evaluateJs(args["script"]?.toString() ?: "") }
-
-    "browser_back" -> kotlinx.coroutines.runBlocking { if (getBrowser().goBack()) "Navigated back" else "No history to go back" }
-
-    "browser_scroll" -> kotlinx.coroutines.runBlocking { getBrowser().scroll(args["direction"]?.toString() ?: "down", (args["amount"] as? Number)?.toInt() ?: 500) }
-
-    "browser_open" -> {
-      onBrowserVisible(true)
-      "Browser opened"
-    }
-
-    "browser_close" -> {
-      onBrowserVisible(false)
-      onBrowserMaximized(false)
-      "Browser closed"
-    }
-
-    "browser_maximize" -> {
-      val max = args["maximize"] as? Boolean ?: true
-      onBrowserVisible(true)
-      onBrowserMaximized(max)
-      if (max) "Browser maximized" else "Browser restored"
-    }
-
-    "memory_store" -> kotlinx.coroutines.runBlocking {
-      val key = args["key"]?.toString() ?: return@runBlocking "Error: key required"
-      chatDao.upsertMemory(com.aiope2.feature.chat.db.MemoryEntity(key = key, content = args["content"]?.toString() ?: return@runBlocking "Error: content required", category = args["category"]?.toString() ?: "general"))
-      "Stored memory: $key"
-    }
-
-    "memory_recall" -> kotlinx.coroutines.runBlocking {
-      val q = args["query"]?.toString() ?: ""
-      val m = if (q.isBlank()) chatDao.getAllMemories() else chatDao.searchMemories(q)
-      if (m.isEmpty()) "No memories found." else m.joinToString("\n") { "- ${it.key}: ${it.content} [${it.category}]" }
-    }
-
-    "memory_forget" -> kotlinx.coroutines.runBlocking {
-      val key = args["key"]?.toString() ?: return@runBlocking "Error: key required"
-      chatDao.deleteMemory(key)
-      "Deleted memory: $key"
-    }
-
-    "image_generate" -> executeImageGenerate(args)
-
-    "analyze_image" -> executeAnalyzeImage(args)
-
-    // Calendar
-    "read_calendar" -> try {
-      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_CALENDAR)) return@execute "Calendar permission denied."
-      val days = (args["days"] as? Number)?.toInt() ?: 7
-      val now = System.currentTimeMillis()
-      val end = now + days * 86400000L
-      val cursor = app.contentResolver.query(android.provider.CalendarContract.Events.CONTENT_URI, arrayOf("_id", "title", "dtstart", "dtend", "eventLocation", "description"), "dtstart >= ? AND dtstart <= ?", arrayOf(now.toString(), end.toString()), "dtstart ASC")
-      val events = mutableListOf<String>()
-      cursor?.use {
-        while (it.moveToNext()) {
-          val id = it.getLong(0)
-          val t = it.getString(1) ?: "Untitled"
-          val s = java.text.SimpleDateFormat("EEE MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(2)))
-          val loc = it.getString(4)?.takeIf { l -> l.isNotBlank() }
-          events.add("- [id:$id] $t @ $s${loc?.let { " ($it)" } ?: ""}")
+      "get_location" -> kotlinx.coroutines.runBlocking {
+        val loc = locationProvider.getFreshLocation() ?: locationProvider.getLastLocation()
+        if (loc != null) {
+          lastLocationData = LocationData(loc.latitude, loc.longitude, if (loc.hasAltitude()) loc.altitude else null, if (loc.hasSpeed()) loc.speed.toDouble() else null, if (loc.hasBearing()) loc.bearing.toDouble() else null, loc.accuracy.toDouble())
+          locationUsedThisTurn = true
+          val base = locationProvider.formatLocation(loc)
+          val address = locationProvider.reverseGeocode(loc)
+          if (address != null) "$base\n$address" else base
+        } else {
+          "Location unavailable -- check permissions or GPS"
         }
       }
-      if (events.isEmpty()) "No events in the next $days days." else "Events (next $days days):\n${events.joinToString("\n")}"
-    } catch (e: Exception) {
-      "Error: ${e.message}. Calendar permission may be needed."
-    }
 
-    "create_event" -> try {
-      val title = args["title"]?.toString() ?: return@execute "Error: title required"
-      val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
-        data = android.provider.CalendarContract.Events.CONTENT_URI
-        putExtra(android.provider.CalendarContract.Events.TITLE, title)
-        args["description"]?.toString()?.let { putExtra(android.provider.CalendarContract.Events.DESCRIPTION, it) }
-        args["location"]?.toString()?.let { putExtra(android.provider.CalendarContract.Events.EVENT_LOCATION, it) }
-        args["start_time"]?.toString()?.let { putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, parseTime(it)) }
-        args["end_time"]?.toString()?.let { putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, parseTime(it)) }
-        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+      "search_location" -> executeSearchLocation(args["query"]?.toString() ?: "")
+
+      "search_web" -> execute("query_data", mapOf("category" to "search_web", "extra" to (args["query"]?.toString() ?: "")))
+
+      "search_images" -> execute("query_data", mapOf("category" to "image_search", "extra" to (args["query"]?.toString() ?: "")))
+
+      "fetch_url" -> executeFetchUrl(args)
+
+      "query_data" -> executeQueryData(args)
+
+      "browser_navigate" -> kotlinx.coroutines.runBlocking { getBrowser().navigate(args["url"]?.toString() ?: "") }
+
+      "browser_content" -> kotlinx.coroutines.runBlocking { getBrowser().getPageContent() }
+
+      "browser_elements" -> kotlinx.coroutines.runBlocking { getBrowser().getElements() }
+
+      "browser_click" -> kotlinx.coroutines.runBlocking { getBrowser().click(args["selector"]?.toString() ?: "") }
+
+      "browser_fill" -> kotlinx.coroutines.runBlocking { getBrowser().fill(args["selector"]?.toString() ?: "", args["value"]?.toString() ?: "") }
+
+      "browser_eval" -> kotlinx.coroutines.runBlocking { getBrowser().evaluateJs(args["script"]?.toString() ?: "") }
+
+      "browser_back" -> kotlinx.coroutines.runBlocking { if (getBrowser().goBack()) "Navigated back" else "No history to go back" }
+
+      "browser_scroll" -> kotlinx.coroutines.runBlocking { getBrowser().scroll(args["direction"]?.toString() ?: "down", (args["amount"] as? Number)?.toInt() ?: 500) }
+
+      "browser_open" -> {
+        onBrowserVisible(true)
+        "Browser opened"
       }
-      app.startActivity(intent)
-      "Calendar event creation opened: $title"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
 
-    "delete_event" -> try {
-      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.WRITE_CALENDAR)) return@execute "Calendar permission denied."
-      val id = (args["event_id"] as? Number)?.toLong() ?: args["event_id"]?.toString()?.toLongOrNull() ?: return@execute "Error: event_id required"
-      val uri = android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, id)
-      val rows = app.contentResolver.delete(uri, null, null)
-      if (rows > 0) "Deleted calendar event (id: $id)" else "Event not found (id: $id)"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    // Alarms
-    "set_alarm" -> try {
-      val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
-        args["hour"]?.let { putExtra(android.provider.AlarmClock.EXTRA_HOUR, (it as Number).toInt()) }
-        args["minutes"]?.let { putExtra(android.provider.AlarmClock.EXTRA_MINUTES, (it as Number).toInt()) }
-        args["message"]?.toString()?.let { putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, it) }
-        putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, args["skip_ui"] as? Boolean ?: false)
-        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+      "browser_close" -> {
+        onBrowserVisible(false)
+        onBrowserMaximized(false)
+        "Browser closed"
       }
-      if (intent.resolveActivity(app.packageManager) != null) {
+
+      "browser_maximize" -> {
+        val max = args["maximize"] as? Boolean ?: true
+        onBrowserVisible(true)
+        onBrowserMaximized(max)
+        if (max) "Browser maximized" else "Browser restored"
+      }
+
+      "memory_store" -> kotlinx.coroutines.runBlocking {
+        val key = args["key"]?.toString() ?: return@runBlocking "Error: key required"
+        chatDao.upsertMemory(com.aiope2.feature.chat.db.MemoryEntity(key = key, content = args["content"]?.toString() ?: return@runBlocking "Error: content required", category = args["category"]?.toString() ?: "general"))
+        "Stored memory: $key"
+      }
+
+      "memory_recall" -> kotlinx.coroutines.runBlocking {
+        val q = args["query"]?.toString() ?: ""
+        val m = if (q.isBlank()) chatDao.getAllMemories() else chatDao.searchMemories(q)
+        if (m.isEmpty()) "No memories found." else m.joinToString("\n") { "- ${it.key}: ${it.content} [${it.category}]" }
+      }
+
+      "memory_forget" -> kotlinx.coroutines.runBlocking {
+        val key = args["key"]?.toString() ?: return@runBlocking "Error: key required"
+        chatDao.deleteMemory(key)
+        "Deleted memory: $key"
+      }
+
+      "image_generate" -> executeImageGenerate(args)
+
+      "analyze_image" -> executeAnalyzeImage(args)
+
+      // Calendar
+      "read_calendar" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_CALENDAR)) return@execute "Calendar permission denied."
+        val days = (args["days"] as? Number)?.toInt() ?: 7
+        val now = System.currentTimeMillis()
+        val end = now + days * 86400000L
+        val cursor = app.contentResolver.query(android.provider.CalendarContract.Events.CONTENT_URI, arrayOf("_id", "title", "dtstart", "dtend", "eventLocation", "description"), "dtstart >= ? AND dtstart <= ?", arrayOf(now.toString(), end.toString()), "dtstart ASC")
+        val events = mutableListOf<String>()
+        cursor?.use {
+          while (it.moveToNext()) {
+            val id = it.getLong(0)
+            val t = it.getString(1) ?: "Untitled"
+            val s = java.text.SimpleDateFormat("EEE MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(2)))
+            val loc = it.getString(4)?.takeIf { l -> l.isNotBlank() }
+            events.add("- [id:$id] $t @ $s${loc?.let { " ($it)" } ?: ""}")
+          }
+        }
+        if (events.isEmpty()) "No events in the next $days days." else "Events (next $days days):\n${events.joinToString("\n")}"
+      } catch (e: Exception) {
+        "Error: ${e.message}. Calendar permission may be needed."
+      }
+
+      "create_event" -> try {
+        val title = args["title"]?.toString() ?: return@execute "Error: title required"
+        val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
+          data = android.provider.CalendarContract.Events.CONTENT_URI
+          putExtra(android.provider.CalendarContract.Events.TITLE, title)
+          args["description"]?.toString()?.let { putExtra(android.provider.CalendarContract.Events.DESCRIPTION, it) }
+          args["location"]?.toString()?.let { putExtra(android.provider.CalendarContract.Events.EVENT_LOCATION, it) }
+          args["start_time"]?.toString()?.let { putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, parseTime(it)) }
+          args["end_time"]?.toString()?.let { putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, parseTime(it)) }
+          addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
         app.startActivity(intent)
-      } else {
-        // Fallback: use AlarmManager for a one-shot alarm
-        val h = (args["hour"] as? Number)?.toInt() ?: 0
-        val m = (args["minutes"] as? Number)?.toInt() ?: 0
-        val cal = java.util.Calendar.getInstance().apply {
-          set(java.util.Calendar.HOUR_OF_DAY, h)
-          set(java.util.Calendar.MINUTE, m)
-          set(java.util.Calendar.SECOND, 0)
+        "Calendar event creation opened: $title"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      "delete_event" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.WRITE_CALENDAR)) return@execute "Calendar permission denied."
+        val id = (args["event_id"] as? Number)?.toLong() ?: args["event_id"]?.toString()?.toLongOrNull() ?: return@execute "Error: event_id required"
+        val uri = android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, id)
+        val rows = app.contentResolver.delete(uri, null, null)
+        if (rows > 0) "Deleted calendar event (id: $id)" else "Event not found (id: $id)"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      // Alarms
+      "set_alarm" -> try {
+        val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
+          args["hour"]?.let { putExtra(android.provider.AlarmClock.EXTRA_HOUR, (it as Number).toInt()) }
+          args["minutes"]?.let { putExtra(android.provider.AlarmClock.EXTRA_MINUTES, (it as Number).toInt()) }
+          args["message"]?.toString()?.let { putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, it) }
+          putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, args["skip_ui"] as? Boolean ?: false)
+          addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        if (cal.timeInMillis <= System.currentTimeMillis()) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
-        val am = app.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
-        val pi = android.app.PendingIntent.getBroadcast(app, h * 100 + m, android.content.Intent("com.aiope2.ALARM"), android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
-        am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
-      }
-      val h = (args["hour"] as? Number)?.toInt()
-      val m = (args["minutes"] as? Number)?.toInt()
-      if (h != null && m != null) "Alarm set for ${"%d:%02d".format(h, m)}" else "Alarm creation opened"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    "dismiss_alarm" -> try {
-      val intent = android.content.Intent(android.provider.AlarmClock.ACTION_DISMISS_ALARM).apply {
-        args["message"]?.toString()?.let {
-          putExtra(android.provider.AlarmClock.EXTRA_ALARM_SEARCH_MODE, android.provider.AlarmClock.ALARM_SEARCH_MODE_LABEL)
-          putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, it)
+        if (intent.resolveActivity(app.packageManager) != null) {
+          app.startActivity(intent)
+        } else {
+          // Fallback: use AlarmManager for a one-shot alarm
+          val h = (args["hour"] as? Number)?.toInt() ?: 0
+          val m = (args["minutes"] as? Number)?.toInt() ?: 0
+          val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, h)
+            set(java.util.Calendar.MINUTE, m)
+            set(java.util.Calendar.SECOND, 0)
+          }
+          if (cal.timeInMillis <= System.currentTimeMillis()) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+          val am = app.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+          val pi = android.app.PendingIntent.getBroadcast(app, h * 100 + m, android.content.Intent("com.aiope2.ALARM"), android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+          am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
         }
-        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        val h = (args["hour"] as? Number)?.toInt()
+        val m = (args["minutes"] as? Number)?.toInt()
+        if (h != null && m != null) "Alarm set for ${"%d:%02d".format(h, m)}" else "Alarm creation opened"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
       }
-      if (intent.resolveActivity(app.packageManager) != null) {
-        app.startActivity(intent)
-        "Alarm dismiss requested"
-      } else {
-        "No clock app available to dismiss alarms"
-      }
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
 
-    // Contacts
-    "read_contacts" -> try {
-      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_CONTACTS)) return@execute "Contacts permission denied."
-      val query = args["query"]?.toString() ?: ""
-      val sel = if (query.isNotBlank()) "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?" else null
-      val selArgs = if (query.isNotBlank()) arrayOf("%$query%") else null
-      val cursor = app.contentResolver.query(android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI, arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER), sel, selArgs, "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC")
-      val contacts = mutableListOf<String>()
-      cursor?.use {
-        while (it.moveToNext() && contacts.size < 20) {
-          contacts.add("${it.getString(0)}: ${it.getString(1)}")
+      "dismiss_alarm" -> try {
+        val intent = android.content.Intent(android.provider.AlarmClock.ACTION_DISMISS_ALARM).apply {
+          args["message"]?.toString()?.let {
+            putExtra(android.provider.AlarmClock.EXTRA_ALARM_SEARCH_MODE, android.provider.AlarmClock.ALARM_SEARCH_MODE_LABEL)
+            putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, it)
+          }
+          addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-      }
-      if (contacts.isEmpty()) "No contacts found${if (query.isNotBlank()) " matching '$query'" else ""}." else contacts.joinToString("\n")
-    } catch (e: Exception) {
-      "Error: ${e.message}. Contacts permission may be needed."
-    }
-
-    // Notifications
-    "send_notification" -> try {
-      val title = args["title"]?.toString() ?: "AIOPE"
-      val body = args["body"]?.toString() ?: return@execute "Error: body required"
-      val channelId = "aiope_tools"
-      val nm = app.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-      if (android.os.Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(android.app.NotificationChannel(channelId, "Tool Notifications", android.app.NotificationManager.IMPORTANCE_DEFAULT))
-      val n = android.app.Notification.Builder(app, channelId).setContentTitle(title).setContentText(body).setSmallIcon(android.R.drawable.ic_dialog_info).setAutoCancel(true).build()
-      nm.notify(System.currentTimeMillis().toInt(), n)
-      "Notification sent: $title"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    // Clipboard
-    "clipboard_copy" -> try {
-      val text = args["text"]?.toString() ?: return@execute "Error: text required"
-      val cm = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-      android.os.Handler(android.os.Looper.getMainLooper()).post { cm.setPrimaryClip(android.content.ClipData.newPlainText("AIOPE", text)) }
-      "Copied to clipboard (${text.length} chars)"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    "clipboard_read" -> try {
-      val cm = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-      var result = ""
-      val latch = java.util.concurrent.CountDownLatch(1)
-      android.os.Handler(android.os.Looper.getMainLooper()).post {
-        result = cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
-        latch.countDown()
-      }
-      latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
-      if (result.isBlank()) "Clipboard is empty" else result
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    // SMS
-    "read_sms" -> try {
-      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_SMS)) return@execute "SMS permission denied."
-      val limit = (args["limit"] as? Number)?.toInt() ?: 10
-      val cursor = app.contentResolver.query(android.provider.Telephony.Sms.CONTENT_URI, arrayOf("_id", "address", "body", "date", "type"), null, null, "date DESC LIMIT $limit")
-      val msgs = mutableListOf<String>()
-      cursor?.use {
-        while (it.moveToNext()) {
-          val id = it.getLong(0)
-          val dir = if (it.getInt(4) == 1) "←" else "→"
-          val time = java.text.SimpleDateFormat("MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(3)))
-          msgs.add("[id:$id] $dir ${it.getString(1)} ($time): ${it.getString(2).take(200)}")
+        if (intent.resolveActivity(app.packageManager) != null) {
+          app.startActivity(intent)
+          "Alarm dismiss requested"
+        } else {
+          "No clock app available to dismiss alarms"
         }
+      } catch (e: Exception) {
+        "Error: ${e.message}"
       }
-      if (msgs.isEmpty()) "No SMS messages found." else msgs.joinToString("\n")
-    } catch (e: Exception) {
-      "Error: ${e.message}. SMS permission may be needed."
-    }
 
-    "send_sms" -> try {
-      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.SEND_SMS)) return@execute "SMS permission denied."
-      val to = args["to"]?.toString() ?: return@execute "Error: 'to' phone number required"
-      val body = args["body"]?.toString() ?: return@execute "Error: 'body' required"
-      android.telephony.SmsManager.getDefault().sendTextMessage(to, null, body, null, null)
-      "SMS sent to $to"
-    } catch (e: Exception) {
-      "Error: ${e.message}. SMS permission may be needed."
-    }
-
-    "delete_sms" -> try {
-      if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_SMS)) return@execute "SMS permission denied."
-      val id = (args["sms_id"] as? Number)?.toLong() ?: args["sms_id"]?.toString()?.toLongOrNull() ?: return@execute "Error: sms_id required"
-      val uri = android.content.ContentUris.withAppendedId(android.provider.Telephony.Sms.CONTENT_URI, id)
-      val rows = app.contentResolver.delete(uri, null, null)
-      if (rows > 0) "Deleted SMS (id: $id)" else "SMS not found (id: $id)"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
-
-    // Device info
-    "device_info" -> try {
-      val bm = app.getSystemService(android.content.Context.BATTERY_SERVICE) as android.os.BatteryManager
-      val battery = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
-      val charging = bm.isCharging
-      val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
-      val freeGb = "%.1f".format(stat.availableBytes / 1073741824.0)
-      val totalGb = "%.1f".format(stat.totalBytes / 1073741824.0)
-      val cm = app.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-      val net = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) }
-      val conn = when {
-        net == null -> "Offline"
-        net.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "WiFi"
-        net.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular"
-        else -> "Connected"
+      // Contacts
+      "read_contacts" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_CONTACTS)) return@execute "Contacts permission denied."
+        val query = args["query"]?.toString() ?: ""
+        val sel = if (query.isNotBlank()) "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?" else null
+        val selArgs = if (query.isNotBlank()) arrayOf("%$query%") else null
+        val cursor = app.contentResolver.query(android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI, arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER), sel, selArgs, "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC")
+        val contacts = mutableListOf<String>()
+        cursor?.use {
+          while (it.moveToNext() && contacts.size < 20) {
+            contacts.add("${it.getString(0)}: ${it.getString(1)}")
+          }
+        }
+        if (contacts.isEmpty()) "No contacts found${if (query.isNotBlank()) " matching '$query'" else ""}." else contacts.joinToString("\n")
+      } catch (e: Exception) {
+        "Error: ${e.message}. Contacts permission may be needed."
       }
-      val am = app.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-      val mem = android.app.ActivityManager.MemoryInfo()
-      am.getMemoryInfo(mem)
-      val ramFree = "%.1f".format(mem.availMem / 1073741824.0)
-      val ramTotal = "%.1f".format(mem.totalMem / 1073741824.0)
-      "Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\nAndroid: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})\nBattery: $battery%${if (charging) " ⚡charging" else ""}\nStorage: $freeGb / $totalGb GB free\nRAM: $ramFree / $ramTotal GB free\nNetwork: $conn"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
 
-    // Media control
-    "media_control" -> try {
-      val action = args["action"]?.toString() ?: "play_pause"
-      val keyCode = when (action) {
-        "play", "pause", "play_pause" -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
-        "next" -> android.view.KeyEvent.KEYCODE_MEDIA_NEXT
-        "previous", "prev" -> android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS
-        "stop" -> android.view.KeyEvent.KEYCODE_MEDIA_STOP
-        else -> return@execute "Unknown action: $action. Use play_pause, next, previous, stop."
+      // Notifications
+      "send_notification" -> try {
+        val title = args["title"]?.toString() ?: "AIOPE"
+        val body = args["body"]?.toString() ?: return@execute "Error: body required"
+        val channelId = "aiope_tools"
+        val nm = app.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        if (android.os.Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(android.app.NotificationChannel(channelId, "Tool Notifications", android.app.NotificationManager.IMPORTANCE_DEFAULT))
+        val n = android.app.Notification.Builder(app, channelId).setContentTitle(title).setContentText(body).setSmallIcon(android.R.drawable.ic_dialog_info).setAutoCancel(true).build()
+        nm.notify(System.currentTimeMillis().toInt(), n)
+        "Notification sent: $title"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
       }
-      val am = app.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
-      am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyCode))
-      am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, keyCode))
-      "Media: $action"
-    } catch (e: Exception) {
-      "Error: ${e.message}"
-    }
 
-    else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"
+      // Clipboard
+      "clipboard_copy" -> try {
+        val text = args["text"]?.toString() ?: return@execute "Error: text required"
+        val cm = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        android.os.Handler(android.os.Looper.getMainLooper()).post { cm.setPrimaryClip(android.content.ClipData.newPlainText("AIOPE", text)) }
+        "Copied to clipboard (${text.length} chars)"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      "clipboard_read" -> try {
+        val cm = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        var result = ""
+        val latch = java.util.concurrent.CountDownLatch(1)
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+          result = cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+          latch.countDown()
+        }
+        latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+        if (result.isBlank()) "Clipboard is empty" else result
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      // SMS
+      "read_sms" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_SMS)) return@execute "SMS permission denied."
+        val limit = (args["limit"] as? Number)?.toInt() ?: 10
+        val cursor = app.contentResolver.query(android.provider.Telephony.Sms.CONTENT_URI, arrayOf("_id", "address", "body", "date", "type"), null, null, "date DESC LIMIT $limit")
+        val msgs = mutableListOf<String>()
+        cursor?.use {
+          while (it.moveToNext()) {
+            val id = it.getLong(0)
+            val dir = if (it.getInt(4) == 1) "←" else "→"
+            val time = java.text.SimpleDateFormat("MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(3)))
+            msgs.add("[id:$id] $dir ${it.getString(1)} ($time): ${it.getString(2).take(200)}")
+          }
+        }
+        if (msgs.isEmpty()) "No SMS messages found." else msgs.joinToString("\n")
+      } catch (e: Exception) {
+        "Error: ${e.message}. SMS permission may be needed."
+      }
+
+      "send_sms" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.SEND_SMS)) return@execute "SMS permission denied."
+        val to = args["to"]?.toString() ?: return@execute "Error: 'to' phone number required"
+        val body = args["body"]?.toString() ?: return@execute "Error: 'body' required"
+        android.telephony.SmsManager.getDefault().sendTextMessage(to, null, body, null, null)
+        "SMS sent to $to"
+      } catch (e: Exception) {
+        "Error: ${e.message}. SMS permission may be needed."
+      }
+
+      "delete_sms" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_SMS)) return@execute "SMS permission denied."
+        val id = (args["sms_id"] as? Number)?.toLong() ?: args["sms_id"]?.toString()?.toLongOrNull() ?: return@execute "Error: sms_id required"
+        val uri = android.content.ContentUris.withAppendedId(android.provider.Telephony.Sms.CONTENT_URI, id)
+        val rows = app.contentResolver.delete(uri, null, null)
+        if (rows > 0) "Deleted SMS (id: $id)" else "SMS not found (id: $id)"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      // Device info
+      "device_info" -> try {
+        val bm = app.getSystemService(android.content.Context.BATTERY_SERVICE) as android.os.BatteryManager
+        val battery = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        val charging = bm.isCharging
+        val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+        val freeGb = "%.1f".format(stat.availableBytes / 1073741824.0)
+        val totalGb = "%.1f".format(stat.totalBytes / 1073741824.0)
+        val cm = app.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val net = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) }
+        val conn = when {
+          net == null -> "Offline"
+          net.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "WiFi"
+          net.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular"
+          else -> "Connected"
+        }
+        val am = app.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val mem = android.app.ActivityManager.MemoryInfo()
+        am.getMemoryInfo(mem)
+        val ramFree = "%.1f".format(mem.availMem / 1073741824.0)
+        val ramTotal = "%.1f".format(mem.totalMem / 1073741824.0)
+        "Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\nAndroid: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})\nBattery: $battery%${if (charging) " ⚡charging" else ""}\nStorage: $freeGb / $totalGb GB free\nRAM: $ramFree / $ramTotal GB free\nNetwork: $conn"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      // Media control
+      "media_control" -> try {
+        val action = args["action"]?.toString() ?: "play_pause"
+        val keyCode = when (action) {
+          "play", "pause", "play_pause" -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+          "next" -> android.view.KeyEvent.KEYCODE_MEDIA_NEXT
+          "previous", "prev" -> android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS
+          "stop" -> android.view.KeyEvent.KEYCODE_MEDIA_STOP
+          else -> return@execute "Unknown action: $action. Use play_pause, next, previous, stop."
+        }
+        val am = app.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+        am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyCode))
+        am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, keyCode))
+        "Media: $action"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"
+    }
   }
 
   private fun executeFetchUrl(args: Map<String, Any?>): String = try {
