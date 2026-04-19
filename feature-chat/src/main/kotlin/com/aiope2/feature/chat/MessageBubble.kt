@@ -183,7 +183,9 @@ private fun AssistantBubble(
     if (message.toolErrors.isNotEmpty()) {
       for (err in message.toolErrors) {
         Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
-          Text("⚠ $err", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(8.dp))
+          SelectionContainer {
+            Text("⚠ $err", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(8.dp))
+          }
         }
         Spacer(Modifier.height(4.dp))
       }

@@ -258,7 +258,22 @@ class ToolExecutor(
         putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, args["skip_ui"] as? Boolean ?: false)
         addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
       }
-      app.startActivity(intent)
+      if (intent.resolveActivity(app.packageManager) != null) {
+        app.startActivity(intent)
+      } else {
+        // Fallback: use AlarmManager for a one-shot alarm
+        val h = (args["hour"] as? Number)?.toInt() ?: 0
+        val m = (args["minutes"] as? Number)?.toInt() ?: 0
+        val cal = java.util.Calendar.getInstance().apply {
+          set(java.util.Calendar.HOUR_OF_DAY, h)
+          set(java.util.Calendar.MINUTE, m)
+          set(java.util.Calendar.SECOND, 0)
+        }
+        if (cal.timeInMillis <= System.currentTimeMillis()) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+        val am = app.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+        val pi = android.app.PendingIntent.getBroadcast(app, h * 100 + m, android.content.Intent("com.aiope2.ALARM"), android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+        am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
+      }
       val h = (args["hour"] as? Number)?.toInt()
       val m = (args["minutes"] as? Number)?.toInt()
       if (h != null && m != null) "Alarm set for ${"%d:%02d".format(h, m)}" else "Alarm creation opened"
