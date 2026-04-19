@@ -37,17 +37,21 @@ internal fun ToolTabStrip(calls: List<String>, results: List<String>) {
         val isSelected = idx == selectedIdx
         val toolName = call.substringBefore("(").substringBefore(" ").trim()
 
+        val statusColor = if (isDone) Color(0xFF4CAF50) else cs.primary
+
         Surface(
-          modifier = Modifier.widthIn(min = 48.dp, max = 140.dp).heightIn(min = 32.dp)
+          modifier = Modifier.widthIn(min = 48.dp, max = 140.dp).heightIn(min = 34.dp)
             .clickable { selectedIdx = if (isSelected) -1 else idx },
           shape = RoundedCornerShape(12.dp),
           color = if (isSelected) Color(0xFF1A1A2E) else Color(0xFF111111),
-          border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, cs.primary.copy(alpha = 0.4f)) else null,
+          border = if (isSelected) {
+            androidx.compose.foundation.BorderStroke(1.dp, cs.primary.copy(alpha = 0.4f))
+          } else {
+            androidx.compose.foundation.BorderStroke(1.dp, statusColor.copy(alpha = 0.3f))
+          },
         ) {
           Box(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-              Text(if (isDone) "✓" else "⟳", fontSize = 11.sp, color = if (isDone) Color(0xFF4CAF50) else cs.primary)
-              Spacer(Modifier.width(3.dp))
               if (!isDone) {
                 ShimmerText(toolName, cs)
               } else {
