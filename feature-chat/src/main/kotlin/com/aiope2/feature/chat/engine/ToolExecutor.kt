@@ -22,6 +22,8 @@ class ToolExecutor(
   private val onBrowserVisible: (Boolean) -> Unit,
   private val onBrowserMaximized: (Boolean) -> Unit,
   private val resolveTaskModel: (ModelTask) -> Pair<ProviderProfile, String>,
+  private val getAgentMode: () -> AgentMode = { AgentMode.CHAT },
+  var subagentManager: SubagentManager? = null,
 ) {
   var lastLocationData: LocationData? = null
   var locationUsedThisTurn = false
@@ -73,7 +75,8 @@ class ToolExecutor(
     td("delete_sms", "Delete an SMS message by its ID (from read_sms).", """{"type":"object","properties":{"sms_id":{"type":"integer","description":"SMS ID from read_sms"}},"required":["sms_id"]}"""),
     td("device_info", "Get device info: battery, storage, RAM, network, model.", """{"type":"object","properties":{}}"""),
     td("media_control", "Control media playback (play/pause, next, previous, stop).", """{"type":"object","properties":{"action":{"type":"string","description":"One of: play_pause, next, previous, stop"}},"required":["action"]}"""),
-  ).filter { toolStore.isToolEnabled(it.name) } + toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
+    td("task", "Spawn an async subagent to research or work on a task in the background. Use for parallel research, exploration, or any work that can run independently. Returns a task_id you can check later. The subagent has read-only access (search, fetch, read files).", """{"type":"object","properties":{"description":{"type":"string","description":"Short 3-5 word description"},"prompt":{"type":"string","description":"Detailed instructions for the subagent"}},"required":["description","prompt"]}"""),
+  ).filter { toolStore.isToolEnabled(it.name) && it.name !in getAgentMode().disabledTools } + toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
     var defs = mcpManager.getToolDefs(server.id)
     if (defs.isEmpty()) {
       // Auto-discover on first use (cache is in-memory, lost on restart)
@@ -462,6 +465,14 @@ class ToolExecutor(
         "Media: $action"
       } catch (e: Exception) {
         "Error: ${e.message}"
+      }
+
+      "task" -> {
+        val mgr = subagentManager ?: return@execute "Subagent system not available"
+        val desc = args["description"]?.toString() ?: "research"
+        val prompt = args["prompt"]?.toString() ?: return@execute "Error: prompt required"
+        val taskId = mgr.spawn(desc, prompt)
+        "Subagent spawned: task_id=$taskId, description=\"$desc\". It will run in the background. Check results when the UI shows it as finished."
       }
 
       else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"

@@ -13,8 +13,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -30,6 +32,8 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
   val modelLabel by viewModel._modelLabel.collectAsStateWithLifecycle()
   val browserVisible by viewModel.browserVisible.collectAsStateWithLifecycle()
   val browserMaximized by viewModel.browserMaximized.collectAsStateWithLifecycle()
+  val agentMode by viewModel.agentMode.collectAsStateWithLifecycle()
+  val subagentTasks by viewModel.subagentManager.tasks.collectAsStateWithLifecycle()
   val config = LocalConfiguration.current
   val isLandscape = config.screenWidthDp > config.screenHeightDp
   var showModelPicker by remember { mutableStateOf(false) }
@@ -44,7 +48,10 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
     Row(Modifier.fillMaxSize()) {
       if (!browserMaximized) {
         ChatContent(
-          messages = messages, isStreaming = isStreaming, terminalVisible = terminalVisible,
+          messages = messages, isStreaming = isStreaming,
+          agentMode = agentMode, onModeChange = { viewModel.setAgentMode(it) },
+          subagentTasks = subagentTasks,
+          terminalVisible = terminalVisible,
           browserVisible = browserVisible,
           imeVisible = imeVisible, modelLabel = modelLabel,
           listState = listState,
@@ -82,7 +89,10 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
     Column(Modifier.fillMaxSize()) {
       if (!browserMaximized) {
         ChatContent(
-          messages = messages, isStreaming = isStreaming, terminalVisible = terminalVisible,
+          messages = messages, isStreaming = isStreaming,
+          agentMode = agentMode, onModeChange = { viewModel.setAgentMode(it) },
+          subagentTasks = subagentTasks,
+          terminalVisible = terminalVisible,
           browserVisible = browserVisible,
           imeVisible = imeVisible, modelLabel = modelLabel,
           listState = listState,
@@ -128,6 +138,9 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
 private fun ChatContent(
   messages: List<ChatMessage>,
   isStreaming: Boolean,
+  agentMode: com.aiope2.feature.chat.engine.AgentMode = com.aiope2.feature.chat.engine.AgentMode.CHAT,
+  onModeChange: (com.aiope2.feature.chat.engine.AgentMode) -> Unit = {},
+  subagentTasks: List<com.aiope2.feature.chat.engine.SubagentManager.SubagentTask> = emptyList(),
   terminalVisible: Boolean,
   browserVisible: Boolean,
   imeVisible: Boolean,
@@ -230,6 +243,30 @@ private fun ChatContent(
     }
     HorizontalDivider(color = Color(0xFF2A2A2A))
 
+    // ── Mode toggle ──
+    Row(
+      Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+      horizontalArrangement = Arrangement.Center,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      com.aiope2.feature.chat.engine.AgentMode.entries.forEach { mode ->
+        val selected = mode == agentMode
+        val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent
+        val textColor = if (selected) MaterialTheme.colorScheme.primary else Color(0xFF888888)
+        Text(
+          text = mode.label,
+          fontSize = 11.sp,
+          fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+          color = textColor,
+          modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .clickable { onModeChange(mode) }
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+        )
+      }
+    }
+
     // ── Messages or empty state ──
     if (messages.isEmpty()) {
       EmptyState(onSend = onSend, modifier = Modifier.weight(1f))
@@ -248,6 +285,7 @@ private fun ChatContent(
         onRunCode = { code, lang ->
           onSend("Execute this $lang code using run_proot:\n```$lang\n$code\n```", emptyList())
         },
+        subagentTasks = subagentTasks,
         listState = listState,
         modifier = Modifier.weight(1f),
       )
@@ -309,6 +347,7 @@ private fun MessageList(
   onTranslate: ((String, String) -> Unit)? = null,
   onUiCallback: ((String, Map<String, String>) -> Unit)? = null,
   onRunCode: ((code: String, language: String) -> Unit)? = null,
+  subagentTasks: List<com.aiope2.feature.chat.engine.SubagentManager.SubagentTask> = emptyList(),
   listState: androidx.compose.foundation.lazy.LazyListState,
   modifier: Modifier = Modifier,
 ) {
@@ -342,6 +381,14 @@ private fun MessageList(
           onRunCode = onRunCode,
         )
         Spacer(Modifier.height(8.dp))
+      }
+      // Subagent task cards
+      if (subagentTasks.isNotEmpty()) {
+        item(key = "subagent_header") {
+          subagentTasks.forEach { task ->
+            com.aiope2.feature.chat.engine.SubagentCard(task)
+          }
+        }
       }
       item(key = "bottom_anchor") { Spacer(Modifier.height(1.dp)) }
     }

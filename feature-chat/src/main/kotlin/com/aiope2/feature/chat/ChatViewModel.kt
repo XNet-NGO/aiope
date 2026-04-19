@@ -59,6 +59,12 @@ class ChatViewModel @Inject constructor(
   val _modelLabel = MutableStateFlow("")
   val modelLabel: String get() = _modelLabel.value
 
+  private val _agentMode = MutableStateFlow(com.aiope2.feature.chat.engine.AgentMode.CHAT)
+  val agentMode: kotlinx.coroutines.flow.StateFlow<com.aiope2.feature.chat.engine.AgentMode> = _agentMode
+  fun setAgentMode(mode: com.aiope2.feature.chat.engine.AgentMode) {
+    _agentMode.value = mode
+  }
+
   fun switchModel(modelId: String) {
     val p = providerStore.getActive()
     providerStore.save(p.copy(selectedModelId = modelId))
@@ -736,6 +742,23 @@ class ChatViewModel @Inject constructor(
 
   val mcpManager: McpManager by lazy { McpManager(toolStore).also { it.startHeartbeat() } }
 
+  val subagentManager by lazy {
+    com.aiope2.feature.chat.engine.SubagentManager(
+      scope = viewModelScope,
+      createOrchestrator = {
+        val p = providerStore.getActive()
+        com.aiope2.feature.chat.engine.StreamingOrchestrator(
+          baseUrl = p.effectiveApiBase(),
+          apiKey = p.apiKey,
+          model = p.selectedModelId,
+        )
+      },
+      buildMessages = { prompt ->
+        listOf("system" to "You are a research subagent. Explore, search, and summarize findings concisely. You have no tools — work with the information provided in the prompt.", "user" to prompt)
+      },
+    )
+  }
+
   private val toolExecutor by lazy {
     ToolExecutor(
       app = getApplication(),
@@ -748,13 +771,16 @@ class ChatViewModel @Inject constructor(
       onBrowserVisible = { setBrowserVisible(it) },
       onBrowserMaximized = { setBrowserMaximized(it) },
       resolveTaskModel = { resolveTaskModel(it) },
-    )
+      getAgentMode = { _agentMode.value },
+    ).also { it.subagentManager = subagentManager }
   }
 
   private suspend fun buildSystemMessages(mc: com.aiope2.core.network.ModelConfig): MutableList<Pair<String, String>> {
     val msgs = mutableListOf<Pair<String, String>>()
+    val modePrefix = _agentMode.value.systemPrefix
     val prompt = com.aiope2.feature.chat.settings.buildAgentPrompt(chatDao)
-    if (prompt.isNotBlank()) msgs.add("system" to prompt)
+    val full = if (modePrefix.isNotBlank()) "$modePrefix\n\n$prompt" else prompt
+    if (full.isNotBlank()) msgs.add("system" to full)
     return msgs
   }
   private fun getBrowser() = com.aiope2.feature.chat.browser.BrowserHolder.getOrCreate(getApplication())
