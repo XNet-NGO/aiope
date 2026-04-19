@@ -51,7 +51,7 @@ class ToolStore @Inject constructor(
     prefs.edit().clear().apply()
   }
 
-  private val defaultOff = setOf("generate_image")
+  private val defaultOff = emptySet<String>()
 
   fun isToolEnabled(toolId: String): Boolean = runBlocking {
     dao.getToolToggle(toolId)?.enabled ?: (toolId !in defaultOff)
