@@ -245,6 +245,9 @@ private fun ChatContent(
           val msg = if (data.isNotEmpty()) "Responded with: ${data.entries.joinToString(", ") { "${it.key}: ${it.value}" }}" else "Pressed: $event"
           onSend(msg, emptyList())
         },
+        onRunCode = { code, lang ->
+          onSend("Execute this $lang code using run_proot:\n```$lang\n$code\n```", emptyList())
+        },
         listState = listState,
         modifier = Modifier.weight(1f),
       )
@@ -305,6 +308,7 @@ private fun MessageList(
   onFork: ((Int) -> Unit)? = null,
   onTranslate: ((String, String) -> Unit)? = null,
   onUiCallback: ((String, Map<String, String>) -> Unit)? = null,
+  onRunCode: ((code: String, language: String) -> Unit)? = null,
   listState: androidx.compose.foundation.lazy.LazyListState,
   modifier: Modifier = Modifier,
 ) {
@@ -335,6 +339,7 @@ private fun MessageList(
             null
           },
           onUiCallback = if (msg.role == Role.ASSISTANT) onUiCallback else null,
+          onRunCode = onRunCode,
         )
         Spacer(Modifier.height(8.dp))
       }

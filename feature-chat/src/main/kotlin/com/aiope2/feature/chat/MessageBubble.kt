@@ -57,6 +57,7 @@ fun MessageBubble(
   onFork: (() -> Unit)? = null,
   onTranslate: ((String) -> Unit)? = null,
   onUiCallback: ((String, Map<String, String>) -> Unit)? = null,
+  onRunCode: ((code: String, language: String) -> Unit)? = null,
 ) {
   val isUser = message.role == Role.USER
   val ctx = LocalContext.current
@@ -68,7 +69,7 @@ fun MessageBubble(
     if (isUser) {
       UserBubble(message, ctx, showMenu, { showMenu = it }, onEdit, onRetry, onCompact, onFork)
     } else {
-      AssistantBubble(message, ctx, isLastStreaming, onRetry, onCompact, onFork, onTranslate, onUiCallback)
+      AssistantBubble(message, ctx, isLastStreaming, onRetry, onCompact, onFork, onTranslate, onUiCallback, onRunCode)
     }
   }
 }
@@ -162,6 +163,7 @@ private fun AssistantBubble(
   onFork: (() -> Unit)?,
   onTranslate: ((String) -> Unit)? = null,
   onUiCallback: ((String, Map<String, String>) -> Unit)? = null,
+  onRunCode: ((code: String, language: String) -> Unit)? = null,
 ) {
   val cs = MaterialTheme.colorScheme
   Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)) {
@@ -255,6 +257,7 @@ private fun AssistantBubble(
               animateStreaming = true,
               modifier = Modifier.fillMaxWidth(),
               onExportPdf = { latex -> LatexPdfExporter.export(ctx, latex) },
+              onRunCode = onRunCode,
               onImageContent = { url, alt ->
                 val imgCtx = LocalContext.current
                 coil.compose.AsyncImage(
