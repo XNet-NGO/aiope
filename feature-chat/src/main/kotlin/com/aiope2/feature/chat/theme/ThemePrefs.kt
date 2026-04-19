@@ -35,6 +35,8 @@ class ThemePrefs(private val ctx: Context) {
     val USER_TEXT_COLOR = intPreferencesKey("user_text_color")
     val AI_TEXT_COLOR = intPreferencesKey("ai_text_color")
     val USE_CUSTOM_BUBBLES = booleanPreferencesKey("use_custom_bubbles")
+    val USER_BUBBLE_OPACITY = floatPreferencesKey("user_bubble_opacity")
+    val AI_BUBBLE_OPACITY = floatPreferencesKey("ai_bubble_opacity")
 
     // Display toggles
     val SHOW_THINKING = booleanPreferencesKey("show_thinking")
@@ -63,6 +65,8 @@ class ThemePrefs(private val ctx: Context) {
   val userTextColor: Flow<Int?> = ds.data.map { it[USER_TEXT_COLOR] }
   val aiTextColor: Flow<Int?> = ds.data.map { it[AI_TEXT_COLOR] }
   val useCustomBubbles: Flow<Boolean> = ds.data.map { it[USE_CUSTOM_BUBBLES] ?: false }
+  val userBubbleOpacity: Flow<Float> = ds.data.map { it[USER_BUBBLE_OPACITY] ?: 1f }
+  val aiBubbleOpacity: Flow<Float> = ds.data.map { it[AI_BUBBLE_OPACITY] ?: 1f }
 
   val showThinking: Flow<Boolean> = ds.data.map { it[SHOW_THINKING] ?: true }
   val showStatusTags: Flow<Boolean> = ds.data.map { it[SHOW_STATUS_TAGS] ?: true }

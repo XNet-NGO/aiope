@@ -29,6 +29,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
@@ -90,7 +91,7 @@ private fun UserBubble(
 ) {
   val cs = MaterialTheme.colorScheme
   val theme = com.aiope2.feature.chat.theme.LocalThemeState.current
-  val bubbleColor = if (theme.useCustomBubbles && theme.userBubbleColor != null) theme.userBubbleColor else Color(0xFF00E5FF).copy(alpha = 0.12f)
+  val bubbleColor = if (theme.useCustomBubbles && theme.userBubbleColor != null) theme.userBubbleColor.copy(alpha = theme.userBubbleOpacity) else Color(0xFF00E5FF).copy(alpha = if (theme.useCustomBubbles) theme.userBubbleOpacity else 0.12f)
   val textColor = if (theme.useCustomBubbles && theme.userTextColor != null) theme.userTextColor else cs.onSurface
   val screenW = LocalConfiguration.current.screenWidthDp.dp
   Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), horizontalArrangement = Arrangement.End) {
@@ -207,7 +208,7 @@ private fun AssistantBubble(
 
     // Content (skip if it's just a generated image file path)
     if (message.content.isNotBlank() && !(message.content.startsWith("file://") && message.imageUris.isNotEmpty())) {
-      val aiBubbleColor = if (theme.useCustomBubbles && theme.aiBubbleColor != null) theme.aiBubbleColor else MaterialTheme.colorScheme.surface
+      val aiBubbleColor = if (theme.useCustomBubbles && theme.aiBubbleColor != null) theme.aiBubbleColor.copy(alpha = theme.aiBubbleOpacity) else MaterialTheme.colorScheme.surface.copy(alpha = if (theme.useCustomBubbles) theme.aiBubbleOpacity else 1f)
       Surface(
         shape = RoundedCornerShape(16.dp),
         color = aiBubbleColor,
@@ -265,7 +266,7 @@ private fun AssistantBubble(
                       node = node,
                       isInteractive = !isStreaming,
                       onCallback = { event, data -> onUiCallback?.invoke(event, data) },
-                      modifier = Modifier.padding(vertical = 4.dp),
+                      modifier = Modifier.padding(vertical = 4.dp).alpha(theme.aiBubbleOpacity),
                     )
                   }
                 }
@@ -672,22 +673,23 @@ private fun MessageMenu(
 private fun rememberMarkdownTheme(cs: ColorScheme, theme: com.aiope2.feature.chat.theme.ThemeState = com.aiope2.feature.chat.theme.ThemeState()): MarkdownTheme = remember(cs, theme) {
   val textColor = if (theme.useCustomBubbles && theme.aiTextColor != null) theme.aiTextColor else cs.onSurface
   val isDark = theme.isDark
+  val bubbleAlpha = if (theme.useCustomBubbles) theme.aiBubbleOpacity else 1f
   MarkdownTheme(
     textColor = textColor,
     headingColor = textColor,
     linkColor = cs.primary,
     listBulletColor = cs.onSurfaceVariant,
     codeTextColor = if (isDark) Color(0xFFE0E0E0) else Color(0xFF1A1A1A),
-    codeBgColor = if (isDark) Color(0xFF111111) else Color(0xFFF0F0F0),
-    codeBorderColor = cs.outlineVariant,
+    codeBgColor = (if (isDark) Color(0xFF111111) else Color(0xFFF0F0F0)).copy(alpha = bubbleAlpha),
+    codeBorderColor = cs.outlineVariant.copy(alpha = bubbleAlpha),
     codeLabelColor = cs.primary.copy(alpha = 0.8f),
     inlineCodeTextColor = if (isDark) Color(0xFFFFB300) else Color(0xFFE65100),
     inlineCodeBgColor = if (isDark) Color(0xFF1A1A1A) else Color(0xFFEEEEEE),
     blockQuoteBorderColor = cs.outlineVariant,
     blockQuoteTextColor = cs.onSurfaceVariant,
-    tableHeaderBgColor = if (isDark) Color(0xFF1A1A1A) else Color(0xFFE8E8E8),
-    tableBodyBgColor = if (isDark) Color(0xFF111111) else Color(0xFFF5F5F5),
-    tableBorderColor = cs.outlineVariant,
+    tableHeaderBgColor = (if (isDark) Color(0xFF1A1A1A) else Color(0xFFE8E8E8)).copy(alpha = bubbleAlpha),
+    tableBodyBgColor = (if (isDark) Color(0xFF111111) else Color(0xFFF5F5F5)).copy(alpha = bubbleAlpha),
+    tableBorderColor = cs.outlineVariant.copy(alpha = bubbleAlpha),
     tableHeaderTextColor = cs.onSurface,
     tableBodyTextColor = cs.onSurface,
     hrColor = cs.outlineVariant,
