@@ -167,15 +167,13 @@ private fun AssistantBubble(
   Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
     // Reasoning blocks
     if (message.reasoning.isNotEmpty()) {
-      message.reasoning.forEachIndexed { idx, block ->
-        ReasoningBlock(block, idx == message.reasoning.lastIndex && !message.isReasoningDone)
-        Spacer(Modifier.height(8.dp))
-      }
+      ReasoningTabStrip(message.reasoning, message.isReasoningDone)
+      Spacer(Modifier.height(8.dp))
     }
 
     // Tool calls
     if (message.toolCalls.isNotEmpty()) {
-      ToolCallsBlock(message.toolCalls, message.toolResults)
+      ToolTabStrip(message.toolCalls, message.toolResults)
       Spacer(Modifier.height(8.dp))
     }
 
@@ -485,7 +483,7 @@ private fun ReasoningBlock(reasoning: String, isStreaming: Boolean) {
 }
 
 @Composable
-private fun ShimmerText(text: String, cs: ColorScheme) {
+internal fun ShimmerText(text: String, cs: ColorScheme) {
   val transition = rememberInfiniteTransition(label = "shimmer")
   val offset by transition.animateFloat(
     initialValue = -1f,
