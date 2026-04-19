@@ -742,22 +742,18 @@ class ChatViewModel @Inject constructor(
 
   val mcpManager: McpManager by lazy { McpManager(toolStore).also { it.startHeartbeat() } }
 
-  val subagentManager by lazy {
-    com.aiope2.feature.chat.engine.SubagentManager(
-      scope = viewModelScope,
-      createOrchestrator = {
-        val p = providerStore.getActive()
-        com.aiope2.feature.chat.engine.StreamingOrchestrator(
-          baseUrl = p.effectiveApiBase(),
-          apiKey = p.apiKey,
-          model = p.selectedModelId,
-        )
-      },
-      buildMessages = { prompt ->
-        listOf("system" to "You are a research subagent. Explore, search, and summarize findings concisely. You have no tools — work with the information provided in the prompt.", "user" to prompt)
-      },
-    )
-  }
+  private val subagentReadOnlyTools = setOf(
+    "search_web",
+    "search_images",
+    "search_location",
+    "fetch_url",
+    "read_file",
+    "list_directory",
+    "query_data",
+    "memory_recall",
+  )
+
+  lateinit var subagentManager: com.aiope2.feature.chat.engine.SubagentManager
 
   private val toolExecutor by lazy {
     ToolExecutor(
@@ -772,7 +768,37 @@ class ChatViewModel @Inject constructor(
       onBrowserMaximized = { setBrowserMaximized(it) },
       resolveTaskModel = { resolveTaskModel(it) },
       getAgentMode = { _agentMode.value },
-    ).also { it.subagentManager = subagentManager }
+    ).also { te ->
+      subagentManager = com.aiope2.feature.chat.engine.SubagentManager(
+        scope = viewModelScope,
+        createOrchestrator = { tools, onToolCall ->
+          val p = providerStore.getActive()
+          com.aiope2.feature.chat.engine.StreamingOrchestrator(
+            baseUrl = p.effectiveApiBase(),
+            apiKey = p.apiKey,
+            model = p.selectedModelId,
+            tools = tools,
+            onToolCall = onToolCall,
+          )
+        },
+        buildMessages = { prompt ->
+          listOf("system" to "You are a research subagent. Use your tools to search, read, and explore. Summarize findings concisely.", "user" to prompt)
+        },
+        getReadOnlyTools = { te.buildToolDefs().filter { it.name in subagentReadOnlyTools } },
+        executeReadOnlyTool = { name, args ->
+          if (name in subagentReadOnlyTools) te.execute(name, args) else "Tool '$name' not available to subagents"
+        },
+      ).also { mgr ->
+        mgr.onTaskFinished = { task ->
+          val status = if (task.stage == com.aiope2.feature.chat.engine.SubagentManager.Stage.FINISHED) "completed" else "failed"
+          val content = "[Subagent $status: ${task.description}]\n${task.result.take(3000)}"
+          viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            _messages.value = _messages.value.toMutableList().also { it.add(ChatMessage(role = Role.SYSTEM, content = content)) }
+          }
+        }
+      }
+      te.subagentManager = subagentManager
+    }
   }
 
   private suspend fun buildSystemMessages(mc: com.aiope2.core.network.ModelConfig): MutableList<Pair<String, String>> {

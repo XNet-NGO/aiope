@@ -10,8 +10,11 @@ import java.util.UUID
 
 class SubagentManager(
   private val scope: CoroutineScope,
-  private val createOrchestrator: () -> StreamingOrchestrator,
+  private val createOrchestrator: (List<StreamingOrchestrator.ToolDef>, suspend (String, Map<String, Any?>) -> String) -> StreamingOrchestrator,
   private val buildMessages: suspend (String) -> List<Pair<String, String>>,
+  private val getReadOnlyTools: () -> List<StreamingOrchestrator.ToolDef>,
+  private val executeReadOnlyTool: suspend (String, Map<String, Any?>) -> String,
+  var onTaskFinished: ((SubagentTask) -> Unit)? = null,
 ) {
   enum class Stage { SEARCHING, READING, SUMMARIZING, FINISHED, ERROR }
 
@@ -35,19 +38,30 @@ class SubagentManager(
       try {
         updateStage(task.id, Stage.SEARCHING)
         val messages = buildMessages(prompt)
+        val tools = getReadOnlyTools()
 
         updateStage(task.id, Stage.READING)
         val sb = StringBuilder()
-        val orchestrator = createOrchestrator()
+        val orchestrator = createOrchestrator(tools) { name, args ->
+          // Track stage based on tool usage
+          when (name) {
+            "search_web", "search_images", "search_location" -> updateStage(task.id, Stage.SEARCHING)
+            "fetch_url", "read_file", "list_directory" -> updateStage(task.id, Stage.READING)
+          }
+          executeReadOnlyTool(name, args)
+        }
         orchestrator.stream(messages).collect { chunk ->
           if (chunk.content.isNotEmpty()) sb.append(chunk.content)
-          // Move to summarizing once we have substantial content
           if (sb.length > 200) updateStage(task.id, Stage.SUMMARIZING)
         }
 
-        updateTask(task.id) { it.copy(stage = Stage.FINISHED, result = sb.toString()) }
+        val finished = task.copy(stage = Stage.FINISHED, result = sb.toString())
+        updateTask(task.id) { finished }
+        onTaskFinished?.invoke(finished)
       } catch (e: Exception) {
-        updateTask(task.id) { it.copy(stage = Stage.ERROR, error = e.message, result = "") }
+        val errTask = task.copy(stage = Stage.ERROR, error = e.message, result = "")
+        updateTask(task.id) { errTask }
+        onTaskFinished?.invoke(errTask)
       }
     }
     return task.id
