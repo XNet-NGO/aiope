@@ -21,10 +21,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-internal fun ToolTabStrip(calls: List<String>, results: List<String>) {
+internal fun ToolTabStrip(calls: List<String>, results: List<String>, errors: List<String> = emptyList()) {
   if (calls.isEmpty()) return
   val cs = MaterialTheme.colorScheme
   var selectedIdx by remember { mutableStateOf(-1) }
+
+  // Build a set of tool names that errored for quick lookup
+  val errorMap = remember(errors) { errors.associate { e -> e.substringBefore(":").trim() to e.substringAfter(":").trim() } }
 
   Column(Modifier.fillMaxWidth()) {
     // Tab row — scrollable when many tools
@@ -36,8 +39,14 @@ internal fun ToolTabStrip(calls: List<String>, results: List<String>) {
         val isDone = idx < results.size
         val isSelected = idx == selectedIdx
         val toolName = call.substringBefore("(").substringBefore(" ").trim()
-
-        val statusColor = if (isDone) Color(0xFF4CAF50) else cs.primary
+        val hasError = errorMap.containsKey(toolName)
+        val statusColor = if (hasError) {
+          cs.error
+        } else if (isDone) {
+          Color(0xFF4CAF50)
+        } else {
+          cs.primary
+        }
 
         Surface(
           modifier = Modifier.widthIn(min = 48.dp, max = 140.dp).heightIn(min = 34.dp)
@@ -45,17 +54,18 @@ internal fun ToolTabStrip(calls: List<String>, results: List<String>) {
           shape = RoundedCornerShape(12.dp),
           color = if (isSelected) Color(0xFF1A1A2E) else Color(0xFF111111),
           border = if (isSelected) {
-            androidx.compose.foundation.BorderStroke(1.dp, cs.primary.copy(alpha = 0.4f))
+            androidx.compose.foundation.BorderStroke(1.dp, statusColor.copy(alpha = 0.6f))
           } else {
             androidx.compose.foundation.BorderStroke(1.dp, statusColor.copy(alpha = 0.3f))
           },
         ) {
           Box(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-              if (!isDone) {
+              if (hasError) Text("⚠ ", fontSize = 11.sp, color = cs.error)
+              if (!isDone && !hasError) {
                 ShimmerText(toolName, cs)
               } else {
-                Text(toolName, fontSize = 12.sp, fontWeight = FontWeight.W700, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(toolName, fontSize = 12.sp, fontWeight = FontWeight.W700, color = if (hasError) cs.error else cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
               }
             }
           }
@@ -67,10 +77,12 @@ internal fun ToolTabStrip(calls: List<String>, results: List<String>) {
     AnimatedVisibility(visible = selectedIdx in calls.indices, enter = expandVertically(), exit = shrinkVertically()) {
       if (selectedIdx in calls.indices) {
         val isDone = selectedIdx < results.size
+        val selToolName = calls[selectedIdx].substringBefore("(").substringBefore(" ").trim()
+        val selHasError = errorMap.containsKey(selToolName)
         Surface(
           modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
           shape = RoundedCornerShape(12.dp),
-          color = Color(0xFF111111),
+          color = if (selHasError) cs.errorContainer.copy(alpha = 0.15f) else Color(0xFF111111),
         ) {
           Column(Modifier.padding(10.dp).heightIn(max = 160.dp)) {
             SelectionContainer {
@@ -78,9 +90,9 @@ internal fun ToolTabStrip(calls: List<String>, results: List<String>) {
             }
             if (isDone) {
               Spacer(Modifier.height(6.dp))
-              Surface(shape = RoundedCornerShape(8.dp), color = Color.White.copy(alpha = 0.06f), modifier = Modifier.fillMaxWidth()) {
+              Surface(shape = RoundedCornerShape(8.dp), color = if (selHasError) cs.errorContainer.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.06f), modifier = Modifier.fillMaxWidth()) {
                 SelectionContainer {
-                  Text(results[selectedIdx], fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(8.dp), fontFamily = FontFamily.Monospace)
+                  Text(results[selectedIdx], fontSize = 12.sp, lineHeight = 16.sp, color = if (selHasError) cs.onErrorContainer else cs.onSurfaceVariant, modifier = Modifier.padding(8.dp), fontFamily = FontFamily.Monospace)
                 }
               }
             }
