@@ -37,20 +37,16 @@ internal fun ReasoningTabStrip(reasoning: List<String>, isReasoningDone: Boolean
         val isActive = idx == activeIdx && !isReasoningDone
         val isSelected = idx == selectedIdx
         Surface(
-          modifier = Modifier.weight(1f).heightIn(min = 32.dp).clickable { selectedIdx = if (isSelected) -1 else idx },
+          modifier = Modifier.weight(1f).heightIn(min = 34.dp).clickable { selectedIdx = if (isSelected) -1 else idx },
           shape = RoundedCornerShape(12.dp),
           color = if (isSelected) Color(0xFF1A1A2E) else Color(0xFF111111),
           border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, cs.primary.copy(alpha = 0.4f)) else null,
         ) {
           Box(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-              Text("💭", fontSize = 11.sp)
-              Spacer(Modifier.width(3.dp))
-              if (isActive) {
-                ShimmerText("${idx + 1}", cs)
-              } else {
-                Text("${idx + 1}", fontSize = 12.sp, fontWeight = FontWeight.W700, color = cs.onSurfaceVariant)
-              }
+            if (isActive) {
+              ShimmerText("${idx + 1}", cs)
+            } else {
+              Text("${idx + 1}", fontSize = 12.sp, fontWeight = FontWeight.W700, color = cs.onSurfaceVariant)
             }
           }
         }
