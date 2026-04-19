@@ -249,71 +249,37 @@ private fun AssistantBubble(
               }
             }
           } else if (text.isNotBlank()) {
-            // Extract image grid tables and render natively
-            val imgTablePattern = remember { Regex("""\|[^\n]*!\[[^\]]*]\([^\)]+\)[^\n]*\|""") }
-            val imgPattern = remember { Regex("""!\[([^\]]*?)]\(([^\)]+)\)""") }
-            if (imgTablePattern.containsMatchIn(text)) {
-              // Split: text before table, the table, text after
-              val tableStart = text.lines().indexOfFirst { it.contains("![") && it.trimStart().startsWith("|") }
-              val tableEnd = text.lines().indexOfLast { it.contains("![") && it.trimStart().startsWith("|") }
-              val lines = text.lines()
-              val before = lines.take(tableStart).joinToString("\n").trim()
-              val after = lines.drop(tableEnd + 1).joinToString("\n").trim()
-              if (before.isNotBlank()) UniversalMarkdown(content = before, theme = mdTheme, animateStreaming = true, modifier = Modifier.fillMaxWidth())
-              // Parse image rows
-              val imgRows = lines.subList(tableStart, tableEnd + 1).map { row ->
-                imgPattern.findAll(row).map { it.groupValues[2] to it.groupValues[1] }.toList()
-              }.filter { it.isNotEmpty() }
-              val cols = imgRows.maxOfOrNull { it.size } ?: 1
-              imgRows.forEach { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                  row.forEach { (url, alt) ->
-                    coil.compose.AsyncImage(
-                      model = url,
-                      contentDescription = alt,
-                      modifier = Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(8.dp)),
-                      contentScale = ContentScale.Crop,
-                    )
-                  }
-                  // Fill empty cells
-                  repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
-                }
-              }
-              // Render text after the table (titles etc)
-              if (after.isNotBlank()) UniversalMarkdown(content = after, theme = mdTheme, animateStreaming = true, modifier = Modifier.fillMaxWidth())
-            } else {
-              UniversalMarkdown(
-                content = text,
-                theme = mdTheme,
-                animateStreaming = true,
-                modifier = Modifier.fillMaxWidth(),
-                onExportPdf = { latex -> LatexPdfExporter.export(ctx, latex) },
-                onImageContent = { url, alt ->
-                  val imgCtx = LocalContext.current
-                  coil.compose.AsyncImage(
-                    model = url,
-                    contentDescription = alt,
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .padding(vertical = 4.dp)
-                      .clip(RoundedCornerShape(8.dp))
-                      .combinedClickable(onClick = {}, onLongClick = {
-                        kotlin.concurrent.thread {
-                          try {
-                            val bmp = if (url.startsWith("file://")) {
-                              android.graphics.BitmapFactory.decodeFile(url.removePrefix("file://"))
-                            } else {
-                              java.net.URL(url).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
-                            }
-                            if (bmp != null) saveImageToGallery(imgCtx, bmp)
-                          } catch (_: Exception) {}
-                        }
-                      }),
-                    contentScale = ContentScale.FillWidth,
-                  )
-                },
-              )
-            } // close else (non-image-table)
+            UniversalMarkdown(
+              content = text,
+              theme = mdTheme,
+              animateStreaming = true,
+              modifier = Modifier.fillMaxWidth(),
+              onExportPdf = { latex -> LatexPdfExporter.export(ctx, latex) },
+              onImageContent = { url, alt ->
+                val imgCtx = LocalContext.current
+                coil.compose.AsyncImage(
+                  model = url,
+                  contentDescription = alt,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .combinedClickable(onClick = {}, onLongClick = {
+                      kotlin.concurrent.thread {
+                        try {
+                          val bmp = if (url.startsWith("file://")) {
+                            android.graphics.BitmapFactory.decodeFile(url.removePrefix("file://"))
+                          } else {
+                            java.net.URL(url).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+                          }
+                          if (bmp != null) saveImageToGallery(imgCtx, bmp)
+                        } catch (_: Exception) {}
+                      }
+                    }),
+                  contentScale = ContentScale.FillWidth,
+                )
+              },
+            )
           }
         }
       } // else (not streaming)
