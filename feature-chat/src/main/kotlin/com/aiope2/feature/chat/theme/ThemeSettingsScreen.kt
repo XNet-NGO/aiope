@@ -104,28 +104,77 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
     ) {
       // ── Theme Mode ──
       SectionHeader("Theme Mode")
+      val modes = listOf("dark", "light", "system", "custom")
       SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        listOf("light", "system", "dark").forEachIndexed { i, mode ->
-          SegmentedButton(selected = themeMode == mode, onClick = { scope.launch { prefs.set(ThemePrefs.THEME_MODE, mode) } }, shape = SegmentedButtonDefaults.itemShape(i, 3)) {
-            Text(mode.replaceFirstChar { it.uppercase() }, fontSize = 13.sp)
+        modes.forEachIndexed { i, mode ->
+          SegmentedButton(selected = themeMode == mode, onClick = { scope.launch { prefs.set(ThemePrefs.THEME_MODE, mode) } }, shape = SegmentedButtonDefaults.itemShape(i, modes.size)) {
+            Text(mode.replaceFirstChar { it.uppercase() }, fontSize = 12.sp)
           }
         }
       }
 
-      // ── Custom Colors ──
-      SectionHeader("Accent Colors")
-      ToggleRow("Use custom colors", useCustomColors) { scope.launch { prefs.set(ThemePrefs.USE_CUSTOM_COLORS, it) } }
-      if (useCustomColors) {
+      if (themeMode == "custom") {
+        // ── Accent Colors ──
+        SectionHeader("Accent Colors")
         Text("Primary", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ColorRow(selected = primaryColor) { scope.launch { prefs.set(ThemePrefs.PRIMARY_COLOR, it) } }
+        ColorRow(selected = primaryColor) {
+          scope.launch {
+            prefs.set(ThemePrefs.USE_CUSTOM_COLORS, true)
+            prefs.set(ThemePrefs.PRIMARY_COLOR, it)
+          }
+        }
         Spacer(Modifier.height(4.dp))
         Text("Secondary", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ColorRow(selected = secondaryColor) { scope.launch { prefs.set(ThemePrefs.SECONDARY_COLOR, it) } }
+        ColorRow(selected = secondaryColor) {
+          scope.launch {
+            prefs.set(ThemePrefs.USE_CUSTOM_COLORS, true)
+            prefs.set(ThemePrefs.SECONDARY_COLOR, it)
+          }
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+        // ── UI Color ──
+        SectionHeader("UI Color")
+        ToggleRow("Custom UI color", useUiColor) { scope.launch { prefs.set(ThemePrefs.USE_UI_COLOR, it) } }
+        if (useUiColor) {
+          ColorRow(selected = uiColor) { scope.launch { prefs.set(ThemePrefs.UI_COLOR, it) } }
+        }
+        Spacer(Modifier.height(4.dp))
+        ToggleRow("Custom text colors", useCustomText) { scope.launch { prefs.set(ThemePrefs.USE_CUSTOM_TEXT, it) } }
+        if (useCustomText) {
+          Text("Primary text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          ColorRow(selected = primaryTextColor) { scope.launch { prefs.set(ThemePrefs.PRIMARY_TEXT_COLOR, it) } }
+          Text("Secondary text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          ColorRow(selected = secondaryTextColor) { scope.launch { prefs.set(ThemePrefs.SECONDARY_TEXT_COLOR, it) } }
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+        // ── Bubble Colors ──
+        SectionHeader("Bubble Colors")
+        ToggleRow("Custom bubble colors", useCustomBubbles) { scope.launch { prefs.set(ThemePrefs.USE_CUSTOM_BUBBLES, it) } }
+        if (useCustomBubbles) {
+          Text("User bubble", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          ColorRow(selected = userBubbleColor) { scope.launch { prefs.set(ThemePrefs.USER_BUBBLE_COLOR, it) } }
+          Text("User text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          ColorRow(selected = userTextColor) { scope.launch { prefs.set(ThemePrefs.USER_TEXT_COLOR, it) } }
+          Spacer(Modifier.height(4.dp))
+          Text("AI bubble", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          ColorRow(selected = aiBubbleColor) { scope.launch { prefs.set(ThemePrefs.AI_BUBBLE_COLOR, it) } }
+          Text("AI text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          ColorRow(selected = aiTextColor) { scope.launch { prefs.set(ThemePrefs.AI_TEXT_COLOR, it) } }
+          Spacer(Modifier.height(4.dp))
+          Text("User bubble opacity: ${(userBubbleOpacity * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Slider(value = userBubbleOpacity, onValueChange = { scope.launch { prefs.set(ThemePrefs.USER_BUBBLE_OPACITY, it) } }, valueRange = 0.05f..1f)
+          Text("AI bubble opacity: ${(aiBubbleOpacity * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Slider(value = aiBubbleOpacity, onValueChange = { scope.launch { prefs.set(ThemePrefs.AI_BUBBLE_OPACITY, it) } }, valueRange = 0.05f..1f)
+        }
       }
 
       HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
-      // ── Background ──
+      // ── Background (all modes) ──
       SectionHeader("Background")
       ToggleRow("Background image/video", useBackground) { scope.launch { prefs.set(ThemePrefs.USE_BACKGROUND, it) } }
       if (useBackground) {
@@ -159,29 +208,7 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
 
       HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
-      // ── Bubble Colors ──
-      SectionHeader("Bubble Colors")
-      ToggleRow("Custom bubble colors", useCustomBubbles) { scope.launch { prefs.set(ThemePrefs.USE_CUSTOM_BUBBLES, it) } }
-      if (useCustomBubbles) {
-        Text("User bubble", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ColorRow(selected = userBubbleColor) { scope.launch { prefs.set(ThemePrefs.USER_BUBBLE_COLOR, it) } }
-        Text("User text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ColorRow(selected = userTextColor) { scope.launch { prefs.set(ThemePrefs.USER_TEXT_COLOR, it) } }
-        Spacer(Modifier.height(4.dp))
-        Text("AI bubble", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ColorRow(selected = aiBubbleColor) { scope.launch { prefs.set(ThemePrefs.AI_BUBBLE_COLOR, it) } }
-        Text("AI text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ColorRow(selected = aiTextColor) { scope.launch { prefs.set(ThemePrefs.AI_TEXT_COLOR, it) } }
-        Spacer(Modifier.height(4.dp))
-        Text("User bubble opacity: ${(userBubbleOpacity * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Slider(value = userBubbleOpacity, onValueChange = { scope.launch { prefs.set(ThemePrefs.USER_BUBBLE_OPACITY, it) } }, valueRange = 0.05f..1f)
-        Text("AI bubble opacity: ${(aiBubbleOpacity * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Slider(value = aiBubbleOpacity, onValueChange = { scope.launch { prefs.set(ThemePrefs.AI_BUBBLE_OPACITY, it) } }, valueRange = 0.05f..1f)
-      }
-
-      HorizontalDivider(Modifier.padding(vertical = 4.dp))
-
-      // ── Display Toggles ──
+      // ── Display (all modes) ──
       SectionHeader("Display")
       ToggleRow("Show thinking process", showThinking) { scope.launch { prefs.set(ThemePrefs.SHOW_THINKING, it) } }
       ToggleRow("Show status tags", showStatusTags) { scope.launch { prefs.set(ThemePrefs.SHOW_STATUS_TAGS, it) } }
@@ -189,19 +216,6 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
       Spacer(Modifier.height(4.dp))
       Text("UI opacity: ${(uiOpacity * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
       Slider(value = uiOpacity, onValueChange = { scope.launch { prefs.set(ThemePrefs.UI_OPACITY, it) } }, valueRange = 0.1f..1f)
-      Spacer(Modifier.height(4.dp))
-      ToggleRow("Custom UI color", useUiColor) { scope.launch { prefs.set(ThemePrefs.USE_UI_COLOR, it) } }
-      if (useUiColor) {
-        ColorRow(selected = uiColor) { scope.launch { prefs.set(ThemePrefs.UI_COLOR, it) } }
-      }
-      Spacer(Modifier.height(4.dp))
-      ToggleRow("Custom text colors", useCustomText) { scope.launch { prefs.set(ThemePrefs.USE_CUSTOM_TEXT, it) } }
-      if (useCustomText) {
-        Text("Primary text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ColorRow(selected = primaryTextColor) { scope.launch { prefs.set(ThemePrefs.PRIMARY_TEXT_COLOR, it) } }
-        Text("Secondary text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ColorRow(selected = secondaryTextColor) { scope.launch { prefs.set(ThemePrefs.SECONDARY_TEXT_COLOR, it) } }
-      }
 
       Spacer(Modifier.height(24.dp))
     }

@@ -55,15 +55,21 @@ fun ThemeProvider(content: @Composable () -> Unit) {
   val sysDark = isSystemInDarkTheme()
   val isDark = when (mode) {
     "light" -> false
+
     "dark" -> true
+
+    "custom" -> true
+
+    // custom defaults to dark base
     else -> sysDark
   }
+  val isCustom = mode == "custom"
 
   val useCustomColors = prefs.useCustomColors.collectAsState(initial = false).value
   val primaryColor = prefs.primaryColor.collectAsState(initial = null).value?.let { Color(it) }
   val secondaryColor = prefs.secondaryColor.collectAsState(initial = null).value?.let { Color(it) }
 
-  val colorScheme: ColorScheme = if (useCustomColors && primaryColor != null) {
+  val colorScheme: ColorScheme = if (isCustom && useCustomColors && primaryColor != null) {
     val base = if (isDark) darkColorScheme() else lightColorScheme()
     base.copy(
       primary = primaryColor,
@@ -83,7 +89,7 @@ fun ThemeProvider(content: @Composable () -> Unit) {
   val pTextColor = prefs.primaryTextColor.collectAsState(initial = null).value?.let { Color(it) }
   val sTextColor = prefs.secondaryTextColor.collectAsState(initial = null).value?.let { Color(it) }
   var finalScheme = colorScheme
-  if (useUiColor && uiColor != null) {
+  if (isCustom && useUiColor && uiColor != null) {
     finalScheme = finalScheme.copy(
       surface = uiColor,
       background = uiColor,
@@ -93,7 +99,7 @@ fun ThemeProvider(content: @Composable () -> Unit) {
       surfaceContainerLow = uiColor,
     )
   }
-  if (useCustomText) {
+  if (isCustom && useCustomText) {
     val primary = pTextColor ?: finalScheme.onSurface
     val secondary = sTextColor ?: primary.copy(alpha = 0.7f)
     finalScheme = finalScheme.copy(
