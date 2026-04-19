@@ -98,6 +98,10 @@ fun ThemeProvider(content: @Composable () -> Unit) {
       onSurface = pTextColor,
       onBackground = pTextColor,
       onSurfaceVariant = sTextColor ?: pTextColor.copy(alpha = 0.7f),
+      onPrimary = pTextColor,
+      onPrimaryContainer = pTextColor,
+      onSecondary = pTextColor,
+      onSecondaryContainer = pTextColor,
     )
   }
 
