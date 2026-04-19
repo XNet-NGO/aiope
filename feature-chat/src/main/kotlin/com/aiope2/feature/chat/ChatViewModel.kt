@@ -283,6 +283,7 @@ class ChatViewModel @Inject constructor(
     lastSendHash = hash
 
     val userMsg = ChatMessage(role = Role.USER, content = text, imageUris = imageUris)
+    if (_subagentManager != null) _subagentManager!!.clear()
     _messages.value = _messages.value + userMsg
 
     cancelStreaming()
