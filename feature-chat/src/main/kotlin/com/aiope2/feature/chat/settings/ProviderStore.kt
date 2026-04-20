@@ -26,6 +26,15 @@ class ProviderStore @Inject constructor(
       migrateFromPrefs()
       if (getAll().isEmpty()) seedDefault()
     }
+    seedTaskDefaults()
+  }
+
+  private fun seedTaskDefaults() {
+    val taskStore = com.aiope2.core.network.TaskModelStore(ctx)
+    if (taskStore.getTaskConfig(com.aiope2.core.network.ModelTask.SUBAGENT).profileId == null) {
+      val gw = getAll().firstOrNull { it.builtinId == "aiope_gateway" } ?: return
+      taskStore.setTaskConfig(com.aiope2.core.network.ModelTask.SUBAGENT, com.aiope2.core.network.TaskModelConfig("subagent", gw.id, "google-ai-studio/models-gemma-4-26b-a4b-it"))
+    }
   }
 
   private fun seedDefault() {
@@ -60,9 +69,6 @@ class ProviderStore @Inject constructor(
     save(default)
     setActive(default.id)
     fetchModelsAsync(default)
-    // Default subagent to the efficient MoE model
-    val taskStore = com.aiope2.core.network.TaskModelStore(ctx)
-    taskStore.setTaskConfig(com.aiope2.core.network.ModelTask.SUBAGENT, com.aiope2.core.network.TaskModelConfig("subagent", default.id, "google-ai-studio/models-gemma-4-26b-a4b-it"))
   }
 
   /** One-time migration from SharedPreferences */
