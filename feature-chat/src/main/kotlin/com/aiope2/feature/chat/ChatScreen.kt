@@ -16,12 +16,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
@@ -173,124 +176,126 @@ private fun ChatContent(
     com.aiope2.feature.chat.theme.ChatBackground(theme)
     Column(Modifier.fillMaxSize().alpha(theme.uiOpacity)) {
       // ── Toolbar ──
-      Surface(color = MaterialTheme.colorScheme.surface) {
-        Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
-          // Left: Chats icon + Share
-          Row(modifier = Modifier.align(Alignment.CenterStart)) {
-            IconButton(onClick = onChats, modifier = Modifier.size(36.dp)) {
-              Icon(Icons.Default.Forum, "Chats", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+      val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
+      val barColor = if (isLight) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surfaceContainer
+      val barBorder = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isLight) 0.6f else 0.3f)
+      Box(Modifier.fillMaxWidth().zIndex(1f)) {
+        Surface(
+          color = barColor,
+          border = androidx.compose.foundation.BorderStroke(0.5.dp, barBorder),
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
+            // Left: Chats icon + Share
+            Row(modifier = Modifier.align(Alignment.CenterStart)) {
+              IconButton(onClick = onChats, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.Forum, "Chats", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+              }
+              IconButton(onClick = onShareChat, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.Share, "Share", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+              }
             }
-            IconButton(onClick = onShareChat, modifier = Modifier.size(36.dp)) {
-              Icon(Icons.Default.Share, "Share", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+            // Center: Model dropdown spinner
+            Box(modifier = Modifier.align(Alignment.Center)) {
+              TextButton(
+                onClick = { showModelPicker = !showModelPicker },
+                contentPadding = PaddingValues(horizontal = 8.dp),
+              ) {
+                Text(modelLabel, fontSize = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurface)
+                Icon(Icons.Default.ArrowDropDown, null, modifier = Modifier.size(16.dp))
+              }
+              DropdownMenu(expanded = showModelPicker, onDismissRequest = { showModelPicker = false }) {
+                val models = onGetModels()
+                val activeModelId = onGetActiveModelId()
+                models.forEach { m ->
+                  val selected = m.id == activeModelId
+                  DropdownMenuItem(
+                    text = {
+                      Text(
+                        "${if (selected) "• " else ""}${m.displayName}",
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        fontSize = 13.sp,
+                      )
+                    },
+                    onClick = {
+                      onSwitchModel(m.id)
+                      showModelPicker = false
+                    },
+                  )
+                }
+                if (models.isEmpty()) {
+                  DropdownMenuItem(text = { Text("No models — fetch in Settings", fontSize = 12.sp) }, onClick = {})
+                }
+              }
             }
-          }
-          // Center: Model dropdown spinner
-          Box(modifier = Modifier.align(Alignment.Center)) {
-            TextButton(
-              onClick = { showModelPicker = !showModelPicker },
-              contentPadding = PaddingValues(horizontal = 8.dp),
-            ) {
-              Text(modelLabel, fontSize = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurface)
-              Icon(Icons.Default.ArrowDropDown, null, modifier = Modifier.size(16.dp))
-            }
-            DropdownMenu(expanded = showModelPicker, onDismissRequest = { showModelPicker = false }) {
-              val models = onGetModels()
-              val activeModelId = onGetActiveModelId()
-              models.forEach { m ->
-                val selected = m.id == activeModelId
-                DropdownMenuItem(
-                  text = {
-                    Text(
-                      "${if (selected) "• " else ""}${m.displayName}",
-                      color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                      fontSize = 13.sp,
-                    )
-                  },
-                  onClick = {
-                    onSwitchModel(m.id)
-                    showModelPicker = false
-                  },
+            // Right: Browser + Terminal + Settings
+            Row(modifier = Modifier.align(Alignment.CenterEnd)) {
+              IconButton(onClick = onToggleBrowser, modifier = Modifier.size(36.dp)) {
+                Icon(
+                  Icons.Default.Language,
+                  "Browser",
+                  modifier = Modifier.size(18.dp),
+                  tint = if (browserVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 )
               }
-              if (models.isEmpty()) {
-                DropdownMenuItem(text = { Text("No models — fetch in Settings", fontSize = 12.sp) }, onClick = {})
+              IconButton(onClick = onToggleTerminal, modifier = Modifier.size(36.dp)) {
+                Icon(
+                  Icons.Default.Terminal,
+                  "Terminal",
+                  modifier = Modifier.size(18.dp),
+                  tint = if (terminalVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+              }
+              IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
+                Icon(
+                  Icons.Default.Settings,
+                  "Settings",
+                  modifier = Modifier.size(18.dp),
+                  tint = MaterialTheme.colorScheme.onSurface,
+                )
               }
             }
           }
-          // Right: Browser + Terminal + Settings
-          Row(modifier = Modifier.align(Alignment.CenterEnd)) {
-            IconButton(onClick = onToggleBrowser, modifier = Modifier.size(36.dp)) {
-              Icon(
-                Icons.Default.Language,
-                "Browser",
-                modifier = Modifier.size(18.dp),
-                tint = if (browserVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-              )
-            }
-            IconButton(onClick = onToggleTerminal, modifier = Modifier.size(36.dp)) {
-              Icon(
-                Icons.Default.Terminal,
-                "Terminal",
-                modifier = Modifier.size(18.dp),
-                tint = if (terminalVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-              )
-            }
-            IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
-              Icon(
-                Icons.Default.Settings,
-                "Settings",
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurface,
-              )
-            }
-          }
         }
-      }
-      HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-      // ── Mode toggle (tapered pill from toolbar) ──
-      Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-        val surfaceColor = MaterialTheme.colorScheme.surface
-        Canvas(Modifier.fillMaxWidth().height(12.dp)) {
-          val tabW = 180.dp.toPx()
-          val cx = size.width / 2
-          val left = cx - tabW / 2
-          val right = cx + tabW / 2
-          val taperInset = 18.dp.toPx()
-          val path = androidx.compose.ui.graphics.Path().apply {
-            moveTo(0f, 0f)
-            lineTo(left - taperInset, 0f)
-            quadraticTo(left, 0f, left, size.height)
-            lineTo(right, size.height)
-            quadraticTo(right, 0f, right + taperInset, 0f)
-            lineTo(size.width, 0f)
-            close()
-          }
-          drawPath(path, surfaceColor)
-        }
-        Row(
-          Modifier.padding(top = 0.dp)
-            .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-          horizontalArrangement = Arrangement.Center,
-          verticalAlignment = Alignment.CenterVertically,
+        // Pill hanging below toolbar into chat area
+        Surface(
+          shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
+          color = barColor,
+          modifier = Modifier.align(Alignment.BottomCenter).offset(y = 22.dp)
+            .drawBehind {
+              val stroke = 0.5.dp.toPx()
+              val r = 16.dp.toPx()
+              val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(0f, 0f)
+                lineTo(0f, size.height - r)
+                arcTo(androidx.compose.ui.geometry.Rect(0f, size.height - 2 * r, 2 * r, size.height), 180f, -90f, false)
+                lineTo(size.width - r, size.height)
+                arcTo(androidx.compose.ui.geometry.Rect(size.width - 2 * r, size.height - 2 * r, size.width, size.height), 90f, -90f, false)
+                lineTo(size.width, 0f)
+              }
+              drawPath(path, barBorder, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+            },
         ) {
-          com.aiope2.feature.chat.engine.AgentMode.entries.forEach { mode ->
-            val selected = mode == agentMode
-            val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent
-            val textColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-            Text(
-              text = mode.label,
-              fontSize = 11.sp,
-              fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-              color = textColor,
-              modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(bg)
-                .clickable { onModeChange(mode) }
-                .padding(horizontal = 14.dp, vertical = 4.dp),
-            )
+          Row(
+            Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            com.aiope2.feature.chat.engine.AgentMode.entries.forEach { mode ->
+              val selected = mode == agentMode
+              val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent
+              val textColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+              Text(
+                text = mode.label,
+                fontSize = 11.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = textColor,
+                modifier = Modifier
+                  .clip(RoundedCornerShape(12.dp))
+                  .background(bg)
+                  .clickable { onModeChange(mode) }
+                  .padding(horizontal = 14.dp, vertical = 4.dp),
+              )
+            }
           }
         }
       }
