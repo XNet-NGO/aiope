@@ -31,10 +31,18 @@ class ProviderStore @Inject constructor(
 
   private fun seedTaskDefaults() {
     val taskStore = com.aiope2.core.network.TaskModelStore(ctx)
-    if (taskStore.getTaskConfig(com.aiope2.core.network.ModelTask.SUBAGENT).profileId == null) {
-      val gw = getAll().firstOrNull { it.builtinId == "aiope_gateway" } ?: return
-      taskStore.setTaskConfig(com.aiope2.core.network.ModelTask.SUBAGENT, com.aiope2.core.network.TaskModelConfig("subagent", gw.id, "google-ai-studio/models-gemma-4-26b-a4b-it"))
+    val gw = getAll().firstOrNull { it.builtinId == "aiope_gateway" } ?: return
+    fun seed(task: com.aiope2.core.network.ModelTask, model: String) {
+      if (taskStore.getTaskConfig(task).profileId == null) {
+        taskStore.setTaskConfig(task, com.aiope2.core.network.TaskModelConfig(task.id, gw.id, model))
+      }
     }
+    seed(com.aiope2.core.network.ModelTask.SUMMARY, "google-ai-studio/models-gemma-3-27b-it")
+    seed(com.aiope2.core.network.ModelTask.TITLE, "google-ai-studio/models-gemma-3-1b-it")
+    seed(com.aiope2.core.network.ModelTask.TRANSLATION, "google-ai-studio/models-gemma-3-12b-it")
+    seed(com.aiope2.core.network.ModelTask.IMAGE_RECOGNITION, "google-ai-studio/models-gemma-3-27b-it")
+    seed(com.aiope2.core.network.ModelTask.SUBAGENT, "google-ai-studio/models-gemma-4-26b-a4b-it")
+    seed(com.aiope2.core.network.ModelTask.IMAGE_GENERATION, "pollinations-pollen/klein")
   }
 
   private fun seedDefault() {

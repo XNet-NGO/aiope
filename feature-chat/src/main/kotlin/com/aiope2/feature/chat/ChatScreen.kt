@@ -246,33 +246,45 @@ private fun ChatContent(
           }
         }
       }
-      HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-      // ── Mode toggle (tapered pill from toolbar) ──
-      Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+      // ── Mode toggle (tapered pill hanging from toolbar) ──
+      Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.TopCenter) {
         val surfaceColor = MaterialTheme.colorScheme.surface
-        Canvas(Modifier.fillMaxWidth().height(12.dp)) {
-          val tabW = 180.dp.toPx()
+        val pillW = 156.dp
+        val taperH = 8.dp
+        val pillH = 22.dp
+        Canvas(Modifier.fillMaxWidth().height(pillH + taperH)) {
+          val pw = pillW.toPx()
+          val th = taperH.toPx()
+          val ph = pillH.toPx()
           val cx = size.width / 2
-          val left = cx - tabW / 2
-          val right = cx + tabW / 2
-          val taperInset = 18.dp.toPx() // how far inward the taper curves
+          val left = cx - pw / 2
+          val right = cx + pw / 2
+          val spread = 24.dp.toPx()
+          val r = 10.dp.toPx()
           val path = androidx.compose.ui.graphics.Path().apply {
-            moveTo(0f, 0f)
-            lineTo(left - taperInset, 0f)
-            quadraticTo(left, 0f, left, size.height)
-            lineTo(right, size.height)
-            quadraticTo(right, 0f, right + taperInset, 0f)
-            lineTo(size.width, 0f)
+            // Start from top-left of taper
+            moveTo(left - spread, 0f)
+            // Curve down to pill left edge
+            quadraticTo(left, 0f, left, th)
+            // Down left side of pill
+            lineTo(left, th + ph - r)
+            // Bottom-left rounded corner
+            quadraticTo(left, th + ph, left + r, th + ph)
+            // Bottom edge
+            lineTo(right - r, th + ph)
+            // Bottom-right rounded corner
+            quadraticTo(right, th + ph, right, th + ph - r)
+            // Up right side
+            lineTo(right, th)
+            // Curve up to top-right of taper
+            quadraticTo(right, 0f, right + spread, 0f)
+            // Close across top
             close()
           }
           drawPath(path, surfaceColor)
         }
         Row(
-          Modifier.padding(top = 0.dp)
-            .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 4.dp, vertical = 2.dp),
+          Modifier.padding(top = taperH).width(pillW),
           horizontalArrangement = Arrangement.Center,
           verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -289,7 +301,7 @@ private fun ChatContent(
                 .clip(RoundedCornerShape(8.dp))
                 .background(bg)
                 .clickable { onModeChange(mode) }
-                .padding(horizontal = 14.dp, vertical = 4.dp),
+                .padding(horizontal = 12.dp, vertical = 3.dp),
             )
           }
         }
