@@ -465,8 +465,8 @@ private fun ReasoningBlock(reasoning: String, isStreaming: Boolean) {
           val lines = reasoning.lines()
           val displayText = if (isPartial && lines.size > 3) lines.takeLast(3).joinToString("\n") else reasoning
           val reasoningTheme = rememberMarkdownTheme(cs).copy(
-            textColor = cs.onSurfaceVariant.copy(alpha = 0.7f),
-            headingColor = cs.onSurfaceVariant.copy(alpha = 0.7f),
+            textColor = cs.onSurface.copy(alpha = 0.8f),
+            headingColor = cs.onSurface.copy(alpha = 0.8f),
           )
           UniversalMarkdown(
             content = displayText,
@@ -481,7 +481,7 @@ private fun ReasoningBlock(reasoning: String, isStreaming: Boolean) {
                   drawContent()
                   drawRect(
                     brush = Brush.verticalGradient(
-                      colors = listOf(Color(0xFF111111), Color.Transparent),
+                      colors = listOf(cs.surface, Color.Transparent),
                       startY = 0f,
                       endY = size.height * 0.5f,
                     ),

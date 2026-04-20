@@ -45,14 +45,14 @@ internal fun ReasoningTabStrip(reasoning: List<String>, isReasoningDone: Boolean
         Surface(
           modifier = Modifier.widthIn(min = 40.dp).heightIn(min = 34.dp).clickable { selectedIdx = if (isSelected) -1 else idx },
           shape = RoundedCornerShape(12.dp),
-          color = if (isSelected) Color(0xFF1A1A2E) else Color(0xFF111111),
+          color = if (isSelected) cs.surfaceContainerHigh else cs.surfaceContainer,
           border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, cs.primary.copy(alpha = 0.4f)) else null,
         ) {
           Box(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
             if (isActive) {
               ShimmerText("${idx + 1}", cs)
             } else {
-              Text("${idx + 1}", fontSize = 12.sp, fontWeight = FontWeight.W700, color = cs.onSurfaceVariant)
+              Text("${idx + 1}", fontSize = 12.sp, fontWeight = FontWeight.W700, color = cs.onSurface)
             }
           }
         }
@@ -67,19 +67,19 @@ internal fun ReasoningTabStrip(reasoning: List<String>, isReasoningDone: Boolean
         Surface(
           modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
           shape = RoundedCornerShape(12.dp),
-          color = Color(0xFF111111),
+          color = cs.surfaceContainer,
         ) {
           Box(Modifier.padding(10.dp).heightIn(max = 120.dp).verticalScroll(rememberScrollState())) {
             val lines = text.lines()
             val display = if (isActive && lines.size > 4) lines.takeLast(4).joinToString("\n") else text
             SelectionContainer {
-              Text(display, fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant.copy(alpha = 0.7f))
+              Text(display, fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurface.copy(alpha = 0.8f))
             }
             if (isActive && lines.size > 4) {
               Box(
                 Modifier.matchParentSize().drawWithContent {
                   drawContent()
-                  drawRect(brush = Brush.verticalGradient(listOf(Color(0xFF111111), Color.Transparent), startY = 0f, endY = size.height * 0.3f))
+                  drawRect(brush = Brush.verticalGradient(listOf(cs.surfaceContainer, Color.Transparent), startY = 0f, endY = size.height * 0.3f))
                 },
               )
             }
