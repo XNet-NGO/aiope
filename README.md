@@ -1,5 +1,10 @@
 # AIOPE
 
+[![Android CI](https://github.com/XNet-NGO/AIOPE/actions/workflows/android.yml/badge.svg)](https://github.com/XNet-NGO/AIOPE/actions/workflows/android.yml)
+[![Release](https://img.shields.io/github/v/release/XNet-NGO/AIOPE)](https://github.com/XNet-NGO/AIOPE/releases/latest)
+[![License: BSL 1.1](https://img.shields.io/badge/license-BSL%201.1-blue.svg)](LICENSE)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-green.svg)](https://developer.android.com)
+
 **An AI that doesn't just talk. It acts.**
 
 AIOPE is an Android AI assistant with 46 tools, a full Linux terminal, browser automation, location awareness, live data feeds, remote server management, and the ability to build native interactive UI on the fly. It connects to any OpenAI-compatible API and runs the entire tool loop on-device.
