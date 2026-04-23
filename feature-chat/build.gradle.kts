@@ -52,6 +52,9 @@ dependencies {
 
   // tokenizer
   implementation(libs.jtokkit)
+  implementation(libs.pdfbox.android) {
+    exclude(group = "org.bouncycastle")
+  }
 
   // datastore
   implementation("androidx.datastore:datastore-preferences:1.1.7")
