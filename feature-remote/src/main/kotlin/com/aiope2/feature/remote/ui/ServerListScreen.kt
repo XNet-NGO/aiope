@@ -57,7 +57,10 @@ fun ServerListScreen(
       )
     },
     floatingActionButton = {
-      FloatingActionButton(onClick = { editServer = null; showSheet = true }) {
+      FloatingActionButton(onClick = {
+        editServer = null
+        showSheet = true
+      }) {
         Icon(Icons.Default.Add, "Add server")
       }
     },
@@ -124,10 +127,16 @@ fun ServerListScreen(
       onDeploy = { name, host, user, port, privateKey, publicKey ->
         if (editServer != null) {
           viewModel.updateServer(editServer!!.id, name, host, user, port, privateKey, publicKey)
-          viewModel.redeployServer(editServer!!.copy(
-            name = name, host = host, user = user, bootstrapPort = port,
-            privateKey = privateKey, publicKey = publicKey,
-          ))
+          viewModel.redeployServer(
+            editServer!!.copy(
+              name = name,
+              host = host,
+              user = user,
+              bootstrapPort = port,
+              privateKey = privateKey,
+              publicKey = publicKey,
+            ),
+          )
         } else {
           viewModel.addAndDeploy(name, host, user, port, privateKey, publicKey)
         }
@@ -153,7 +162,8 @@ private fun ServerCard(
       server.status == "online" -> MaterialTheme.colorScheme.primary
       server.status == "error" -> MaterialTheme.colorScheme.error
       else -> MaterialTheme.colorScheme.outlineVariant
-    }, label = "status"
+    },
+    label = "status",
   )
 
   Card(
@@ -169,7 +179,7 @@ private fun ServerCard(
         Modifier
           .size(10.dp)
           .clip(CircleShape)
-          .background(statusColor)
+          .background(statusColor),
       )
       Spacer(Modifier.width(12.dp))
       Column(Modifier.weight(1f)) {
@@ -244,14 +254,16 @@ private fun ServerEditSheet(
       Text(title, style = MaterialTheme.typography.titleLarge)
 
       OutlinedTextField(
-        value = name, onValueChange = { name = it },
+        value = name,
+        onValueChange = { name = it },
         label = { Text("Name") },
         placeholder = { Text("e.g. serv-2") },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
       )
       OutlinedTextField(
-        value = host, onValueChange = { host = it },
+        value = host,
+        onValueChange = { host = it },
         label = { Text("Host") },
         placeholder = { Text("192.168.0.12") },
         modifier = Modifier.fillMaxWidth(),
@@ -259,14 +271,16 @@ private fun ServerEditSheet(
       )
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(
-          value = user, onValueChange = { user = it },
+          value = user,
+          onValueChange = { user = it },
           label = { Text("User") },
           placeholder = { Text("root") },
           modifier = Modifier.weight(1f),
           singleLine = true,
         )
         OutlinedTextField(
-          value = port, onValueChange = { port = it.filter { c -> c.isDigit() } },
+          value = port,
+          onValueChange = { port = it.filter { c -> c.isDigit() } },
           label = { Text("Port") },
           placeholder = { Text("22") },
           modifier = Modifier.width(100.dp),
@@ -283,7 +297,8 @@ private fun ServerEditSheet(
       )
 
       OutlinedTextField(
-        value = privateKey, onValueChange = { privateKey = it },
+        value = privateKey,
+        onValueChange = { privateKey = it },
         label = { Text("Private Key") },
         placeholder = { Text("-----BEGIN OPENSSH PRIVATE KEY-----\n...") },
         modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
@@ -291,7 +306,8 @@ private fun ServerEditSheet(
         textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
       )
       OutlinedTextField(
-        value = publicKey, onValueChange = { publicKey = it },
+        value = publicKey,
+        onValueChange = { publicKey = it },
         label = { Text("Public Key (optional)") },
         placeholder = { Text("ssh-ed25519 AAAA...") },
         modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
@@ -305,8 +321,14 @@ private fun ServerEditSheet(
         OutlinedButton(
           onClick = {
             val p = port.toIntOrNull() ?: 22
-            onSave(name.trim(), host.trim(), user.trim(), p,
-              privateKey.trim().ifBlank { null }, publicKey.trim().ifBlank { null })
+            onSave(
+              name.trim(),
+              host.trim(),
+              user.trim(),
+              p,
+              privateKey.trim().ifBlank { null },
+              publicKey.trim().ifBlank { null },
+            )
           },
           modifier = Modifier.weight(1f),
           enabled = name.isNotBlank() && host.isNotBlank() && user.isNotBlank(),
@@ -316,8 +338,14 @@ private fun ServerEditSheet(
         Button(
           onClick = {
             val p = port.toIntOrNull() ?: 22
-            onDeploy(name.trim(), host.trim(), user.trim(), p,
-              privateKey.trim().ifBlank { null }, publicKey.trim().ifBlank { null })
+            onDeploy(
+              name.trim(),
+              host.trim(),
+              user.trim(),
+              p,
+              privateKey.trim().ifBlank { null },
+              publicKey.trim().ifBlank { null },
+            )
           },
           modifier = Modifier.weight(1f),
           enabled = name.isNotBlank() && host.isNotBlank() && user.isNotBlank() && privateKey.isNotBlank(),

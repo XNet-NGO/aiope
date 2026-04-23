@@ -37,8 +37,7 @@ class SshSessionManager @Inject constructor() {
     return key
   }
 
-  private fun loadKey(client: SSHClient, privateKey: String) =
-    client.loadKeys(normalizeKey(privateKey), null, null)
+  private fun loadKey(client: SSHClient, privateKey: String) = client.loadKeys(normalizeKey(privateKey), null, null)
 
   suspend fun connect(server: RemoteServerEntity): String = withContext(Dispatchers.IO) {
     sessions[server.id]?.let { if (it.isConnected) return@withContext server.id }

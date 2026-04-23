@@ -1,6 +1,7 @@
 package com.aiope2.feature.chat.engine
 
 import android.app.Application
+import com.aiope2.core.model.RemoteToolBridge
 import com.aiope2.core.network.ModelTask
 import com.aiope2.core.network.ProviderProfile
 import com.aiope2.core.network.TaskModelStore
@@ -10,7 +11,6 @@ import com.aiope2.feature.chat.location.LocationProvider
 import com.aiope2.feature.chat.settings.McpManager
 import com.aiope2.feature.chat.settings.ProviderStore
 import com.aiope2.feature.chat.settings.ToolStore
-import com.aiope2.core.model.RemoteToolBridge
 
 class ToolExecutor(
   private val app: Application,
@@ -78,8 +78,7 @@ class ToolExecutor(
     td("device_info", "Get device info: battery, storage, RAM, network, model.", """{"type":"object","properties":{}}"""),
     td("media_control", "Control media playback (play/pause, next, previous, stop).", """{"type":"object","properties":{"action":{"type":"string","description":"One of: play_pause, next, previous, stop"}},"required":["action"]}"""),
     td("task", "Spawn an async subagent to research or work on a task in the background. Use for parallel research, exploration, or any work that can run independently. Returns a task_id you can check later. The subagent has read-only access (search, fetch, read files).", """{"type":"object","properties":{"description":{"type":"string","description":"Short 3-5 word description"},"prompt":{"type":"string","description":"Detailed instructions for the subagent"}},"required":["description","prompt"]}"""),
-    ) + (remoteToolBridge?.buildToolDefs()?.map { td(it.name, it.description, it.parameters) } ?: emptyList()
-  ).filter { toolStore.isToolEnabled(it.name) && it.name !in getAgentMode().disabledTools } + toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
+  ) + (remoteToolBridge?.buildToolDefs()?.map { td(it.name, it.description, it.parameters) } ?: emptyList()).filter { toolStore.isToolEnabled(it.name) && it.name !in getAgentMode().disabledTools } + toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
     var defs = mcpManager.getToolDefs(server.id)
     if (defs.isEmpty()) {
       // Auto-discover on first use (cache is in-memory, lost on restart)

@@ -32,17 +32,15 @@ class RemoteToolProvider @Inject constructor(
     ),
   )
 
-  override suspend fun execute(name: String, args: Map<String, Any?>): String {
-    return try {
-      when (name) {
-        "ssh_start" -> sshStart(args)
-        "ssh_exec" -> sshExec(args)
-        "ssh_exit" -> sshExit(args)
-        else -> """{"error":"Unknown remote tool: $name"}"""
-      }
-    } catch (e: Exception) {
-      JSONObject().put("error", e.message ?: "Unknown error").toString()
+  override suspend fun execute(name: String, args: Map<String, Any?>): String = try {
+    when (name) {
+      "ssh_start" -> sshStart(args)
+      "ssh_exec" -> sshExec(args)
+      "ssh_exit" -> sshExit(args)
+      else -> """{"error":"Unknown remote tool: $name"}"""
     }
+  } catch (e: Exception) {
+    JSONObject().put("error", e.message ?: "Unknown error").toString()
   }
 
   private suspend fun sshStart(args: Map<String, Any?>): String {

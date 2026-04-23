@@ -31,27 +31,41 @@ class ServerListViewModel @Inject constructor(
   private val _deployError = MutableStateFlow<String?>(null)
   val deployError = _deployError.asStateFlow()
 
-  fun clearError() { _deployError.value = null }
+  fun clearError() {
+    _deployError.value = null
+  }
 
   fun isConnected(server: RemoteServerEntity): Boolean = sshManager.isConnected(server.id)
 
   fun addServer(name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?) {
     viewModelScope.launch {
-      serverDao.upsert(RemoteServerEntity(
-        id = UUID.randomUUID().toString(),
-        name = name, host = host, user = user, bootstrapPort = port,
-        privateKey = privateKey, publicKey = publicKey,
-      ))
+      serverDao.upsert(
+        RemoteServerEntity(
+          id = UUID.randomUUID().toString(),
+          name = name,
+          host = host,
+          user = user,
+          bootstrapPort = port,
+          privateKey = privateKey,
+          publicKey = publicKey,
+        ),
+      )
     }
   }
 
   fun updateServer(id: String, name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?) {
     viewModelScope.launch {
       val existing = serverDao.getById(id) ?: return@launch
-      serverDao.upsert(existing.copy(
-        name = name, host = host, user = user, bootstrapPort = port,
-        privateKey = privateKey, publicKey = publicKey,
-      ))
+      serverDao.upsert(
+        existing.copy(
+          name = name,
+          host = host,
+          user = user,
+          bootstrapPort = port,
+          privateKey = privateKey,
+          publicKey = publicKey,
+        ),
+      )
     }
   }
 
@@ -59,8 +73,14 @@ class ServerListViewModel @Inject constructor(
     val id = UUID.randomUUID().toString()
     viewModelScope.launch {
       val server = RemoteServerEntity(
-        id = id, name = name, host = host, user = user, bootstrapPort = port,
-        privateKey = privateKey, publicKey = publicKey, status = "deploying",
+        id = id,
+        name = name,
+        host = host,
+        user = user,
+        bootstrapPort = port,
+        privateKey = privateKey,
+        publicKey = publicKey,
+        status = "deploying",
       )
       serverDao.upsert(server)
       deploy(server)

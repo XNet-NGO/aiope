@@ -3,6 +3,7 @@ package com.aiope2.feature.chat
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.aiope2.core.model.RemoteToolBridge
 import com.aiope2.core.network.ModelConfig
 import com.aiope2.core.network.ModelDef
 import com.aiope2.core.network.ProviderProfile
@@ -13,7 +14,6 @@ import com.aiope2.feature.chat.db.MessageEntity
 import com.aiope2.feature.chat.engine.StreamingOrchestrator
 import com.aiope2.feature.chat.engine.TokenCounter
 import com.aiope2.feature.chat.engine.ToolExecutor
-import com.aiope2.core.model.RemoteToolBridge
 import com.aiope2.feature.chat.settings.McpManager
 import com.aiope2.feature.chat.settings.ProviderStore
 import com.aiope2.feature.chat.settings.ToolStore
@@ -69,7 +69,9 @@ class ChatViewModel @Inject constructor(
 
   private val _autoRun = MutableStateFlow(false)
   val autoRun = _autoRun.asStateFlow()
-  fun setAutoRun(on: Boolean) { _autoRun.value = on }
+  fun setAutoRun(on: Boolean) {
+    _autoRun.value = on
+  }
   private var autoRunRounds = 0
 
   fun switchModel(modelId: String) {

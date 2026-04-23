@@ -40,7 +40,8 @@ class DeployUseCase @Inject constructor(
 
       // SCP installer to remote
       bootstrapClient.newSCPFileTransfer().upload(
-        net.schmizz.sshj.xfer.FileSystemFile(installer), "/tmp/aiope-remote-installer.sh"
+        net.schmizz.sshj.xfer.FileSystemFile(installer),
+        "/tmp/aiope-remote-installer.sh",
       )
 
       // Execute installer
