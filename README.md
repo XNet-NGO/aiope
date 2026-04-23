@@ -235,6 +235,20 @@ feature-remote/
 
 ---
 
+## Built By
+
+AIOPE was built by one developer and an AI pair in under a month. No team. No funding. No office. Just a server in a house and a terminal.
+
+~1000 commits. 46 tools. 10 languages across 26 repositories. The entire XNet software stack -- from low-level ZeroTier networking forks and TCP/IP stacks to MCP servers, a self-hosted LLM gateway, a custom markdown renderer, and the most feature-complete AI agent app on Android -- is maintained by the same person.
+
+The developer is disabled. AI-assisted development is the accessibility tool that closed the gap between vision and execution. AIOPE exists because the same paradigm it demonstrates -- a human directing an AI to build at a pace that shouldn't be possible -- is the paradigm that built it.
+
+No other Android app ships a Linux terminal, browser automation, SSH remote management, 46 tools with a 140-round autonomous loop, dynamic native UI generation, provider-agnostic model routing, and MCP support in a single package. The apps that come closest are backed by teams of hundreds.
+
+This one was built by two.
+
+---
+
 ## License
 
 AIOPE original code is licensed under the **Business Source License 1.1** (BSL 1.1).
