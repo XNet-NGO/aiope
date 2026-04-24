@@ -21,15 +21,21 @@ object LatexPdfExporter {
     webView.settings.javaScriptEnabled = true
     webView.webViewClient = object : WebViewClient() {
       override fun onPageFinished(view: WebView, url: String) {
-        view.postDelayed({
-          val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
-          val adapter = view.createPrintDocumentAdapter("AIOPE_LaTeX_Export")
-          printManager.print(
-            "AIOPE LaTeX Export",
-            adapter,
-            PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.NA_LETTER).build(),
-          )
-        }, 1500)
+        // Wait for KaTeX to render, then check readiness via JS
+        view.evaluateJavascript("document.querySelector('.katex') !== null || document.readyState === 'complete'") { ready ->
+          val delay = if (ready == "true") 300L else 1000L
+          view.postDelayed({
+            val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+            val adapter = view.createPrintDocumentAdapter("AIOPE_LaTeX_Export")
+            printManager.print(
+              "AIOPE LaTeX Export",
+              adapter,
+              PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.NA_LETTER).build(),
+            )
+            // Destroy WebView after print dialog is shown
+            view.postDelayed({ view.destroy() }, 5000)
+          }, delay)
+        }
       }
     }
     webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
