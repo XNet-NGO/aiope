@@ -291,29 +291,6 @@ class ChatViewModel @Inject constructor(
     }
   }
 
-  /** Save content:// URIs to disk as JPEG, return comma-separated relative paths */
-  private fun saveImagesToDisk(msgId: String, uris: List<String>): String {
-    if (uris.isEmpty()) return ""
-    val dir = java.io.File(getApplication<android.app.Application>().filesDir, "chat_images")
-    dir.mkdirs()
-    return uris.mapIndexedNotNull { i, uriStr ->
-      try {
-        val uri = android.net.Uri.parse(uriStr)
-        val input = getApplication<android.app.Application>().contentResolver.openInputStream(uri) ?: return@mapIndexedNotNull null
-        val bytes = input.readBytes()
-        input.close()
-        val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@mapIndexedNotNull null
-        val file = java.io.File(dir, "${msgId}_$i.jpg")
-        java.io.FileOutputStream(file).use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }
-        bmp.recycle()
-        "chat_images/${msgId}_$i.jpg"
-      } catch (e: Exception) {
-        android.util.Log.w("ChatVM", "image save failed: ${e.message}")
-        null
-      }
-    }.joinToString(",")
-  }
-
   private var lastSendTime = 0L
   private var lastSendHash = 0
 
@@ -336,7 +313,11 @@ class ChatViewModel @Inject constructor(
     cancelStreaming()
     streamingJob = viewModelScope.launch(Dispatchers.IO) {
       // Save images to disk
-      val savedPaths = saveImagesToDisk(userMsg.id, imageUris)
+      val savedPaths = com.aiope2.feature.chat.engine.ImageProcessor.saveImagesToDisk(
+        getApplication<android.app.Application>().filesDir,
+        getApplication<android.app.Application>().contentResolver,
+        userMsg.id, imageUris,
+      )
       chatDao.insertMessage(
         MessageEntity(
           id = userMsg.id,
@@ -409,24 +390,7 @@ class ChatViewModel @Inject constructor(
 
         // Encode images to base64 — use saved disk paths (content URIs may expire)
         val filesDir = getApplication<android.app.Application>().filesDir
-        val imageBase64s = savedPaths.split(",").filter { it.isNotBlank() }.mapNotNull { relPath ->
-          try {
-            val file = java.io.File(filesDir, relPath)
-            if (!file.exists()) return@mapNotNull null
-            val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return@mapNotNull null
-            val padded = padToSquare(bmp)
-            val scaled = android.graphics.Bitmap.createScaledBitmap(padded, 448, 448, true)
-            if (padded != bmp) padded.recycle()
-            bmp.recycle()
-            val out = java.io.ByteArrayOutputStream()
-            scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
-            scaled.recycle()
-            android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
-          } catch (e: Exception) {
-            android.util.Log.w("ChatVM", "image encode failed: ${e.message}")
-            null
-          }
-        }
+        val imageBase64s = com.aiope2.feature.chat.engine.ImageProcessor.encodeImages(filesDir, savedPaths)
 
         val result = collectStream(orchestrator, sendMessages, imageBase64s)
 
@@ -811,18 +775,6 @@ class ChatViewModel @Inject constructor(
     return msgs
   }
   private fun getBrowser() = com.aiope2.feature.chat.browser.BrowserHolder.getOrCreate(getApplication())
-
-  private fun padToSquare(bmp: android.graphics.Bitmap): android.graphics.Bitmap {
-    val w = bmp.width
-    val h = bmp.height
-    if (w == h) return bmp
-    val size = maxOf(w, h)
-    val out = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
-    val canvas = android.graphics.Canvas(out)
-    canvas.drawColor(android.graphics.Color.BLACK)
-    canvas.drawBitmap(bmp, ((size - w) / 2f), ((size - h) / 2f), null)
-    return out
-  }
 
   override fun onCleared() {
     super.onCleared()
