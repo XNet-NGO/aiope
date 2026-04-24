@@ -5,6 +5,7 @@ import kotlinx.coroutines.*
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
+import java.lang.ref.WeakReference
 import java.net.ServerSocket
 import java.net.URLDecoder
 
@@ -27,11 +28,11 @@ object BrowserServer {
   private const val PORT = 8735
   private var serverSocket: ServerSocket? = null
   private var job: Job? = null
-  private var browserProvider: (() -> WebBrowser)? = null
+  private var browserRef: WeakReference<() -> WebBrowser>? = null
 
   fun start(getBrowser: () -> WebBrowser) {
     if (job != null) return
-    browserProvider = getBrowser
+    browserRef = WeakReference(getBrowser)
     job = CoroutineScope(Dispatchers.IO).launch {
       try {
         val ss = ServerSocket(PORT)
@@ -79,7 +80,7 @@ object BrowserServer {
     val path = if (qIdx >= 0) fullPath.substring(0, qIdx) else fullPath
     val params = if (qIdx >= 0) parseQuery(fullPath.substring(qIdx + 1)) else emptyMap()
     val browser = try {
-      browserProvider?.invoke()
+      browserRef?.get()?.invoke()
     } catch (_: Exception) {
       null
     }
