@@ -83,3 +83,6 @@
 
 # SSHJ / BouncyCastle
 -dontwarn sun.security.x509.X509Key
+
+# PDFBox - optional JPEG2000 decoder not bundled
+-dontwarn com.gemalto.jp2.**
