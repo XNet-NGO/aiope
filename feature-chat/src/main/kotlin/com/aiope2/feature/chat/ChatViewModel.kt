@@ -29,6 +29,7 @@ import javax.inject.Inject
 @HiltViewModel
 class ChatViewModel @Inject constructor(
   application: Application,
+  private val savedState: androidx.lifecycle.SavedStateHandle,
   private val chatDao: ChatDao,
   val providerStore: ProviderStore,
   val toolStore: ToolStore,
@@ -61,7 +62,9 @@ class ChatViewModel @Inject constructor(
   private val _browserMaximized = MutableStateFlow(false)
   val browserMaximized = _browserMaximized.asStateFlow()
 
-  private var conversationId = UUID.randomUUID().toString()
+  private var conversationId: String
+    get() = savedState["conversationId"] ?: UUID.randomUUID().toString().also { savedState["conversationId"] = it }
+    set(value) { savedState["conversationId"] = value }
 
   val _modelLabel = MutableStateFlow("")
   val modelLabel: String get() = _modelLabel.value
