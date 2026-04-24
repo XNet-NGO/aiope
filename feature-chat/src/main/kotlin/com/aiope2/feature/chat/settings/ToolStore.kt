@@ -6,6 +6,7 @@ import com.aiope2.feature.chat.db.McpServerEntity
 import com.aiope2.feature.chat.db.SettingsKvEntity
 import com.aiope2.feature.chat.db.ToolToggleEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -24,7 +25,7 @@ class ToolStore @Inject constructor(
   private fun migrateFromPrefs() {
     val prefs = ctx.getSharedPreferences("aiope2_tools", Context.MODE_PRIVATE)
     if (prefs.all.isEmpty()) return
-    runBlocking {
+    runBlocking(Dispatchers.IO) {
       // Migrate tool toggles
       prefs.all.forEach { (k, v) ->
         if (k.startsWith("tool_") && v is Boolean) {
@@ -53,38 +54,38 @@ class ToolStore @Inject constructor(
 
   private val defaultOff = emptySet<String>()
 
-  fun isToolEnabled(toolId: String): Boolean = runBlocking {
+  fun isToolEnabled(toolId: String): Boolean = runBlocking(Dispatchers.IO) {
     dao.getToolToggle(toolId)?.enabled ?: (toolId !in defaultOff)
   }
 
-  fun setToolEnabled(toolId: String, enabled: Boolean) = runBlocking {
+  fun setToolEnabled(toolId: String, enabled: Boolean) = runBlocking(Dispatchers.IO) {
     dao.upsertToolToggle(ToolToggleEntity(toolId, enabled))
   }
 
-  fun isDynamicUiEnabled(): Boolean = runBlocking {
+  fun isDynamicUiEnabled(): Boolean = runBlocking(Dispatchers.IO) {
     dao.getSetting("dynamic_ui_enabled")?.toBooleanStrictOrNull() ?: true
   }
 
-  fun setDynamicUiEnabled(enabled: Boolean) = runBlocking {
+  fun setDynamicUiEnabled(enabled: Boolean) = runBlocking(Dispatchers.IO) {
     dao.upsertSetting(SettingsKvEntity("dynamic_ui_enabled", enabled.toString()))
   }
 
-  fun getMcpServers(): List<McpServerConfig> = runBlocking {
+  fun getMcpServers(): List<McpServerConfig> = runBlocking(Dispatchers.IO) {
     dao.getMcpServers().mapNotNull { runCatching { McpServerConfig.fromJson(JSONObject(it.json)) }.getOrNull() }
   }
 
-  fun saveMcpServers(servers: List<McpServerConfig>) = runBlocking {
+  fun saveMcpServers(servers: List<McpServerConfig>) = runBlocking(Dispatchers.IO) {
     dao.deleteAllMcpServers()
     servers.forEach { dao.upsertMcpServer(McpServerEntity(it.id, it.toJson().toString())) }
   }
 
-  fun addMcpServer(server: McpServerConfig) = runBlocking {
+  fun addMcpServer(server: McpServerConfig) = runBlocking(Dispatchers.IO) {
     dao.upsertMcpServer(McpServerEntity(server.id, server.toJson().toString()))
   }
 
-  fun removeMcpServer(id: String) = runBlocking { dao.deleteMcpServer(id) }
+  fun removeMcpServer(id: String) = runBlocking(Dispatchers.IO) { dao.deleteMcpServer(id) }
 
-  fun updateMcpServer(server: McpServerConfig) = runBlocking {
+  fun updateMcpServer(server: McpServerConfig) = runBlocking(Dispatchers.IO) {
     dao.upsertMcpServer(McpServerEntity(server.id, server.toJson().toString()))
   }
 

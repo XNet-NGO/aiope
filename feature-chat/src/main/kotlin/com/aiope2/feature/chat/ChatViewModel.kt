@@ -531,7 +531,7 @@ class ChatViewModel @Inject constructor(
         val hadTools = toolCallsList.isNotEmpty()
         if (_autoRun.value && hadTools && autoRunRounds < 20) {
           autoRunRounds++
-          val prompt = kotlinx.coroutines.runBlocking { chatDao.getSetting("agent_auto_run_prompt") } ?: "continue"
+          val prompt = chatDao.getSetting("agent_auto_run_prompt") ?: "continue"
           withContext(Dispatchers.Main) { send(prompt) }
         } else {
           autoRunRounds = 0
@@ -877,6 +877,6 @@ class ChatViewModel @Inject constructor(
 
   override fun onCleared() {
     super.onCleared()
-    kotlinx.coroutines.runBlocking { remoteToolBridge.disconnectAll() }
+    kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) { remoteToolBridge.disconnectAll() }
   }
 }

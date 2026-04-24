@@ -10,6 +10,7 @@ import com.aiope2.feature.chat.db.ModelCacheEntity
 import com.aiope2.feature.chat.db.ProviderEntity
 import com.aiope2.feature.chat.db.SettingsKvEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -88,45 +89,45 @@ class ProviderStore @Inject constructor(
       val activeId = prefs.getString("active_id", "") ?: ""
       for (i in 0 until arr.length()) {
         val p = ProviderProfile.fromJson(arr.getJSONObject(i))
-        runBlocking {
+        runBlocking(Dispatchers.IO) {
           dao.upsertProvider(ProviderEntity(p.id, p.toJson().toString(), p.id == activeId))
         }
         // Migrate model cache
         val cacheRaw = prefs.getString("mcache_${p.builtinId}", null)
         val cacheTs = prefs.getLong("mcache_ts_${p.builtinId}", 0)
         if (cacheRaw != null) {
-          runBlocking { dao.upsertModelCache(ModelCacheEntity(p.builtinId, cacheRaw, cacheTs)) }
+          runBlocking(Dispatchers.IO) { dao.upsertModelCache(ModelCacheEntity(p.builtinId, cacheRaw, cacheTs)) }
         }
       }
       // Migrate geoapify key
       val geoKey = prefs.getString("geoapify_key", null)
       if (!geoKey.isNullOrBlank()) {
-        runBlocking { dao.upsertSetting(SettingsKvEntity("geoapify_key", geoKey)) }
+        runBlocking(Dispatchers.IO) { dao.upsertSetting(SettingsKvEntity("geoapify_key", geoKey)) }
       }
       prefs.edit().clear().apply()
     } catch (_: Exception) {}
   }
 
-  fun getAll(): List<ProviderProfile> = runBlocking {
+  fun getAll(): List<ProviderProfile> = runBlocking(Dispatchers.IO) {
     dao.getProviders().mapNotNull { runCatching { ProviderProfile.fromJson(JSONObject(it.json)) }.getOrNull() }
   }
 
-  fun getActive(): ProviderProfile = runBlocking {
+  fun getActive(): ProviderProfile = runBlocking(Dispatchers.IO) {
     dao.getActiveProvider()?.let { runCatching { ProviderProfile.fromJson(JSONObject(it.json)) }.getOrNull() }
   } ?: getAll().firstOrNull()
     ?: ProviderProfile(builtinId = "aiope_gateway", label = "AIOPE Gateway", apiKey = com.aiope2.feature.chat.BuildConfig.GATEWAY_KEY, selectedModelId = "google-ai-studio/models-gemma-4-31b-it")
 
   fun getById(id: String): ProviderProfile? = getAll().firstOrNull { it.id == id }
 
-  fun save(profile: ProviderProfile) = runBlocking {
+  fun save(profile: ProviderProfile) = runBlocking(Dispatchers.IO) {
     val existing = dao.getActiveProvider()
     val isActive = existing?.id == profile.id && existing.isActive
     dao.upsertProvider(ProviderEntity(profile.id, profile.toJson().toString(), isActive))
   }
 
-  fun delete(id: String) = runBlocking { dao.deleteProvider(id) }
+  fun delete(id: String) = runBlocking(Dispatchers.IO) { dao.deleteProvider(id) }
 
-  fun setActive(id: String) = runBlocking {
+  fun setActive(id: String) = runBlocking(Dispatchers.IO) {
     dao.clearActiveProvider()
     dao.setActiveProvider(id)
   }
@@ -148,16 +149,16 @@ class ProviderStore @Inject constructor(
         },
       )
     }
-    runBlocking { dao.upsertModelCache(ModelCacheEntity(builtinId, arr.toString())) }
+    runBlocking(Dispatchers.IO) { dao.upsertModelCache(ModelCacheEntity(builtinId, arr.toString())) }
   }
 
-  fun getModelCache(builtinId: String): List<ModelDef>? = runBlocking {
+  fun getModelCache(builtinId: String): List<ModelDef>? = runBlocking(Dispatchers.IO) {
     val e = dao.getModelCache(builtinId) ?: return@runBlocking null
     if (System.currentTimeMillis() - e.cachedAt > 24 * 60 * 60 * 1000) return@runBlocking null
     parseModelCache(e.json)
   }
 
-  fun getModelCacheStale(builtinId: String): List<ModelDef>? = runBlocking {
+  fun getModelCacheStale(builtinId: String): List<ModelDef>? = runBlocking(Dispatchers.IO) {
     dao.getModelCache(builtinId)?.let { parseModelCache(it.json) }
   }
 
@@ -173,8 +174,8 @@ class ProviderStore @Inject constructor(
     }
   }.getOrNull()
 
-  fun getGeoapifyKey(): String = runBlocking { dao.getSetting("geoapify_key") ?: "" }
-  fun setGeoapifyKey(key: String) = runBlocking { dao.upsertSetting(SettingsKvEntity("geoapify_key", key)) }
+  fun getGeoapifyKey(): String = runBlocking(Dispatchers.IO) { dao.getSetting("geoapify_key") ?: "" }
+  fun setGeoapifyKey(key: String) = runBlocking(Dispatchers.IO) { dao.upsertSetting(SettingsKvEntity("geoapify_key", key)) }
 
   private fun fetchModelsAsync(profile: ProviderProfile) {
     Thread {

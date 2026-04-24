@@ -112,7 +112,7 @@ class ToolExecutor(
     }
   }
 
-  fun execute(name: String, args: Map<String, Any?>): String {
+  suspend fun execute(name: String, args: Map<String, Any?>): String {
     if (!toolStore.isToolEnabled(name)) return "Tool '$name' is disabled."
     return when (name) {
       "run_sh" -> com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "").let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
@@ -152,7 +152,7 @@ class ToolExecutor(
         "Error: ${e.message}"
       }
 
-      "get_location" -> kotlinx.coroutines.runBlocking {
+      "get_location" -> {
         val loc = locationProvider.getFreshLocation() ?: locationProvider.getLastLocation()
         if (loc != null) {
           lastLocationData = LocationData(loc.latitude, loc.longitude, if (loc.hasAltitude()) loc.altitude else null, if (loc.hasSpeed()) loc.speed.toDouble() else null, if (loc.hasBearing()) loc.bearing.toDouble() else null, loc.accuracy.toDouble())
@@ -175,21 +175,21 @@ class ToolExecutor(
 
       "query_data" -> executeQueryData(args)
 
-      "browser_navigate" -> kotlinx.coroutines.runBlocking { getBrowser().navigate(args["url"]?.toString() ?: "") }
+      "browser_navigate" -> getBrowser().navigate(args["url"]?.toString() ?: "")
 
-      "browser_content" -> kotlinx.coroutines.runBlocking { getBrowser().getPageContent() }
+      "browser_content" -> getBrowser().getPageContent()
 
-      "browser_elements" -> kotlinx.coroutines.runBlocking { getBrowser().getElements() }
+      "browser_elements" -> getBrowser().getElements()
 
-      "browser_click" -> kotlinx.coroutines.runBlocking { getBrowser().click(args["selector"]?.toString() ?: "") }
+      "browser_click" -> getBrowser().click(args["selector"]?.toString() ?: "")
 
-      "browser_fill" -> kotlinx.coroutines.runBlocking { getBrowser().fill(args["selector"]?.toString() ?: "", args["value"]?.toString() ?: "") }
+      "browser_fill" -> getBrowser().fill(args["selector"]?.toString() ?: "", args["value"]?.toString() ?: "")
 
-      "browser_eval" -> kotlinx.coroutines.runBlocking { getBrowser().evaluateJs(args["script"]?.toString() ?: "") }
+      "browser_eval" -> getBrowser().evaluateJs(args["script"]?.toString() ?: "")
 
-      "browser_back" -> kotlinx.coroutines.runBlocking { if (getBrowser().goBack()) "Navigated back" else "No history to go back" }
+      "browser_back" -> if (getBrowser().goBack()) "Navigated back" else "No history to go back"
 
-      "browser_scroll" -> kotlinx.coroutines.runBlocking { getBrowser().scroll(args["direction"]?.toString() ?: "down", (args["amount"] as? Number)?.toInt() ?: 500) }
+      "browser_scroll" -> getBrowser().scroll(args["direction"]?.toString() ?: "down", (args["amount"] as? Number)?.toInt() ?: 500)
 
       "browser_open" -> {
         onBrowserVisible(true)
@@ -209,20 +209,20 @@ class ToolExecutor(
         if (max) "Browser maximized" else "Browser restored"
       }
 
-      "memory_store" -> kotlinx.coroutines.runBlocking {
-        val key = args["key"]?.toString() ?: return@runBlocking "Error: key required"
-        chatDao.upsertMemory(com.aiope2.feature.chat.db.MemoryEntity(key = key, content = args["content"]?.toString() ?: return@runBlocking "Error: content required", category = args["category"]?.toString() ?: "general"))
+      "memory_store" -> {
+        val key = args["key"]?.toString() ?: return "Error: key required"
+        chatDao.upsertMemory(com.aiope2.feature.chat.db.MemoryEntity(key = key, content = args["content"]?.toString() ?: return "Error: content required", category = args["category"]?.toString() ?: "general"))
         "Stored memory: $key"
       }
 
-      "memory_recall" -> kotlinx.coroutines.runBlocking {
+      "memory_recall" -> {
         val q = args["query"]?.toString() ?: ""
         val m = if (q.isBlank()) chatDao.getAllMemories() else chatDao.searchMemories(q)
         if (m.isEmpty()) "No memories found." else m.joinToString("\n") { "- ${it.key}: ${it.content} [${it.category}]" }
       }
 
-      "memory_forget" -> kotlinx.coroutines.runBlocking {
-        val key = args["key"]?.toString() ?: return@runBlocking "Error: key required"
+      "memory_forget" -> {
+        val key = args["key"]?.toString() ?: return "Error: key required"
         chatDao.deleteMemory(key)
         "Deleted memory: $key"
       }
@@ -473,12 +473,12 @@ class ToolExecutor(
         val mgr = subagentManager ?: return@execute "Tool 'task' not available"
         val desc = args["description"]?.toString() ?: "research"
         val prompt = args["prompt"]?.toString() ?: return@execute "Error: prompt required"
-        kotlinx.coroutines.runBlocking { mgr.runBlocking(desc, prompt) }
+         mgr.runBlocking(desc, prompt)
       }
 
       "ssh_start", "ssh_exec", "ssh_exit" -> {
         val rtp = remoteToolBridge ?: return@execute "Remote tools not available. feature-remote not initialized."
-        kotlinx.coroutines.runBlocking { rtp.execute(name, args) }
+         rtp.execute(name, args)
       }
 
       else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"
@@ -526,17 +526,16 @@ class ToolExecutor(
     "Error: ${e.message}"
   }
 
-  private fun executeQueryData(args: Map<String, Any?>): String = try {
+  private suspend fun executeQueryData(args: Map<String, Any?>): String = try {
     val cat = args["category"]?.toString() ?: ""
     val extra = args["extra"]?.toString() ?: ""
     val needsLoc = cat in setOf("weather", "weather_hourly", "alerts", "air_quality", "uv", "solar", "sunrise_sunset", "time")
     val (lat, lon) = if (needsLoc) {
-      val loc = lastLocationData ?: kotlinx.coroutines.runBlocking {
+      val loc = lastLocationData ?:
         locationProvider.getLastLocation()?.let { l ->
           lastLocationData = LocationData(l.latitude, l.longitude, null, null, null, l.accuracy.toDouble())
           lastLocationData
         }
-      }
       (loc?.latitude?.toString() ?: "") to (loc?.longitude?.toString() ?: "")
     } else {
       "" to ""
@@ -556,9 +555,9 @@ class ToolExecutor(
     "Error: ${e.message}"
   }
 
-  private fun executeImageGenerate(args: Map<String, Any?>): String = kotlinx.coroutines.runBlocking {
-    val prompt = args["prompt"]?.toString() ?: return@runBlocking "Error: prompt required"
-    try {
+  private suspend fun executeImageGenerate(args: Map<String, Any?>): String {
+    val prompt = args["prompt"]?.toString() ?: return "Error: prompt required"
+    return try {
       val (profile, modelId) = resolveTaskModel(ModelTask.IMAGE_GENERATION)
       val p = profile.copy(selectedModelId = modelId)
       val base = p.effectiveApiBase().trimEnd('/')
@@ -605,10 +604,10 @@ class ToolExecutor(
     }
   }
 
-  private fun executeAnalyzeImage(args: Map<String, Any?>): String = kotlinx.coroutines.runBlocking {
-    val url = args["url"]?.toString() ?: return@runBlocking "Error: url required"
+  private suspend fun executeAnalyzeImage(args: Map<String, Any?>): String {
+    val url = args["url"]?.toString() ?: return "Error: url required"
     val question = args["question"]?.toString() ?: "Describe this image in detail."
-    try {
+    return try {
       val (profile, modelId) = resolveTaskModel(ModelTask.IMAGE_RECOGNITION)
       val b64 = android.util.Base64.encodeToString(java.net.URL(url).readBytes(), android.util.Base64.NO_WRAP)
       val sb = StringBuilder()
@@ -619,7 +618,7 @@ class ToolExecutor(
     }
   }
 
-  private fun executeSearchLocation(query: String): String {
+  private suspend fun executeSearchLocation(query: String): String {
     locationUsedThisTurn = true
     val q = query.lowercase()
     val businessTerms = listOf("near", "closest", "nearest", "nearby", "restaurant", "food", "eat", "coffee", "cafe", "pizza", "burger", "gas", "fuel", "pharmacy", "hotel", "grocery", "bar", "pub", "gym", "bank", "atm", "parking", "hospital", "mcdonald", "starbucks", "walmart", "target", "costco", "wendy", "subway", "taco bell", "burger king", "chick-fil", "dunkin")
@@ -646,11 +645,11 @@ class ToolExecutor(
     }
   }
 
-  private fun searchPlaces(query: String): String {
+  private suspend fun searchPlaces(query: String): String {
     var lat = lastLocationData?.latitude
     var lng = lastLocationData?.longitude
     if (lat == null || lng == null) {
-      val loc = kotlinx.coroutines.runBlocking { locationProvider.getFreshLocation() ?: locationProvider.getLastLocation() }
+      val loc = locationProvider.getFreshLocation() ?: locationProvider.getLastLocation()
       if (loc != null) {
         lastLocationData = LocationData(loc.latitude, loc.longitude)
         lat = loc.latitude
