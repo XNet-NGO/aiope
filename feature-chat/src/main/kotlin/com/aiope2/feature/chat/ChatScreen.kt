@@ -468,6 +468,7 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
     }
   }
   val context = androidx.compose.ui.platform.LocalContext.current
+  val scope = androidx.compose.runtime.rememberCoroutineScope()
   val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
     androidx.activity.result.contract.ActivityResultContracts.GetContent(),
   ) { uri ->
@@ -475,7 +476,8 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
       val mime = context.contentResolver.getType(it) ?: ""
       if (mime.startsWith("image/")) {
         pendingImages.add(it.toString())
-      } else if (mime == "application/pdf") {
+      } else scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        val result = if (mime == "application/pdf") {
         try {
           val bytes = context.contentResolver.openInputStream(it)?.use { s -> s.readBytes() } ?: byteArrayOf()
           val name = it.lastPathSegment ?: "document.pdf"
@@ -484,18 +486,20 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
           val pageCount = doc.numberOfPages
           val extracted = com.tom_roush.pdfbox.text.PDFTextStripper().getText(doc).take(100000)
           doc.close()
-          text = text + (if (text.isNotBlank()) "\n" else "") + "[$name - $pageCount pages]\n${extracted.ifBlank { "[No extractable text]" }}"
+          (if (text.isNotBlank()) "\n" else "") + "[$name - $pageCount pages]\n${extracted.ifBlank { "[No extractable text]" }}"
         } catch (e: Exception) {
-          text = text + "\n[PDF error: ${e.message}]"
+          "\n[PDF error: ${e.message}]"
         }
       } else {
         try {
           val content = context.contentResolver.openInputStream(it)?.bufferedReader()?.readText()?.take(10000) ?: ""
           val name = it.lastPathSegment ?: "file"
-          text = text + (if (text.isNotBlank()) "\n" else "") + "[$name]\n$content"
+          (if (text.isNotBlank()) "\n" else "") + "[$name]\n$content"
         } catch (_: Exception) {
-          text = text + "\n[Attached: $it]"
+          "\n[Attached: $it]"
         }
+      }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { text = text + result }
       }
     }
   }

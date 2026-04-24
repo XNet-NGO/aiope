@@ -90,12 +90,13 @@ class WebBrowser(context: Context) {
 
   /** Click an element by CSS selector. */
   suspend fun click(selector: String): String {
+    val sel = selector.replace("\\", "\\\\").replace("'", "\\'")
     val result =
       evaluateJs(
         """
       (function(){
-        var el = document.querySelector('$selector');
-        if (!el) return 'Element not found: $selector';
+        var el = document.querySelector('$sel');
+        if (!el) return 'Element not found: $sel';
         el.click();
         return 'Clicked: ' + (el.tagName || '') + ' ' + (el.textContent || '').substring(0,50);
       })()
@@ -106,13 +107,14 @@ class WebBrowser(context: Context) {
 
   /** Fill an input element by CSS selector. */
   suspend fun fill(selector: String, value: String): String {
+    val sel = selector.replace("\\", "\\\\").replace("'", "\\'")
     val escaped = value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
     val result =
       evaluateJs(
         """
       (function(){
-        var el = document.querySelector('$selector');
-        if (!el) return 'Element not found: $selector';
+        var el = document.querySelector('$sel');
+        if (!el) return 'Element not found: $sel';
         el.focus();
         el.value = '$escaped';
         el.dispatchEvent(new Event('input', {bubbles:true}));

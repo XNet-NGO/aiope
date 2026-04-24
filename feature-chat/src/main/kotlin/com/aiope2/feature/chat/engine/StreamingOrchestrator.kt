@@ -218,7 +218,7 @@ class StreamingOrchestrator(
         },
       )
 
-      latch.await()
+      latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
       eventSource.cancel()
 
       if (sseError != null) {

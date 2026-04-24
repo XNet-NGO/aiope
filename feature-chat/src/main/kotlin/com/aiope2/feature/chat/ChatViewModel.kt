@@ -297,6 +297,7 @@ class ChatViewModel @Inject constructor(
         val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@mapIndexedNotNull null
         val file = java.io.File(dir, "${msgId}_$i.jpg")
         java.io.FileOutputStream(file).use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }
+        bmp.recycle()
         "chat_images/${msgId}_$i.jpg"
       } catch (_: Exception) {
         null
