@@ -35,6 +35,11 @@ class ChatViewModel @Inject constructor(
   private val remoteToolBridge: RemoteToolBridge,
 ) : AndroidViewModel(application) {
 
+  private val connectivityManager = application.getSystemService(android.net.ConnectivityManager::class.java)
+
+  private fun isOnline(): Boolean =
+    connectivityManager?.activeNetwork?.let { connectivityManager.getNetworkCapabilities(it)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) } ?: false
+
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
   val messages = _messages.asStateFlow()
 
@@ -309,6 +314,10 @@ class ChatViewModel @Inject constructor(
   private var lastSendHash = 0
 
   fun send(text: String, imageUris: List<String> = emptyList()) {
+    if (!isOnline()) {
+      _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ No internet connection. Please check your network and try again.")
+      return
+    }
     val now = System.currentTimeMillis()
     val hash = text.hashCode() xor imageUris.hashCode()
     if (now - lastSendTime < 500 && hash == lastSendHash) return
@@ -679,6 +688,10 @@ class ChatViewModel @Inject constructor(
 
   /** Send to LLM without adding a new user message (used by retry) */
   private fun resend(text: String) {
+    if (!isOnline()) {
+      _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ No internet connection. Please check your network and try again.")
+      return
+    }
     cancelStreaming()
     streamingJob = viewModelScope.launch(Dispatchers.IO) {
       _isStreaming.value = true
