@@ -284,7 +284,7 @@ class ChatViewModel @Inject constructor(
           chatDao.updateConversation(conversationId, title)
           refreshConversations()
         }
-      } catch (_: Exception) { /* silent failure for title gen */ }
+      } catch (e: Exception) { android.util.Log.w("ChatVM", "title gen failed: ${e.message}") }
     }
   }
 
@@ -304,7 +304,8 @@ class ChatViewModel @Inject constructor(
         java.io.FileOutputStream(file).use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, it) }
         bmp.recycle()
         "chat_images/${msgId}_$i.jpg"
-      } catch (_: Exception) {
+      } catch (e: Exception) {
+        android.util.Log.w("ChatVM", "image save failed: ${e.message}")
         null
       }
     }.joinToString(",")
@@ -426,7 +427,8 @@ class ChatViewModel @Inject constructor(
             scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
             scaled.recycle()
             android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
-          } catch (_: Exception) {
+          } catch (e: Exception) {
+            android.util.Log.w("ChatVM", "image encode failed: ${e.message}")
             null
           }
         }
@@ -664,7 +666,8 @@ class ChatViewModel @Inject constructor(
           )
         }
       } catch (_: kotlinx.coroutines.CancellationException) { /* stopped */ } catch (e: Exception) {
-        // Don't lose messages on failure
+        android.util.Log.e("ChatVM", "compact failed", e)
+        _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Compaction failed: ${e.message}")
       } finally {
         _isStreaming.value = false
       }

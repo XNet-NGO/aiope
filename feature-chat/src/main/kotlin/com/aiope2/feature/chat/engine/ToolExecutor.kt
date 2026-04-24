@@ -84,7 +84,7 @@ class ToolExecutor(
       // Auto-discover on first use (cache is in-memory, lost on restart)
       try {
         mcpManager.discoverTools(server)
-      } catch (_: Exception) {}
+      } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}") }
       defs = mcpManager.getToolDefs(server.id)
     }
     defs
@@ -107,7 +107,7 @@ class ToolExecutor(
       val list = (0 until cats.length()).map { cats.getString(it) }.filter { it != "search_web" && it != "image_search" }.joinToString(", ")
       cachedDataCategories = list
       list
-    } catch (_: Exception) {
+    } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}")
       "air_quality, alerts, apod, asteroids, astronauts, cat, cat_breed, cat_breeds, cme, earth_events, earth_image, earthquakes, earthquakes_significant, epic, fires, geomagnetic, impact_risk, ip_location, iss, nasa_media, nasa_tech, ocean_temp, solar, solar_flares, sunrise_sunset, tides, time, uv, weather, weather_hourly"
     }
   }
@@ -636,7 +636,7 @@ class ToolExecutor(
       } else {
         searchPlaces(query)
       }
-    } catch (_: Exception) {
+    } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}")
       try {
         searchPlaces(query)
       } catch (e: Exception) {
@@ -674,7 +674,7 @@ class ToolExecutor(
         val body = json.optJSONObject("data")?.toString() ?: raw
         if (body.contains("features")) return parseGeoapifyResults(body, query)
       }
-    } catch (_: Exception) {}
+    } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}") }
     val apiKey = providerStore.getGeoapifyKey()
     if (apiKey.isBlank()) return "Place search unavailable. Configure location search on the gateway or set a Geoapify key in Settings."
     val conn = (java.net.URL("https://api.geoapify.com/v2/places?categories=commercial,catering,service,entertainment,leisure,sport,tourism,accommodation,education,healthcare&conditions=named&filter=circle:$lng,$lat,5000&bias=proximity:$lng,$lat&limit=5&name=$encoded&apiKey=$apiKey").openConnection() as java.net.HttpURLConnection).apply {
@@ -725,7 +725,7 @@ class ToolExecutor(
     val imgs = mutableListOf<String>()
     extractImageUrls(org.json.JSONTokener(json).nextValue(), imgs)
     if (imgs.isNotEmpty()) imgs.distinct().take(20).joinToString("\n") + "\n\n" + json else json
-  } catch (_: Exception) {
+  } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}")
     json
   }
 
@@ -746,7 +746,7 @@ class ToolExecutor(
   private fun parseTime(s: String): Long = try {
     val fmts = listOf("yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm", "MM/dd/yyyy HH:mm", "MMM d yyyy h:mm a", "h:mm a")
     fmts.firstNotNullOfOrNull { fmt -> runCatching { java.text.SimpleDateFormat(fmt, java.util.Locale.US).parse(s)?.time }.getOrNull() } ?: s.toLong()
-  } catch (_: Exception) {
+  } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}")
     System.currentTimeMillis() + 3600000
   }
 

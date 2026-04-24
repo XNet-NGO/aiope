@@ -105,7 +105,7 @@ class ProviderStore @Inject constructor(
         runBlocking(Dispatchers.IO) { dao.upsertSetting(SettingsKvEntity("geoapify_key", geoKey)) }
       }
       prefs.edit().clear().apply()
-    } catch (_: Exception) {}
+    } catch (e: Exception) { android.util.Log.w("ProviderStore", "op failed: ${e.message}") }
   }
 
   fun getAll(): List<ProviderProfile> = runBlocking(Dispatchers.IO) {
@@ -204,7 +204,7 @@ class ProviderStore @Inject constructor(
           )
         }.sortedBy { it.id }
         if (models.isNotEmpty()) saveModelCache(profile.builtinId, models)
-      } catch (_: Exception) {}
+      } catch (e: Exception) { android.util.Log.w("ProviderStore", "op failed: ${e.message}") }
     }.start()
   }
 }
