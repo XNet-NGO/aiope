@@ -39,7 +39,7 @@ dependencies {
   implementation("com.google.android.gms:play-services-location:21.3.0")
 
   // maps
-  implementation("org.ramani-maps:ramani-maplibre:0.10.0")
+  implementation("org.ramani-maps:ramani-maplibre:0.11.0")
 
   // room
   implementation(libs.androidx.room.runtime)
