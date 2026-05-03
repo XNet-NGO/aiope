@@ -34,17 +34,29 @@ class StreamingOrchestrator(
       .readTimeout(10, TimeUnit.MINUTES)
       .writeTimeout(30, TimeUnit.SECONDS)
       .callTimeout(0, TimeUnit.SECONDS) // no overall call timeout — SSE streams are unbounded
-      .pingInterval(15, TimeUnit.SECONDS) // keep HTTP/2 connection alive between chunks
       .retryOnConnectionFailure(true)
       .protocols(listOf(okhttp3.Protocol.HTTP_1_1)) // avoid HTTP/2 stream reset issues with SSE
+      .connectionPool(okhttp3.ConnectionPool(4, 30, TimeUnit.SECONDS)) // shorter idle keeps to avoid stale connections
+      .socketFactory(javax.net.SocketFactory.getDefault()) // ensure fresh TCP sockets
       .build()
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
+    private const val MAX_RETRIES = 2
     private val PARALLEL_SAFE = setOf(
       "read_file", "list_directory", "query_data", "search_web", "search_images",
       "fetch_url", "memory_recall", "get_location", "browser_content", "browser_elements",
       "search_location", "read_calendar", "read_contacts", "read_sms", "clipboard_read",
       "device_info", "analyze_image", "image_generate", "task", "ssh_exec",
     )
+
+    private fun isTransientReset(msg: String): Boolean {
+      val lower = msg.lowercase()
+      return lower.contains("connection reset") ||
+        lower.contains("stream was reset") ||
+        lower.contains("unexpected end of stream") ||
+        lower.contains("cancel") ||
+        lower.contains("broken pipe") ||
+        lower.contains("connection abort")
+    }
   }
 
   fun stream(
@@ -98,130 +110,157 @@ class StreamingOrchestrator(
       }
 
       val body = buildRequestBody(rawMessages)
-      val request = Request.Builder()
-        .url("${baseUrl.trimEnd('/')}/chat/completions")
-        .header("Content-Type", "application/json; charset=utf-8")
-        .header("Accept", "text/event-stream")
-        .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
-        .post(body.toRequestBody(JSON_MT))
-        .build()
 
-      val toolAcc = mutableMapOf<Int, MutableMap<String, String>>()
+      var toolAcc = mutableMapOf<Int, MutableMap<String, String>>()
       var hasToolCalls = false
       var inThinkTag = false
       var thinkTagName = "think"
       var sseError: String? = null
       var sseDone = false
+      var gotAnyData = false
 
-      val factory = EventSources.createFactory(client)
-      val latch = java.util.concurrent.CountDownLatch(1)
+      // Retry loop for transient connection resets
+      var retries = 0
+      while (true) {
+        val request = Request.Builder()
+          .url("${baseUrl.trimEnd('/')}/chat/completions")
+          .header("Content-Type", "application/json; charset=utf-8")
+          .header("Accept", "text/event-stream")
+          .header("Connection", "keep-alive")
+          .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
+          .post(body.toRequestBody(JSON_MT))
+          .build()
 
-      val eventSource = factory.newEventSource(
-        request,
-        object : EventSourceListener() {
-          override fun onOpen(eventSource: EventSource, response: Response) {
-            android.util.Log.d("AIOPE2", "SSE opened: ${response.code}")
-            if (response.code !in 200..299) {
-              sseError = "HTTP ${response.code}: ${response.body?.string()?.take(300)}"
-              latch.countDown()
-            }
-          }
+        toolAcc = mutableMapOf()
+        hasToolCalls = false
+        sseError = null
+        sseDone = false
+        gotAnyData = false
 
-          override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
-            if (data == "[DONE]") {
-              sseDone = true
-              latch.countDown()
-              return
-            }
-            try {
-              val json = JSONObject(data)
-              val choices = json.optJSONArray("choices") ?: return
-              if (choices.length() == 0) return
-              val choice = choices.getJSONObject(0)
-              val delta = choice.optJSONObject("delta") ?: return
-              val finishReason = choice.optString("finish_reason", "")
+        val factory = EventSources.createFactory(client)
+        val latch = java.util.concurrent.CountDownLatch(1)
 
-              // Text content
-              var content = delta.optString("content", "").let { if (it == "null") "" else it }
-              // Reasoning
-              var reasoning = delta.optString("reasoning_content", "").let { if (it == "null") "" else it }.ifBlank {
-                delta.optString("reasoning", "").let { if (it == "null") "" else it }
-              }
-
-              // Handle <think>/<thought> tags
-              if (!inThinkTag) {
-                if (content.contains("<think>")) {
-                  inThinkTag = true
-                  thinkTagName = "think"
-                  content = content.substringAfter("<think>")
-                } else if (content.contains("<thought>")) {
-                  inThinkTag = true
-                  thinkTagName = "thought"
-                  content = content.substringAfter("<thought>")
-                }
-              }
-              if (inThinkTag) {
-                val closeTag = "</$thinkTagName>"
-                if (content.contains(closeTag)) {
-                  reasoning = content.substringBefore(closeTag)
-                  content = content.substringAfter(closeTag)
-                  inThinkTag = false
-                } else {
-                  reasoning = content
-                  content = ""
-                }
-              }
-
-              if (content.isNotEmpty() || reasoning.isNotEmpty()) {
-                trySend(ChatStreamChunk(content = content, reasoning = reasoning.ifBlank { null }))
-              }
-
-              // Tool calls
-              val tcArr = delta.optJSONArray("tool_calls")
-              if (tcArr != null) {
-                for (i in 0 until tcArr.length()) {
-                  val tc = tcArr.getJSONObject(i)
-                  val idx = tc.optInt("index", 0)
-                  val acc = toolAcc.getOrPut(idx) { mutableMapOf("id" to "", "name" to "", "args" to "") }
-                  tc.optString("id", "").let { if (it.isNotBlank()) acc["id"] = it }
-                  tc.optJSONObject("function")?.let { fn ->
-                    fn.optString("name", "").let { if (it.isNotBlank()) acc["name"] = it }
-                    fn.optString("arguments", "").let { acc["args"] = (acc["args"] ?: "") + it }
-                  }
-                }
-              }
-
-              if (finishReason == "tool_calls" || (finishReason == "stop" && toolAcc.isNotEmpty())) {
-                hasToolCalls = toolAcc.isNotEmpty()
+        val eventSource = factory.newEventSource(
+          request,
+          object : EventSourceListener() {
+            override fun onOpen(eventSource: EventSource, response: Response) {
+              android.util.Log.d("AIOPE2", "SSE opened: ${response.code} (attempt ${retries + 1})")
+              if (response.code !in 200..299) {
+                sseError = "HTTP ${response.code}: ${response.body?.string()?.take(300)}"
                 latch.countDown()
               }
-            } catch (e: Exception) {
-              android.util.Log.e("AIOPE2", "SSE parse: ${e.message} data=${data.take(100)}")
             }
-          }
 
-          override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-            val msg = t?.message ?: response?.let { "HTTP ${it.code}" } ?: "Connection failed"
-            // HTTP/2 stream resets during idle periods are not fatal — ignore if we already got data
-            if (msg.contains("CANCEL") || msg.contains("stream was reset")) {
-              android.util.Log.w("AIOPE2", "SSE stream reset (non-fatal): $msg")
-            } else {
-              sseError = msg
-              android.util.Log.e("AIOPE2", "SSE failure: $sseError", t)
+            override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
+              if (data == "[DONE]") {
+                sseDone = true
+                latch.countDown()
+                return
+              }
+              gotAnyData = true
+              try {
+                val json = JSONObject(data)
+                val choices = json.optJSONArray("choices") ?: return
+                if (choices.length() == 0) return
+                val choice = choices.getJSONObject(0)
+                val delta = choice.optJSONObject("delta") ?: return
+                val finishReason = choice.optString("finish_reason", "")
+
+                // Text content
+                var content = delta.optString("content", "").let { if (it == "null") "" else it }
+                // Reasoning
+                var reasoning = delta.optString("reasoning_content", "").let { if (it == "null") "" else it }.ifBlank {
+                  delta.optString("reasoning", "").let { if (it == "null") "" else it }
+                }
+
+                // Handle <think>/<thought> tags
+                if (!inThinkTag) {
+                  if (content.contains("<think>")) {
+                    inThinkTag = true
+                    thinkTagName = "think"
+                    content = content.substringAfter("<think>")
+                  } else if (content.contains("<thought>")) {
+                    inThinkTag = true
+                    thinkTagName = "thought"
+                    content = content.substringAfter("<thought>")
+                  }
+                }
+                if (inThinkTag) {
+                  val closeTag = "</$thinkTagName>"
+                  if (content.contains(closeTag)) {
+                    reasoning = content.substringBefore(closeTag)
+                    content = content.substringAfter(closeTag)
+                    inThinkTag = false
+                  } else {
+                    reasoning = content
+                    content = ""
+                  }
+                }
+
+                if (content.isNotEmpty() || reasoning.isNotEmpty()) {
+                  trySend(ChatStreamChunk(content = content, reasoning = reasoning.ifBlank { null }))
+                }
+
+                // Tool calls
+                val tcArr = delta.optJSONArray("tool_calls")
+                if (tcArr != null) {
+                  for (i in 0 until tcArr.length()) {
+                    val tc = tcArr.getJSONObject(i)
+                    val idx = tc.optInt("index", 0)
+                    val acc = toolAcc.getOrPut(idx) { mutableMapOf("id" to "", "name" to "", "args" to "") }
+                    tc.optString("id", "").let { if (it.isNotBlank()) acc["id"] = it }
+                    tc.optJSONObject("function")?.let { fn ->
+                      fn.optString("name", "").let { if (it.isNotBlank()) acc["name"] = it }
+                      fn.optString("arguments", "").let { acc["args"] = (acc["args"] ?: "") + it }
+                    }
+                  }
+                }
+
+                if (finishReason == "tool_calls" || (finishReason == "stop" && toolAcc.isNotEmpty())) {
+                  hasToolCalls = toolAcc.isNotEmpty()
+                  latch.countDown()
+                }
+              } catch (e: Exception) {
+                android.util.Log.e("AIOPE2", "SSE parse: ${e.message} data=${data.take(100)}")
+              }
             }
-            latch.countDown()
-          }
 
-          override fun onClosed(eventSource: EventSource) {
-            latch.countDown()
-          }
-        },
-      )
+            override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+              val msg = t?.message ?: response?.let { "HTTP ${it.code}" } ?: "Connection failed"
+              if (isTransientReset(msg) && !gotAnyData) {
+                // No data received yet — safe to retry the whole request
+                android.util.Log.w("AIOPE2", "SSE transient reset (will retry): $msg")
+                sseError = msg // mark for retry check
+              } else if (isTransientReset(msg) && sseDone) {
+                // Got [DONE] already, reset during close is harmless
+                android.util.Log.w("AIOPE2", "SSE reset after done (non-fatal): $msg")
+              } else {
+                sseError = msg
+                android.util.Log.e("AIOPE2", "SSE failure: $sseError", t)
+              }
+              latch.countDown()
+            }
 
-      latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
-      eventSource.cancel()
+            override fun onClosed(eventSource: EventSource) {
+              latch.countDown()
+            }
+          },
+        )
 
-      if (sseError != null) {
+        latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
+        eventSource.cancel()
+
+        // Retry on transient reset if no data was received yet
+        if (sseError != null && !gotAnyData && isTransientReset(sseError!!) && retries < MAX_RETRIES) {
+          retries++
+          android.util.Log.i("AIOPE2", "Retrying SSE request (attempt ${retries + 1}): $sseError")
+          Thread.sleep(500L * retries) // brief backoff
+          continue
+        }
+        break // success or non-retryable error
+      }
+
+      if (sseError != null && !sseDone) {
         send(ChatStreamChunk(error = sseError, isDone = true))
         close()
         return@callbackFlow

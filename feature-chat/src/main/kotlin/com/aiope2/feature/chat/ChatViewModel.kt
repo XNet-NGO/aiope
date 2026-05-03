@@ -403,7 +403,7 @@ class ChatViewModel @Inject constructor(
         }
 
         // Persist final message
-        val finalMsg = _messages.value.last()
+        val finalMsg = _messages.value.lastOrNull() ?: return@launch
         toolExecutor.locationUsedThisTurn = false // Don't carry map to next response
         android.util.Log.d("AIOPE2", "Final content len=${finalMsg.content.length} last100=${finalMsg.content.takeLast(100)}")
         val filesDirPath = getApplication<android.app.Application>().filesDir.absolutePath
