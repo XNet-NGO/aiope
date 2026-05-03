@@ -31,16 +31,15 @@ class StreamingOrchestrator(
   companion object {
     private val client = OkHttpClient.Builder()
       .connectTimeout(15, TimeUnit.SECONDS)
-      .readTimeout(10, TimeUnit.MINUTES)
+      .readTimeout(5, TimeUnit.MINUTES) // reduced from 10m — detect dead connections faster
       .writeTimeout(30, TimeUnit.SECONDS)
-      .callTimeout(0, TimeUnit.SECONDS) // no overall call timeout — SSE streams are unbounded
+      .callTimeout(0, TimeUnit.SECONDS)
       .retryOnConnectionFailure(true)
-      .protocols(listOf(okhttp3.Protocol.HTTP_1_1)) // avoid HTTP/2 stream reset issues with SSE
-      .connectionPool(okhttp3.ConnectionPool(4, 30, TimeUnit.SECONDS)) // shorter idle keeps to avoid stale connections
-      .socketFactory(javax.net.SocketFactory.getDefault()) // ensure fresh TCP sockets
+      .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
+      .connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.SECONDS)) // no pooling — fresh connection every request (cellular NAT kills idle)
       .build()
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
-    private const val MAX_RETRIES = 2
+    private const val MAX_RETRIES = 3
     private val PARALLEL_SAFE = setOf(
       "read_file", "list_directory", "query_data", "search_web", "search_images",
       "fetch_url", "memory_recall", "get_location", "browser_content", "browser_elements",
@@ -53,9 +52,16 @@ class StreamingOrchestrator(
       return lower.contains("connection reset") ||
         lower.contains("stream was reset") ||
         lower.contains("unexpected end of stream") ||
-        lower.contains("cancel") ||
         lower.contains("broken pipe") ||
-        lower.contains("connection abort")
+        lower.contains("connection abort") ||
+        lower.contains("connection shutdown") ||
+        lower.contains("failed to connect") ||
+        lower.contains("timeout") ||
+        lower.contains("enetunreach") ||
+        lower.contains("enetdown") ||
+        lower.contains("network is unreachable") ||
+        lower.contains("software caused connection abort") ||
+        lower.contains("recvfrom failed")
     }
   }
 
@@ -117,16 +123,17 @@ class StreamingOrchestrator(
       var thinkTagName = "think"
       var sseError: String? = null
       var sseDone = false
-      var gotAnyData = false
 
-      // Retry loop for transient connection resets
+      // Accumulated content across retries (for mid-stream recovery)
+      val contentSoFar = StringBuilder()
       var retries = 0
+
       while (true) {
         val request = Request.Builder()
           .url("${baseUrl.trimEnd('/')}/chat/completions")
           .header("Content-Type", "application/json; charset=utf-8")
           .header("Accept", "text/event-stream")
-          .header("Connection", "keep-alive")
+          .header("Connection", "close") // force fresh TCP — avoids cellular NAT killing reused sockets
           .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
           .post(body.toRequestBody(JSON_MT))
           .build()
@@ -135,7 +142,9 @@ class StreamingOrchestrator(
         hasToolCalls = false
         sseError = null
         sseDone = false
-        gotAnyData = false
+        // Track how much content we had before this attempt, to skip duplicates on retry
+        val contentBeforeAttempt = contentSoFar.length
+        var gotDataThisAttempt = false
 
         val factory = EventSources.createFactory(client)
         val latch = java.util.concurrent.CountDownLatch(1)
@@ -157,7 +166,7 @@ class StreamingOrchestrator(
                 latch.countDown()
                 return
               }
-              gotAnyData = true
+              gotDataThisAttempt = true
               try {
                 val json = JSONObject(data)
                 val choices = json.optJSONArray("choices") ?: return
@@ -197,7 +206,11 @@ class StreamingOrchestrator(
                   }
                 }
 
-                if (content.isNotEmpty() || reasoning.isNotEmpty()) {
+                if (content.isNotEmpty()) contentSoFar.append(content)
+
+                // On retry, skip emitting content we already sent to the UI
+                val shouldEmit = contentSoFar.length > contentBeforeAttempt || reasoning.isNotEmpty()
+                if (shouldEmit && (content.isNotEmpty() || reasoning.isNotEmpty())) {
                   trySend(ChatStreamChunk(content = content, reasoning = reasoning.ifBlank { null }))
                 }
 
@@ -227,16 +240,11 @@ class StreamingOrchestrator(
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
               val msg = t?.message ?: response?.let { "HTTP ${it.code}" } ?: "Connection failed"
-              if (isTransientReset(msg) && !gotAnyData) {
-                // No data received yet — safe to retry the whole request
-                android.util.Log.w("AIOPE2", "SSE transient reset (will retry): $msg")
-                sseError = msg // mark for retry check
-              } else if (isTransientReset(msg) && sseDone) {
-                // Got [DONE] already, reset during close is harmless
+              if (isTransientReset(msg) && sseDone) {
                 android.util.Log.w("AIOPE2", "SSE reset after done (non-fatal): $msg")
               } else {
                 sseError = msg
-                android.util.Log.e("AIOPE2", "SSE failure: $sseError", t)
+                android.util.Log.e("AIOPE2", "SSE failure (attempt ${retries + 1}): $sseError", t)
               }
               latch.countDown()
             }
@@ -247,21 +255,29 @@ class StreamingOrchestrator(
           },
         )
 
-        latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
+        latch.await(180, java.util.concurrent.TimeUnit.SECONDS)
         eventSource.cancel()
 
-        // Retry on transient reset if no data was received yet
-        if (sseError != null && !gotAnyData && isTransientReset(sseError!!) && retries < MAX_RETRIES) {
+        // Success — no error or already done
+        if (sseError == null || sseDone) break
+
+        // Non-retryable errors (HTTP 4xx, auth failures, etc.)
+        if (!isTransientReset(sseError!!) || sseError!!.startsWith("HTTP 4")) break
+
+        // Retry
+        if (retries < MAX_RETRIES) {
           retries++
-          android.util.Log.i("AIOPE2", "Retrying SSE request (attempt ${retries + 1}): $sseError")
-          Thread.sleep(500L * retries) // brief backoff
+          val delay = 1000L * retries // 1s, 2s, 3s
+          android.util.Log.i("AIOPE2", "Retrying SSE (attempt ${retries + 1}, had ${contentSoFar.length} chars): $sseError")
+          Thread.sleep(delay)
           continue
         }
-        break // success or non-retryable error
+        break // exhausted retries
       }
 
       if (sseError != null && !sseDone) {
-        send(ChatStreamChunk(error = sseError, isDone = true))
+        val retryNote = if (retries > 0) " (after ${retries + 1} attempts)" else ""
+        send(ChatStreamChunk(error = "$sseError$retryNote", isDone = true))
         close()
         return@callbackFlow
       }
