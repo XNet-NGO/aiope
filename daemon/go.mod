@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/charmbracelet/log v1.0.0
 	github.com/charmbracelet/ssh v0.0.0-20250826160808-ebfa259c7309
-	github.com/charmbracelet/wish v1.4.7
+	github.com/charmbracelet/wish v2.0.1
 	github.com/creack/pty v1.1.24
 	github.com/pkg/sftp v1.13.10
 	golang.org/x/crypto v0.50.0

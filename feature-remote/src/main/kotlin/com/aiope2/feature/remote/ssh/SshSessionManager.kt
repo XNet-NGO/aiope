@@ -5,7 +5,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.common.IOUtils
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier
 import net.schmizz.sshj.xfer.FileSystemFile
 import java.security.Security
 import java.util.concurrent.ConcurrentHashMap
@@ -29,6 +28,7 @@ class SshSessionManager @Inject constructor() {
   }
 
   private val sessions = ConcurrentHashMap<String, SSHClient>()
+  private val knownHosts = ConcurrentHashMap<String, String>() // "host:port" -> fingerprint
 
   private fun normalizeKey(raw: String): String {
     var key = raw.trim()
@@ -39,10 +39,25 @@ class SshSessionManager @Inject constructor() {
 
   private fun loadKey(client: SSHClient, privateKey: String) = client.loadKeys(normalizeKey(privateKey), null, null)
 
+  /** TOFU verifier: trusts first-seen host key, rejects changes */
+  private fun addTofuVerifier(client: SSHClient, host: String, port: Int) {
+    val hostKey = "$host:$port"
+    client.addHostKeyVerifier { _, _, key ->
+      val fp = net.schmizz.sshj.common.SecurityUtils.getFingerprint(key)
+      val stored = knownHosts[hostKey]
+      if (stored == null) {
+        knownHosts[hostKey] = fp
+        true
+      } else {
+        stored == fp
+      }
+    }
+  }
+
   suspend fun connect(server: RemoteServerEntity): String = withContext(Dispatchers.IO) {
     sessions[server.id]?.let { if (it.isConnected) return@withContext server.id }
     val client = SSHClient()
-    client.addHostKeyVerifier(PromiscuousVerifier())
+    addTofuVerifier(client, server.host, server.port)
     client.connect(server.host, server.port)
     val privateKey = server.privateKey
     if (privateKey.isNullOrBlank()) {
@@ -61,7 +76,7 @@ class SshSessionManager @Inject constructor() {
 
   suspend fun connectWithKey(host: String, port: Int, user: String, privateKey: String): SSHClient = withContext(Dispatchers.IO) {
     val client = SSHClient()
-    client.addHostKeyVerifier(PromiscuousVerifier())
+    addTofuVerifier(client, host, port)
     client.connect(host, port)
     try {
       client.authPublickey(user, loadKey(client, privateKey))

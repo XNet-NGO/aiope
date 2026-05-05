@@ -27,7 +27,7 @@
 
   <application
     android:name=".AiopeApp"
-    android:allowBackup="true"
+    android:allowBackup="false"
     android:icon="@mipmap/ic_launcher"
     android:label="AIOPE 2"
     android:roundIcon="@mipmap/ic_launcher_round"

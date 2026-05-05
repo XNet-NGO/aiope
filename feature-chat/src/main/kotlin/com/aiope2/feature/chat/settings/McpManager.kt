@@ -46,7 +46,16 @@ class McpManager(private val toolStore: ToolStore) {
 
   data class McpToolMeta(val name: String, val description: String, val inputSchema: JSONObject)
 
-  fun getToolDefs(serverId: String): List<StreamingOrchestrator.ToolDef> = (toolCache[serverId] ?: emptyList()).map { StreamingOrchestrator.ToolDef(it.name, it.description, it.inputSchema) }
+  fun getToolDefs(serverId: String): List<StreamingOrchestrator.ToolDef> {
+    val server = toolStore.getMcpServers().firstOrNull { it.id == serverId }
+    val prefix = server?.let { sanitizePrefix(it.name) + "_" } ?: "mcp_"
+    return (toolCache[serverId] ?: emptyList()).map {
+      StreamingOrchestrator.ToolDef(prefix + it.name, it.description, it.inputSchema)
+    }
+  }
+
+  private fun sanitizePrefix(name: String): String =
+    name.lowercase().replace(Regex("[^a-z0-9]"), "_").take(16).trimEnd('_')
 
   fun getCachedTools(serverId: String): List<McpToolMeta> = toolCache[serverId] ?: emptyList()
 
@@ -68,7 +77,8 @@ class McpManager(private val toolStore: ToolStore) {
         )
       }
       toolCache[server.id] = result
-      result.forEach { toolServerMap[it.name] = server }
+      val prefix = sanitizePrefix(server.name) + "_"
+      result.forEach { toolServerMap[prefix + it.name] = server }
       toolStore.updateMcpServer(server.copy(toolCount = result.size, status = McpStatus.CONNECTED, error = null))
       Result.success(result)
     } catch (e: Exception) {
@@ -79,10 +89,12 @@ class McpManager(private val toolStore: ToolStore) {
 
   fun executeTool(name: String, args: Map<String, Any?>): String? {
     val server = toolServerMap[name] ?: return null
+    val prefix = sanitizePrefix(server.name) + "_"
+    val originalName = if (name.startsWith(prefix)) name.removePrefix(prefix) else name
     return try {
       val argsJson = JSONObject()
       args.forEach { (k, v) -> argsJson.put(k, v) }
-      val resp = sendRequest(server, "tools/call", JSONObject().put("name", name).put("arguments", argsJson))
+      val resp = sendRequest(server, "tools/call", JSONObject().put("name", originalName).put("arguments", argsJson))
       val result = resp.optJSONObject("result") ?: return resp.toString()
       val content = result.optJSONArray("content") ?: return result.toString()
       (0 until content.length()).mapNotNull { content.getJSONObject(it).optString("text") }.joinToString("\n")

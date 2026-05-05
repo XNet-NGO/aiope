@@ -117,8 +117,16 @@ class ToolExecutor(
     }
   }
 
+  private val destructiveTools = setOf(
+    "run_sh", "run_proot", "write_file", "send_sms", "delete_sms",
+    "delete_event", "ssh_exec", "browser_eval", "browser_click", "browser_fill",
+  )
+
   suspend fun execute(name: String, args: Map<String, Any?>): String {
     if (!toolStore.isToolEnabled(name)) return "Tool '$name' is disabled."
+    if (name in destructiveTools && getAgentMode() == AgentMode.CHAT) {
+      return "⚠️ Tool '$name' is destructive and blocked in Chat mode. The user must switch to Build mode or enable Auto-Run to allow this action."
+    }
     return when (name) {
       "run_sh" -> com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "").let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
 
