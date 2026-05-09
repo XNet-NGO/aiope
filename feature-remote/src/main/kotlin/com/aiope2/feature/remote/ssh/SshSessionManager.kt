@@ -20,9 +20,11 @@ class SshSessionManager @Inject constructor() {
   companion object {
     init {
       try {
-        Security.removeProvider("BC")
-        Security.insertProviderAt(org.bouncycastle.jce.provider.BouncyCastleProvider(), 1)
-        net.schmizz.sshj.common.SecurityUtils.setSecurityProvider(null)
+        // Add BC at end (don't remove system provider — Android 10 needs it for BKS keystore)
+        if (Security.getProvider("BC") == null) {
+          Security.addProvider(org.bouncycastle.jce.provider.BouncyCastleProvider())
+        }
+        net.schmizz.sshj.common.SecurityUtils.setSecurityProvider("BC")
       } catch (_: Exception) {}
     }
   }
@@ -42,16 +44,19 @@ class SshSessionManager @Inject constructor() {
   /** TOFU verifier: trusts first-seen host key, rejects changes */
   private fun addTofuVerifier(client: SSHClient, host: String, port: Int) {
     val hostKey = "$host:$port"
-    client.addHostKeyVerifier { _, _, key ->
-      val fp = net.schmizz.sshj.common.SecurityUtils.getFingerprint(key)
-      val stored = knownHosts[hostKey]
-      if (stored == null) {
-        knownHosts[hostKey] = fp
-        true
-      } else {
-        stored == fp
+    client.addHostKeyVerifier(object : net.schmizz.sshj.transport.verification.HostKeyVerifier {
+      override fun verify(hostname: String?, p: Int, key: java.security.PublicKey?): Boolean {
+        val fp = net.schmizz.sshj.common.SecurityUtils.getFingerprint(key)
+        val stored = knownHosts[hostKey]
+        return if (stored == null) {
+          knownHosts[hostKey] = fp
+          true
+        } else {
+          stored == fp
+        }
       }
-    }
+      override fun findExistingAlgorithms(hostname: String?, port: Int): MutableList<String> = mutableListOf()
+    })
   }
 
   suspend fun connect(server: RemoteServerEntity): String = withContext(Dispatchers.IO) {
