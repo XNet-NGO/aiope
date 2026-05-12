@@ -110,6 +110,24 @@ else
 fi
 
 sleep 1
+
+# Open port for daemon
+if command -v ufw >/dev/null 2>&1; then
+    if [ "$(id -u)" = "0" ]; then
+        ufw allow "$PORT"/tcp >/dev/null 2>&1 && echo "ufw: allowed port $PORT"
+    else
+        sudo ufw allow "$PORT"/tcp >/dev/null 2>&1 && echo "ufw: allowed port $PORT"
+    fi
+elif command -v iptables >/dev/null 2>&1; then
+    if [ "$(id -u)" = "0" ]; then
+        iptables -C INPUT -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null || \
+        iptables -I INPUT -p tcp --dport "$PORT" -j ACCEPT && echo "iptables: allowed port $PORT"
+    else
+        sudo iptables -C INPUT -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null || \
+        sudo iptables -I INPUT -p tcp --dport "$PORT" -j ACCEPT && echo "iptables: allowed port $PORT"
+    fi
+fi
+
 if pgrep -f aiope-remote >/dev/null 2>&1; then
     PID=$(pgrep -f "aiope-remote" | head -1)
     echo ""

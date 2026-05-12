@@ -35,6 +35,10 @@ import kotlinx.coroutines.launch
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () -> Unit = {}) {
   val messages by viewModel.messages.collectAsStateWithLifecycle()
   val isStreaming by viewModel.isStreaming.collectAsStateWithLifecycle()
+  val isInRealtimeVoice by viewModel.isInRealtimeVoice.collectAsStateWithLifecycle()
+  val isVoiceListening by viewModel.isVoiceListening.collectAsStateWithLifecycle()
+  val isVoiceSpeaking by viewModel.isVoiceSpeaking.collectAsStateWithLifecycle()
+  val supportsRealtimeVoice by viewModel.supportsRealtimeVoice
   val terminalVisible by viewModel.terminalVisible.collectAsStateWithLifecycle()
   val modelLabel by viewModel._modelLabel.collectAsStateWithLifecycle()
   val browserVisible by viewModel.browserVisible.collectAsStateWithLifecycle()
@@ -578,6 +582,28 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
         } catch (_: Exception) {}
       }) {
         Icon(Icons.Default.Mic, "Voice", tint = MaterialTheme.colorScheme.onSurface)
+
+      // Realtime voice button (for audio-capable models)
+      if (supportsRealtimeVoice) {
+        IconButton(
+          onClick = { viewModel.toggleRealtimeVoice() }
+        ) {
+          Icon(
+            imageVector = if (isInRealtimeVoice) Icons.Default.MicOff else Icons.Default.Mic,
+            contentDescription = if (isInRealtimeVoice) "End voice call" else "Start voice call",
+            tint = if (isInRealtimeVoice) MaterialTheme.colorScheme.error 
+                   else MaterialTheme.colorScheme.primary
+          )
+        }
+      }
+      // Waveform visualization when in voice mode
+      if (isInRealtimeVoice) {
+        RealtimeWaveform(
+          isListening = isVoiceListening,
+          isSpeaking = isVoiceSpeaking,
+          modifier = Modifier.weight(1f)
+        )
+      }
       }
       // Clear
       IconButton(onClick = {
@@ -661,5 +687,72 @@ private fun ConversationSheet(viewModel: ChatViewModel, onDismiss: () -> Unit) {
       )
     }
     Spacer(Modifier.height(32.dp))
+  }
+}
+
+/**
+ * Animated waveform visualization for realtime voice mode
+ */
+@Composable
+fun RealtimeWaveform(
+  isListening: Boolean,
+  isSpeaking: Boolean,
+  modifier: Modifier = Modifier
+) {
+  val infiniteTransition = rememberInfiniteTransition(label = "waveform")
+  
+  val alpha1 by infiniteTransition.animateFloat(
+    initialValue = 0.3f, targetValue = 1f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(300, easing = LinearEasing),
+      repeatMode = RepeatMode.Reverse
+    ), label = "a1"
+  )
+  val alpha2 by infiniteTransition.animateFloat(
+    initialValue = 1f, targetValue = 0.3f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(400, easing = LinearEasing),
+      repeatMode = RepeatMode.Reverse
+    ), label = "a2"
+  )
+  val alpha3 by infiniteTransition.animateFloat(
+    initialValue = 0.5f, targetValue = 1f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(350, easing = LinearEasing),
+      repeatMode = RepeatMode.Reverse
+    ), label = "a3"
+  )
+  
+  val color = when {
+    isSpeaking -> MaterialTheme.colorScheme.primary
+    isListening -> MaterialTheme.colorScheme.tertiary
+    else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+  }
+  
+  Row(
+    modifier = modifier
+      .fillMaxWidth()
+      .padding(horizontal = 8.dp),
+    horizontalArrangement = Arrangement.Center,
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    val barHeights = if (isListening || isSpeaking) {
+      listOf(alpha1, alpha2, alpha3, alpha2, alpha1)
+    } else {
+      listOf(0.3f, 0.3f, 0.3f, 0.3f, 0.3f)
+    }
+    
+    barHeights.forEach { alpha ->
+      Box(
+        modifier = Modifier
+          .width(4.dp)
+          .height((20 * alpha).dp)
+          .background(
+            color = color.copy(alpha = alpha),
+            shape = RoundedCornerShape(2.dp)
+          )
+      )
+      Spacer(modifier = Modifier.width(2.dp))
+    }
   }
 }

@@ -12,6 +12,10 @@ import com.aiope2.feature.chat.db.ChatDao
 import com.aiope2.feature.chat.db.ConversationEntity
 import com.aiope2.feature.chat.db.MessageEntity
 import com.aiope2.feature.chat.engine.StreamingOrchestrator
+import com.aiope2.feature.chat.engine.RealtimeAudioManager
+import com.aiope2.feature.chat.engine.RealtimeStreaming
+import com.aiope2.feature.chat.engine.AudioConfig
+import com.aiope2.feature.chat.engine.StreamEvent
 import com.aiope2.feature.chat.engine.TokenCounter
 import com.aiope2.feature.chat.engine.ToolExecutor
 import com.aiope2.feature.chat.settings.McpManager
@@ -49,11 +53,129 @@ class ChatViewModel @Inject constructor(
 
   private var streamingJob: kotlinx.coroutines.Job? = null
 
+  // Realtime voice state
+  var isInRealtimeVoice = false; private set
+  var isVoiceListening = false; private set
+  var isVoiceSpeaking = false; private set
+
+  /** Whether the selected model supports realtime voice */
+  val supportsRealtimeVoice: Boolean
+    get() {
+      val profile = providerStore.getActive()
+      val model = getSelectedModelDef(profile)
+      return model?.supportsAudio == true && model.useStreaming
+    }
+  private var realtimeAudioManager: RealtimeAudioManager? = null
+  private var realtimeStreamingJob: kotlinx.coroutines.Job? = null
+  private var realtimeWebSocket: okhttp3.WebSocket? = null
+
   fun cancelStreaming() {
     streamingJob?.cancel()
     streamingJob = null
     _isStreaming.value = false
   }
+
+  /** Toggle realtime voice mode */
+  fun toggleRealtimeVoice() {
+    if (isInRealtimeVoice) {
+      stopRealtimeVoice()
+    } else {
+      startRealtimeVoice()
+    }
+  }
+
+  /** Start realtime voice conversation */
+  private fun startRealtimeVoice() {
+    val profile = providerStore.getActive()
+    val modelDef = getSelectedModelDef(profile) ?: return
+
+    // Verify model supports audio
+    if (!modelDef.supportsAudio || !modelDef.useStreaming) {
+      _messages.value = _messages.value + ChatMessage(
+        role = Role.ASSISTANT,
+        content = "⚠️ Selected model does not support realtime voice."
+      )
+      return
+    }
+
+    isInRealtimeVoice = true
+    isVoiceListening = true
+
+    // Initialize audio manager
+    realtimeAudioManager = RealtimeAudioManager(application).apply {
+      start(
+        audioConfig = AudioConfig(
+          sampleRate = modelDef.sampleRate,
+          audioInputType = modelDef.audioInputType
+        ),
+        enablePlayback = true
+      )
+    }
+
+    // Start realtime stream
+    realtimeStreamingJob = viewModelScope.launch(Dispatchers.IO) {
+      try {
+        val realtimeStream = RealtimeStreaming(
+          okHttp = okHttp,
+          modelDef = modelDef,
+          config = ModelConfig(modelId = modelDef.id),
+          provider = profile
+        )
+
+        realtimeStream.createStream().collect { event ->
+          when (event) {
+            is StreamEvent.TextDelta -> {
+              _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = event.text)
+            }
+            is StreamEvent.AudioChunk -> {
+              realtimeAudioManager?.playAudio(event.pcmData)
+              isVoiceSpeaking = true
+            }
+            is StreamEvent.TurnComplete -> {
+              isVoiceSpeaking = false
+              isVoiceListening = true
+            }
+            is StreamEvent.Connected -> {
+              // Audio session active
+            }
+            is StreamEvent.Error -> {
+              _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: ${event.message}")
+              stopRealtimeVoice()
+            }
+            else -> {}
+          }
+        }
+      } catch (e: Exception) {
+        _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: ${e.message}")
+        stopRealtimeVoice()
+      }
+    }
+  }
+
+  /** Stop realtime voice conversation */
+  private fun stopRealtimeVoice() {
+    isInRealtimeVoice = false
+    isVoiceListening = false
+    isVoiceSpeaking = false
+
+    realtimeStreamingJob?.cancel()
+    realtimeStreamingJob = null
+
+    realtimeWebSocket?.close(1000, "User ended call")
+    realtimeWebSocket = null
+
+    realtimeAudioManager?.stop()
+    realtimeAudioManager = null
+  }
+
+  /** Get selected model definition */
+  private fun getSelectedModelDef(profile: ProviderProfile): ModelDef? {
+    val modelId = profile.selectedModelId
+    val modelConfig = profile.modelConfigs[modelId]
+    return ProviderTemplates.byId[profile.builtinId]?.defaultModels?.find { it.id == modelId }
+      ?: modelConfig?.let { ModelDef(id = modelId) }
+  }
+
 
   private val _terminalVisible = MutableStateFlow(false)
   val terminalVisible = _terminalVisible.asStateFlow()

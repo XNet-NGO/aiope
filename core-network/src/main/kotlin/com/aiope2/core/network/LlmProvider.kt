@@ -88,7 +88,12 @@ data class ModelDef(
   val outputModality: String = "text",
   val maxOutput: Int = 0,
   val family: String = "",
+  // Realtime voice
+  val useStreaming: Boolean = false,
+  val audioInputType: String = "NONE",
+  val sampleRate: Int = 16000,
 )
+
 
 /** Provider profile — only connection info + selected model + per-model configs */
 data class ProviderProfile(
@@ -158,6 +163,8 @@ data class BuiltinProvider(
 
 object ProviderTemplates {
   val ALL = listOf(
+object ProviderTemplates {
+  val ALL = listOf(
     BuiltinProvider(
       "aiope_gateway",
       "AIOPE Gateway",
@@ -195,6 +202,15 @@ object ProviderTemplates {
           "Leonardo Phoenix",
           outputModality = "image",
           supportsTools = false,
+        ),
+        ModelDef(
+          "google/gemini-2.5-flash-native-audio",
+          "Gemini 2.5 Flash (Voice)",
+          contextWindow = 131072,
+          supportsAudio = true,
+          useStreaming = true,
+          audioInputType = "LINEAR_PCM",
+          sampleRate = 16000,
         ),
       ),
     ),
