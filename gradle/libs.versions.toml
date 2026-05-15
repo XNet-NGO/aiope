@@ -20,7 +20,7 @@ kotlinxCoroutines = "1.10.2"
 ksp = "2.3.6"
 okhttp = "4.12.0"
 jtokkit = "1.1.0"
-spotless = "8.4.0"
+spotless = "8.5.0"
 pdfboxAndroid = "2.0.27.0"
 
 [libraries]
