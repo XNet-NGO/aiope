@@ -3,6 +3,7 @@
 [![Android CI](https://github.com/XNet-NGO/AIOPE/actions/workflows/android.yml/badge.svg)](https://github.com/XNet-NGO/AIOPE/actions/workflows/android.yml)
 [![Release](https://img.shields.io/github/v/release/XNet-NGO/AIOPE)](https://github.com/XNet-NGO/AIOPE/releases/latest)
 [![License: BSL 1.1](https://img.shields.io/badge/license-BSL%201.1-blue.svg)](LICENSE)
+[![Built with Pollinations.ai](https://img.shields.io/badge/Built_with-Pollinations.ai-blue)](https://pollinations.ai)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-green.svg)](https://developer.android.com)
 
 **An AI that doesn't just talk. It acts.**
@@ -284,6 +285,10 @@ AIOPE builds on the following open-source projects, each under their original li
 The BSL 1.1 applies only to XNet's original code. All third-party components retain their original licenses.
 
 ---
+
+## Powered By
+
+- [Pollinations.ai](https://pollinations.ai) — Open-source generative AI platform
 
 ## Contributing
 
