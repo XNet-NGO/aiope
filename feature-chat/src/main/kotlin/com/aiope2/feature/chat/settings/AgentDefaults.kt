@@ -81,7 +81,7 @@ internal val AGENT_SECTIONS = listOf(
         key = "formatting",
         label = "Formatting",
         hint = "Specific formatting rules",
-        default = "For code: always use fenced code blocks with the language specified.\nFor commands: show the command, then the expected output.\nFor errors: explain what went wrong and suggest a fix.\nFor multi-step tasks: number the steps and execute them sequentially.",
+        default = "For code: always use fenced code blocks with the language specified.\nFor commands: show the command, then the expected output.\nFor errors: explain what went wrong and suggest a fix.\nFor multi-step tasks: number the steps and execute them sequentially.\nFor images: always use markdown image syntax ![alt](url) — never bare URLs. Local file:// paths render inline: ![desc](file:///path/to/file.png).",
       ),
     ),
   ),
