@@ -132,19 +132,35 @@ class WebBrowser(context: Context) {
     (function(){
       var els = document.querySelectorAll('a,button,input,select,textarea,[role=button],[onclick]');
       var out = [];
-      for (var i = 0; i < Math.min(els.length, 50); i++) {
+      for (var i = 0; i < Math.min(els.length, 80); i++) {
         var e = els[i];
         var r = e.getBoundingClientRect();
         if (r.width === 0 && r.height === 0) continue;
-        var desc = e.tagName.toLowerCase();
-        if (e.id) desc += '#' + e.id;
-        if (e.className && typeof e.className === 'string') desc += '.' + e.className.split(' ')[0];
-        if (e.type) desc += '[type=' + e.type + ']';
-        if (e.href) desc += ' href=' + e.href.substring(0,60);
-        if (e.textContent) desc += ' "' + e.textContent.trim().substring(0,40) + '"';
-        if (e.value) desc += ' val=' + e.value.substring(0,30);
-        if (e.placeholder) desc += ' placeholder=' + e.placeholder.substring(0,30);
-        out.push(desc);
+        // Build a unique selector
+        var sel = '';
+        if (e.id) { sel = '#' + e.id; }
+        else if (e.name) { sel = e.tagName.toLowerCase() + '[name="' + e.name + '"]'; }
+        else if (e.getAttribute('aria-label')) { sel = '[aria-label="' + e.getAttribute('aria-label') + '"]'; }
+        else if (e.type && e.tagName === 'INPUT') { sel = 'input[type="' + e.type + '"]'; if (e.placeholder) sel += '[placeholder="' + e.placeholder.substring(0,30) + '"]'; }
+        else {
+          sel = e.tagName.toLowerCase();
+          if (e.className && typeof e.className === 'string' && e.className.trim()) sel += '.' + e.className.trim().split(/\s+/)[0];
+          // Add nth-of-type for uniqueness
+          var parent = e.parentElement;
+          if (parent) {
+            var siblings = parent.querySelectorAll(':scope > ' + sel.split('[')[0]);
+            if (siblings.length > 1) {
+              for (var j = 0; j < siblings.length; j++) { if (siblings[j] === e) { sel += ':nth-of-type(' + (j+1) + ')'; break; } }
+            }
+          }
+        }
+        // Description
+        var label = '';
+        if (e.textContent) label = e.textContent.trim().substring(0,50);
+        else if (e.value) label = 'val=' + e.value.substring(0,30);
+        else if (e.placeholder) label = 'placeholder=' + e.placeholder.substring(0,30);
+        else if (e.title) label = e.title.substring(0,40);
+        out.push('[' + (out.length+1) + '] ' + sel + (label ? ' — "' + label + '"' : ''));
       }
       return out.join('\\n');
     })()

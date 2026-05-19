@@ -28,6 +28,16 @@ class ProviderStore @Inject constructor(
       if (getAll().isEmpty()) seedDefault()
     }
     seedTaskDefaults()
+    ensureLiveModel()
+  }
+
+  private fun ensureLiveModel() {
+    val liveId = "google-ai-studio/gemini-3.1-flash-live-preview"
+    val gw = getAll().firstOrNull { it.builtinId == "aiope_gateway" } ?: return
+    if (gw.modelConfigs.containsKey(liveId)) return
+    val cfg = ModelConfig(modelId = liveId, audioOverride = true, toolsOverride = true, contextTokens = 131_072)
+    val updated = gw.copy(modelConfigs = gw.modelConfigs + (liveId to cfg))
+    save(updated)
   }
 
   private fun seedTaskDefaults() {
@@ -44,6 +54,7 @@ class ProviderStore @Inject constructor(
     seed(com.aiope2.core.network.ModelTask.IMAGE_RECOGNITION, "google-ai-studio/models-gemma-4-26b-a4b-it")
     seed(com.aiope2.core.network.ModelTask.SUBAGENT, "google-ai-studio/models-gemma-4-26b-a4b-it")
     seed(com.aiope2.core.network.ModelTask.IMAGE_GENERATION, "pollinations-pollen/flux")
+    seed(com.aiope2.core.network.ModelTask.REALTIME_SPEECH, "google-ai-studio/gemini-3.1-flash-live-preview")
   }
 
   private fun seedDefault() {
@@ -73,6 +84,7 @@ class ProviderStore @Inject constructor(
         mc("openrouter/openrouter-free", vision = true, ctx = 128_000),
         mc("pollinations/openai", tools = true, vision = false, audio = false, video = false, ctx = 128_000, compact = false),
         mc("pollinations/openai-fast", tools = true, vision = false, audio = false, video = false, ctx = 128_000),
+        mc("google-ai-studio/gemini-3.1-flash-live-preview", tools = true, audio = true, ctx = 131_072),
       ),
     )
     save(default)

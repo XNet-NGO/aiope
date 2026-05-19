@@ -8,6 +8,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -18,135 +19,123 @@ import org.json.JSONObject
 import java.util.Base64
 
 /**
- * Bidirectional streaming for realtime voice - WebSocket based
+ * Bidirectional realtime voice stream.
+ * Owns the WebSocket and the mic capture loop — emits StreamEvents to the collector.
  */
 class RealtimeStreaming(
-  private val okHttp: OkHttpClient,
-  private val modelDef: ModelDef,
-  private val config: ModelConfig,
-  private val provider: ProviderProfile,
-  private val gatewayUrl: String = "wss://inf.xnet.ngo/ws/voice"
+    private val okHttp: OkHttpClient,
+    private val modelDef: ModelDef,
+    private val config: ModelConfig,
+    private val provider: ProviderProfile,
+    private val audioManager: RealtimeAudioManager,
+    private val systemPrompt: String = "",
+    private val gatewayUrl: String = "wss://inf.xnet.ngo/ws/voice"
 ) {
-  /**
-   * Creates a bidirectional stream for realtime voice
-   * Returns Flow<StreamEvent> - emits text deltas and audio chunks from server
-   * Server can send audio via WebSocket
-   */
-  fun createStream(): Flow<StreamEvent> = callbackFlow {
-    val callback = object : StreamCallback {
-      override fun onTextDelta(text: String) { trySend(StreamEvent.TextDelta(text)) }
-      override fun onAudioChunk(data: ByteArray) { trySend(StreamEvent.AudioChunk(data)) }
-      override fun onTurnStart(turnId: String) { trySend(StreamEvent.TurnStart(turnId)) }
-      override fun onTurnComplete() { trySend(StreamEvent.TurnComplete) }
-      override fun onError(msg: String) { trySend(StreamEvent.Error(msg)); close() }
-      override fun onConnected() { trySend(StreamEvent.Connected) }
-      override fun onDisconnected() { trySend(StreamEvent.Disconnected) }
-    }
+    private var webSocket: WebSocket? = null
 
-    val wsUrl = "$gatewayUrl?model=${modelDef.id}"
-    val request = Request.Builder()
-      .url(wsUrl)
-      .addHeader("Authorization", "Bearer ${provider.apiKey}")
-      .addHeader("X-Model-Id", modelDef.id)
-      .build()
+    fun createStream(): Flow<StreamEvent> = callbackFlow {
+        val encodedPrompt = java.net.URLEncoder.encode(systemPrompt, "UTF-8")
+        val wsUrl = "$gatewayUrl?model=${modelDef.id}&system=$encodedPrompt"
+        val request = Request.Builder()
+            .url(wsUrl)
+            .addHeader("Authorization", "Bearer ${provider.apiKey}")
+            .build()
 
-    val webSocket = okHttp.newWebSocket(request, RealtimeWebSocketListener(callback))
+        webSocket = okHttp.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(ws: WebSocket, response: Response) {
+                trySend(StreamEvent.Connected)
+                // Start mic capture → sends audio over this WS
+                audioManager.setWebSocket(ws)
+                audioManager.startCapture()
+            }
 
-    awaitClose {
-      webSocket.close(1000, "Client disconnected")
-    }
-  }.flowOn(Dispatchers.IO)
+            override fun onMessage(ws: WebSocket, text: String) {
+                try {
+                    val json = JSONObject(text)
 
-  /**
-   * Send audio data to the server
-   */
-  fun sendAudio(webSocket: WebSocket, pcmData: ByteArray): Boolean {
-    val audioJson = JSONObject().apply {
-      put("audio", JSONObject().apply {
-        put("pcm", Base64.getEncoder().encodeToString(pcmData))
-        put("sampleRate", modelDef.sampleRate)
-        put("inputType", modelDef.audioInputType)
-      })
-    }
-    return webSocket.send(audioJson.toString())
-  }
+                    json.optJSONObject("audio")?.optString("pcm")?.let { b64 ->
+                        if (b64.isNotBlank()) {
+                            trySend(StreamEvent.AudioChunk(Base64.getDecoder().decode(b64)))
+                        }
+                    }
 
-  /**
-   * Send text prompt to start/interrupt the conversation
-   */
-  fun sendText(webSocket: WebSocket, text: String): Boolean {
-    val textJson = JSONObject().apply {
-      put("text", JSONObject().apply {
-        put("content", text)
-      })
-    }
-    return webSocket.send(textJson.toString())
-  }
+                    json.optJSONObject("text")?.optString("delta")?.let {
+                        if (it.isNotBlank()) trySend(StreamEvent.TextDelta(it))
+                    }
 
-  /**
-   * Signal end of audio input (turn-taking)
-   */
-  fun endTurn(webSocket: WebSocket): Boolean {
-    val turnEnd = JSONObject().apply {
-      put("turnEnd", true)
-    }
-    return webSocket.send(turnEnd.toString())
-  }
-}
+                    if (json.has("turnStart")) trySend(StreamEvent.TurnStart(json.optString("turnStart")))
+                    if (json.has("turnComplete")) trySend(StreamEvent.TurnComplete)
+                    if (json.has("inputTranscription")) trySend(StreamEvent.InputTranscription(json.getString("inputTranscription")))
+                    if (json.has("outputTranscription")) trySend(StreamEvent.OutputTranscription(json.getString("outputTranscription")))
+                    if (json.has("toolCall")) {
+                        val tc = json.getJSONObject("toolCall")
+                        val fcs = tc.getJSONArray("functionCalls")
+                        val calls = (0 until fcs.length()).map { i ->
+                            val fc = fcs.getJSONObject(i)
+                            val args = mutableMapOf<String, String>()
+                            fc.optJSONObject("args")?.let { a -> a.keys().forEach { k -> args[k] = a.optString(k, "") } }
+                            FunctionCall(fc.getString("name"), fc.getString("id"), args)
+                        }
+                        trySend(StreamEvent.ToolCallEvent(calls))
+                    }
+                    if (json.has("error")) trySend(StreamEvent.Error(json.getString("error")))
+                } catch (e: Exception) {
+                    trySend(StreamEvent.Error("Parse error: ${e.message}"))
+                }
+            }
 
-/**
- * WebSocket listener for realtime voice
- */
-class RealtimeWebSocketListener(
-  private val callback: StreamCallback
-) : WebSocketListener() {
+            override fun onMessage(ws: WebSocket, bytes: ByteString) {
+                trySend(StreamEvent.AudioChunk(bytes.toByteArray()))
+            }
 
-  override fun onOpen(webSocket: WebSocket, response: Response) {
-    callback.onConnected()
-  }
+            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                trySend(StreamEvent.Error(t.message ?: "Connection failed"))
+                close()
+            }
 
-  override fun onMessage(webSocket: WebSocket, text: String) {
-    try {
-      val json = JSONObject(text)
+            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                trySend(StreamEvent.Disconnected)
+                close()
+            }
+        })
 
-      // Text delta from model
-      json.optJSONObject("text")?.optString("delta")?.let {
-        if (it.isNotBlank()) callback.onTextDelta(it)
-      }
+        awaitClose { stop() }
+    }.flowOn(Dispatchers.IO)
 
-      // Audio chunk from model (realtime speech synthesis)
-      json.optJSONObject("audio")?.optString("pcm")?.let { base64 ->
-        if (base64.isNotBlank()) {
-          val pcmData = Base64.getDecoder().decode(base64)
-          callback.onAudioChunk(pcmData)
+    /** Send text mid-conversation (e.g. barge-in or typed input) */
+    fun sendText(text: String) {
+        val json = JSONObject().apply {
+            put("text", JSONObject().apply { put("content", text) })
         }
-      }
-
-      // Turn events
-      if (json.has("turnStart")) {
-        callback.onTurnStart(json.optString("turnStart"))
-      }
-      if (json.has("turnComplete")) {
-        callback.onTurnComplete()
-      }
-      if (json.has("error")) {
-        callback.onError(json.optString("error"))
-      }
-    } catch (e: Exception) {
-      callback.onError("Parse error: ${e.message}")
+        webSocket?.send(json.toString())
     }
-  }
 
-  override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-    // Binary audio data
-    callback.onAudioChunk(bytes.toByteArray())
-  }
+    /** Send tool execution results back */
+    fun sendToolResponse(responses: List<Pair<String, String>>) {
+        val json = JSONObject().apply {
+            put("toolResponse", JSONObject().apply {
+                put("functionResponses", org.json.JSONArray().apply {
+                    responses.forEach { (id, result) ->
+                        put(JSONObject().apply {
+                            put("id", id)
+                            put("response", JSONObject().apply { put("result", result) })
+                        })
+                    }
+                })
+            })
+        }
+        webSocket?.send(json.toString())
+    }
 
-  override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-    callback.onError(t.message ?: "WebSocket connection failed")
-  }
+    /** Signal end of user turn */
+    fun endTurn() {
+        webSocket?.send("""{"turnEnd":true}""")
+    }
 
-  override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-    callback.onDisconnected()
-  }
+    /** Tear down everything */
+    fun stop() {
+        audioManager.stopCapture()
+        webSocket?.close(1000, "Client ended")
+        webSocket = null
+    }
 }
