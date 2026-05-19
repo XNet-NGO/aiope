@@ -15,7 +15,7 @@
 
 **An AI that doesn't just talk. It acts.**
 
-AIOPE is an Android AI assistant with 46 tools, a full Linux terminal, browser automation, location awareness, live data feeds, remote server management, and the ability to build native interactive UI on the fly. It connects to any OpenAI-compatible API and runs the entire tool loop on-device.
+AIOPE is an Android AI assistant with 46 tools, realtime voice with full tool access, a full Linux terminal, browser automation, location awareness, live data feeds, remote server management, and the ability to build native interactive UI on the fly. It connects to any OpenAI-compatible API and runs the entire tool loop on-device.
 
 It ships with the [AIOPE Gateway](https://github.com/XNet-NGO/aiope-gateway) -- a self-hosted inference proxy that routes to Google AI Studio, Pollinations, and other providers with a single API key. The gateway handles model routing, rate limiting, and API key management so the client stays clean.
 
@@ -23,9 +23,10 @@ It ships with the [AIOPE Gateway](https://github.com/XNet-NGO/aiope-gateway) -- 
 
 ## What It Does
 
-AIOPE operates in three modes:
+AIOPE operates in four modes:
 
 - **Chat** -- conversational AI with full tool access
+- **Voice** -- realtime bidirectional voice with full tool access (Google Gemini Live API)
 - **Plan** -- read-only analysis mode; the AI explores context and produces a structured plan without executing anything
 - **Build** -- autonomous execution mode; the AI chains tools without asking for confirmation until the task is complete
 
@@ -40,6 +41,7 @@ Different tasks route to different models automatically:
 | Task | Default Model |
 |---|---|
 | Chat (primary) | Gemma 4 31B IT (256K context) |
+| Realtime Voice | Gemini 3.1 Flash Live Preview |
 | Subagent | Gemma 4 26B A4B (MoE, 4B active) |
 | Summary | Llama 4 Scout (Pollinations) |
 | Title generation | Nova Fast (Pollinations) |
@@ -131,6 +133,21 @@ Toggleable per-profile for models that don't handle structured output well.
 Manage and connect to remote Linux servers over SSH directly from the app. Add servers in Settings with host, port, user, and an Ed25519 private key. The AI sees available servers in its system prompt and can connect, run commands, and disconnect through tool calls.
 
 Supports Ed25519 and RSA keys via SSHJ with BouncyCastle. The companion [aiope-remote daemon](daemon/) (Go) can be deployed to servers for health monitoring and managed execution.
+
+---
+
+## Realtime Voice
+
+Tap the mic button to start a live voice conversation. AIOPE connects to Google's Gemini Live API via the gateway and streams bidirectional audio in real time.
+
+- **Full tool access** -- all 46 tools work during voice, executed natively on-device
+- **Acoustic echo cancellation** -- speak while the AI is talking to interrupt
+- **Live transcription** -- both user and model speech rendered in chat as it happens
+- **System prompt** -- your full agent persona and instructions apply to voice sessions
+- **Speakerphone mode** -- auto-enables speaker and boosts volume during voice
+- **Graceful hangup** -- tap mic again to end cleanly
+
+The AI can browse the web, run shell commands, check your calendar, send messages, and perform any action -- all by voice command.
 
 ---
 
@@ -233,7 +250,7 @@ core-data/                    Data layer
 core-terminal/                Terminal emulator, proot bootstrap
 daemon/                       Go daemon for remote servers (aiope-remote)
 feature-chat/
-  engine/                     StreamingOrchestrator, ToolExecutor, AgentMode
+  engine/                     StreamingOrchestrator, ToolExecutor, AgentMode, RealtimeStreaming, RealtimeAudioManager
   dynamicui/                  aiope-ui parser, renderer, 30+ node types
   browser/                    WebBrowser, BrowserPanel, BrowserServer
   location/                   GPS provider, map cards, geocoding
