@@ -19,6 +19,7 @@ enum class ModelTask(val id: String, val label: String, val description: String)
   IMAGE_GENERATION("image_gen", "Image Generation", "Generate images from text prompts"),
   AUDIO_GENERATION("audio_gen", "Audio Generation", "Generate speech and audio"),
   VIDEO_GENERATION("video_gen", "Video Generation", "Generate video from prompts"),
+  REALTIME_SPEECH("realtime_speech", "Realtime Speech", "Live voice conversation with streaming audio"),
   ;
 
   companion object {

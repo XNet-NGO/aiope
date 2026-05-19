@@ -73,7 +73,8 @@ class ChatViewModel @Inject constructor(
   private var realtimeAudioManager: RealtimeAudioManager? = null
   private val okHttp = SafeOkHttp.builder().readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS).build()
   private var realtimeStreamingJob: kotlinx.coroutines.Job? = null
-  private var realtimeWebSocket: okhttp3.WebSocket? = null
+  private var realtimeStream: RealtimeStreaming? = null
+  private var voiceTurnId: String = ""
 
   fun cancelStreaming() {
     streamingJob?.cancel()
@@ -92,67 +93,101 @@ class ChatViewModel @Inject constructor(
 
   /** Start realtime voice conversation */
   private fun startRealtimeVoice() {
-    val profile = providerStore.getActive()
-    val modelDef = getSelectedModelDef(profile) ?: return
-
-    // Verify model supports audio
-    if (!modelDef.supportsAudio || !modelDef.useStreaming) {
-      _messages.value = _messages.value + ChatMessage(
-        role = Role.ASSISTANT,
-        content = "⚠️ Selected model does not support realtime voice."
-      )
-      return
-    }
+    val taskStore = com.aiope2.core.network.TaskModelStore(getApplication())
+    val (profileId, modelId) = taskStore.resolve(com.aiope2.core.network.ModelTask.REALTIME_SPEECH, providerStore)
+    val profile = if (profileId != null) providerStore.getAll().find { it.id == profileId } ?: providerStore.getActive() else providerStore.getActive()
+    val resolvedModelId = modelId ?: "google-ai-studio/gemini-3.1-flash-live-preview"
+    val modelDef = ModelDef(id = resolvedModelId, supportsAudio = true, useStreaming = true, sampleRate = 16000)
 
     _isInRealtimeVoice.value = true
     _isVoiceListening.value = true
 
-    // Initialize audio manager
-    realtimeAudioManager = RealtimeAudioManager(getApplication<Application>()).apply {
-      start(
-        audioConfig = AudioConfig(
-          sampleRate = modelDef.sampleRate,
-          audioInputType = modelDef.audioInputType
-        ),
-        enablePlayback = true
-      )
+    realtimeAudioManager = RealtimeAudioManager(AudioConfig(sampleRate = modelDef.sampleRate)).apply {
+      startPlayback()
     }
+    // Boost voice call volume and enable speaker
+    val audioManager = getApplication<android.app.Application>().getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+    audioManager.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
+    audioManager.isSpeakerphoneOn = true
+    audioManager.setStreamVolume(android.media.AudioManager.STREAM_VOICE_CALL, audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_VOICE_CALL), 0)
 
-    // Start realtime stream
     realtimeStreamingJob = viewModelScope.launch(Dispatchers.IO) {
       try {
+        val sysPrompt = (buildSystemMessages(ModelConfig(modelId = resolvedModelId))
+            .firstOrNull { it.first == "system" }?.second ?: "") +
+            "\n\nYou are in a live voice session with full tool access. Execute all tools directly and autonomously — never tell the user to do something manually. You can browse, click, fill forms, run commands, send messages, and perform any action yourself."
         val realtimeStream = RealtimeStreaming(
           okHttp = okHttp,
           modelDef = modelDef,
           config = ModelConfig(modelId = modelDef.id),
-          provider = profile
+          provider = profile,
+          audioManager = realtimeAudioManager!!,
+          systemPrompt = sysPrompt
         )
+        this@ChatViewModel.realtimeStream = realtimeStream
 
+        var currentTurnText = StringBuilder()
         realtimeStream.createStream().collect { event ->
           when (event) {
             is StreamEvent.TextDelta -> {
-              _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = event.text)
+              // Text parts from model (rare with audio-only, but handle)
+              currentTurnText.append(event.text)
             }
             is StreamEvent.AudioChunk -> {
               realtimeAudioManager?.playAudio(event.pcmData)
-              _isVoiceSpeaking.value = true
+              viewModelScope.launch(Dispatchers.Main) { _isVoiceSpeaking.value = true }
             }
             is StreamEvent.TurnComplete -> {
-              _isVoiceSpeaking.value = false
-              _isVoiceListening.value = true
+              currentTurnText.clear()
+              voiceTurnId = ""
+              realtimeAudioManager?.onTurnComplete()
+              viewModelScope.launch(Dispatchers.Main) {
+                _isVoiceSpeaking.value = false
+                _isVoiceListening.value = true
+              }
             }
-            is StreamEvent.Connected -> {
-              // Audio session active
+            is StreamEvent.Connected -> {}
+            is StreamEvent.InputTranscription -> {
+              viewModelScope.launch(Dispatchers.Main) {
+                _messages.value = _messages.value + ChatMessage(role = Role.USER, content = event.text)
+              }
+            }
+            is StreamEvent.OutputTranscription -> {
+              viewModelScope.launch(Dispatchers.Main) {
+                val msgs = _messages.value.toMutableList()
+                val last = msgs.lastOrNull()
+                if (last != null && last.role == Role.ASSISTANT && last.id == voiceTurnId) {
+                  msgs[msgs.lastIndex] = last.copy(content = last.content + event.text)
+                } else {
+                  voiceTurnId = java.util.UUID.randomUUID().toString()
+                  msgs.add(ChatMessage(id = voiceTurnId, role = Role.ASSISTANT, content = event.text))
+                }
+                _messages.value = msgs
+              }
             }
             is StreamEvent.Error -> {
-              _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: ${event.message}")
+              viewModelScope.launch(Dispatchers.Main) {
+                _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: ${event.message}")
+              }
               stopRealtimeVoice()
+            }
+            is StreamEvent.ToolCallEvent -> {
+              val responses = event.functionCalls.map { fc ->
+                val result = try {
+                  toolExecutor.execute(fc.name, fc.args)
+                } catch (e: Exception) { "Error: ${e.message}" }
+                fc.id to result
+              }
+              realtimeStream.sendToolResponse(responses)
             }
             else -> {}
           }
         }
       } catch (e: Exception) {
-        _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: ${e.message}")
+        if (e is kotlinx.coroutines.CancellationException) return@launch
+        viewModelScope.launch(Dispatchers.Main) {
+          _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: ${e.message}")
+        }
         stopRealtimeVoice()
       }
     }
@@ -160,26 +195,32 @@ class ChatViewModel @Inject constructor(
 
   /** Stop realtime voice conversation */
   private fun stopRealtimeVoice() {
-    _isInRealtimeVoice.value = false
-    _isVoiceListening.value = false
-    _isVoiceSpeaking.value = false
-
+    viewModelScope.launch(Dispatchers.Main) {
+      _isInRealtimeVoice.value = false
+      _isVoiceListening.value = false
+      _isVoiceSpeaking.value = false
+    }
     realtimeStreamingJob?.cancel()
     realtimeStreamingJob = null
-
-    realtimeWebSocket?.close(1000, "User ended call")
-    realtimeWebSocket = null
-
-    realtimeAudioManager?.stop()
+    realtimeStream = null
+    try { realtimeAudioManager?.stop() } catch (_: Exception) {}
     realtimeAudioManager = null
+    try {
+      val am = getApplication<android.app.Application>().getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+      am.mode = android.media.AudioManager.MODE_NORMAL
+      am.isSpeakerphoneOn = false
+    } catch (_: Exception) {}
   }
 
   /** Get selected model definition */
   private fun getSelectedModelDef(profile: ProviderProfile): ModelDef? {
     val modelId = profile.selectedModelId
     val modelConfig = profile.modelConfigs[modelId]
-    return ProviderTemplates.byId[profile.builtinId]?.defaultModels?.find { it.id == modelId }
-      ?: modelConfig?.let { ModelDef(id = modelId) }
+    val builtin = ProviderTemplates.byId[profile.builtinId]?.defaultModels?.find { it.id == modelId }
+    if (builtin != null) return builtin
+    // Check if modelConfig marks it as audio-capable
+    val audio = modelConfig?.audioOverride == true
+    return ModelDef(id = modelId, supportsAudio = audio, useStreaming = audio)
   }
 
 

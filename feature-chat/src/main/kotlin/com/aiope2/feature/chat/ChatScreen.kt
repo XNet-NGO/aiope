@@ -591,19 +591,17 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
         } catch (_: Exception) {}
       }) {
         Icon(Icons.Default.Mic, "Voice", tint = MaterialTheme.colorScheme.onSurface)
-
-      // Realtime voice button (for audio-capable models)
-      if (supportsRealtimeVoice) {
-        IconButton(
-          onClick = { onToggleVoice() }
-        ) {
-          Icon(
-            imageVector = if (isInRealtimeVoice) Icons.Default.MicOff else Icons.Default.Mic,
-            contentDescription = if (isInRealtimeVoice) "End voice call" else "Start voice call",
-            tint = if (isInRealtimeVoice) MaterialTheme.colorScheme.error 
-                   else MaterialTheme.colorScheme.primary
-          )
-        }
+      }
+      // Realtime voice button (always available via task model)
+      IconButton(
+        onClick = { onToggleVoice() }
+      ) {
+        Icon(
+          imageVector = if (isInRealtimeVoice) Icons.Default.CallEnd else Icons.Default.Call,
+          contentDescription = if (isInRealtimeVoice) "End voice call" else "Start voice call",
+          tint = if (isInRealtimeVoice) MaterialTheme.colorScheme.error 
+                 else MaterialTheme.colorScheme.primary
+        )
       }
       // Waveform visualization when in voice mode
       if (isInRealtimeVoice) {
@@ -612,7 +610,6 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
           isSpeaking = isVoiceSpeaking,
           modifier = Modifier.weight(1f)
         )
-      }
       }
       // Clear
       IconButton(onClick = {
