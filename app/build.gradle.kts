@@ -66,8 +66,8 @@ dependencies {
 
   // feature modules
   implementation(project(":feature-chat"))
-  implementation("io.coil-kt:coil:2.6.0")
-  implementation("io.coil-kt:coil-svg:2.6.0")
+  implementation("io.coil-kt:coil:2.7.0")
+  implementation("io.coil-kt:coil-svg:2.7.0")
   implementation(project(":feature-remote"))
 
   // compose
