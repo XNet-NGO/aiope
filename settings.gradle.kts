@@ -12,6 +12,7 @@ dependencyResolutionManagement {
     google()
     mavenCentral()
     maven(url = "https://jitpack.io")
+    flatDir { dirs("${rootProject.projectDir}/feature-chat/libs") }
   }
 }
 rootProject.name = "aiope2"
