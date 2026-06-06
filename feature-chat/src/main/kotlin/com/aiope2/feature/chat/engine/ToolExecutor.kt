@@ -649,7 +649,12 @@ class ToolExecutor(
       val normalized = normalizeForVision(imgData, url)
       val b64 = android.util.Base64.encodeToString(normalized, android.util.Base64.NO_WRAP)
       val sb = StringBuilder()
-      StreamingOrchestrator(baseUrl = profile.effectiveApiBase(), apiKey = profile.apiKey, model = modelId).stream(listOf("user" to question), listOf(b64)).collect { if (it.content.isNotEmpty()) sb.append(it.content) }
+      StreamingOrchestrator(
+        baseUrl = profile.effectiveApiBase(),
+        apiKey = profile.apiKey,
+        model = modelId,
+        endpointOverride = profile.modelConfigs[modelId]?.endpointOverride ?: "",
+      ).stream(listOf("user" to question), listOf(b64)).collect { if (it.content.isNotEmpty()) sb.append(it.content) }
       "Image analysis complete.\nSource: $url\nResult: ${sb.toString().ifBlank { "No description returned." }}"
     } catch (e: Exception) {
       "Image analysis FAILED.\nError: ${e.message}"

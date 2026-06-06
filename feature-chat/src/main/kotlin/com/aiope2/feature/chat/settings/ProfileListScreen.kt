@@ -184,11 +184,17 @@ internal fun ProfileList(
                         rootfs.deleteRecursively()
                         status.value = "Old install removed"
                       }
-                      com.aiope2.core.terminal.shell.ProotBootstrap.setup(ctx) { msg ->
+                      val ok = com.aiope2.core.terminal.shell.ProotBootstrap.setup(ctx) { msg ->
                         status.value = msg
                       }
-                      installed.value = com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(ctx)
-                      status.value = if (installed.value) "Installed" else "Failed"
+                      installed.value = ok && com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(ctx)
+                      status.value = if (installed.value) {
+                        "Installed"
+                      } else if (status.value.startsWith("ERROR:", ignoreCase = true) || status.value.startsWith("Error:", ignoreCase = true)) {
+                        status.value
+                      } else {
+                        "Failed"
+                      }
                     } catch (e: Exception) {
                       status.value = "Error: ${e.message?.take(40)}"
                     }

@@ -1,6 +1,7 @@
 package com.aiope2.core.terminal.shell
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import java.io.BufferedInputStream
 import java.io.File
@@ -60,6 +61,12 @@ object ProotBootstrap {
       val nativeDir = ctx.applicationInfo.nativeLibraryDir
       val envDir = envDir(ctx)
       val rootfs = rootfsDir(ctx)
+      val abis = Build.SUPPORTED_ABIS?.toList().orEmpty()
+
+      if ("arm64-v8a" !in abis) {
+        l("ERROR: Unsupported ABI (${abis.joinToString()}). Alpine (proot) currently requires arm64-v8a.")
+        return false
+      }
 
       l("Creating directories...")
       listOf(
@@ -98,12 +105,7 @@ object ProotBootstrap {
           rootfs.mkdirs()
         }
 
-        val arch = System.getProperty("os.arch")?.lowercase() ?: "aarch64"
-        val pdArch = when {
-          "aarch64" in arch || "arm64" in arch -> "aarch64"
-          "x86_64" in arch -> "x86_64"
-          else -> "aarch64"
-        }
+        val pdArch = "aarch64"
         val url = "https://github.com/xnet-admin-1/box/releases/download/rootfs-alpine-3.21.3/box-alpine-3.21-$pdArch.tar.xz"
         val tarball = File(envDir, "rootfs.tar.xz")
 

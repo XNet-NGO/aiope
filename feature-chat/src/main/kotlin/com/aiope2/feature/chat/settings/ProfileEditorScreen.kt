@@ -375,9 +375,12 @@ internal fun ProfileEditor(
 private suspend fun testConnection(p: ProviderProfile, mc: ModelConfig): String = withContext(Dispatchers.IO) {
   try {
     var baseUrl = p.effectiveApiBase().trimEnd('/')
-    val eo = mc.endpointOverride.trim().removePrefix("/")
-    val chatPath = if (eo.isNotBlank()) {
-      eo
+    val eo = mc.endpointOverride.trim()
+    if (eo.startsWith("https://") || eo.startsWith("http://")) {
+      baseUrl = eo
+    }
+    val chatPath = if (eo.isNotBlank() && !eo.startsWith("https://") && !eo.startsWith("http://")) {
+      eo.removePrefix("/")
     } else if (baseUrl.endsWith("/openai")) {
       "chat/completions"
     } else if (baseUrl.endsWith("/v1")) {

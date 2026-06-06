@@ -401,6 +401,8 @@ class ChatViewModel @Inject constructor(
     return profile to modelId
   }
 
+  private fun endpointOverrideFor(profile: ProviderProfile, modelId: String): String = profile.modelConfigs[modelId]?.endpointOverride ?: ""
+
   /** Translate a message using the TRANSLATION task model */
   fun translateMessage(messageId: String, language: String) {
     viewModelScope.launch(Dispatchers.IO) {
@@ -412,6 +414,7 @@ class ChatViewModel @Inject constructor(
           baseUrl = profile.effectiveApiBase(),
           apiKey = profile.apiKey,
           model = modelId,
+          endpointOverride = endpointOverrideFor(profile, modelId),
         )
         val sb = StringBuilder()
         orchestrator.stream(listOf("user" to prompt)).collect { chunk ->
@@ -446,6 +449,7 @@ class ChatViewModel @Inject constructor(
           baseUrl = profile.effectiveApiBase(),
           apiKey = profile.apiKey,
           model = modelId,
+          endpointOverride = endpointOverrideFor(profile, modelId),
         )
         val sb = StringBuilder()
         orchestrator.stream(listOf("user" to prompt)).collect { chunk ->
@@ -553,6 +557,7 @@ class ChatViewModel @Inject constructor(
           baseUrl = sendProfile.effectiveApiBase(),
           apiKey = sendProfile.apiKey,
           model = sendModelId,
+          endpointOverride = endpointOverrideFor(sendProfile, sendModelId),
           tools = sendTools,
           onToolCall = { name, args -> toolExecutor.execute(name, args) },
         )
@@ -682,6 +687,7 @@ class ChatViewModel @Inject constructor(
           baseUrl = profile.effectiveApiBase(),
           apiKey = profile.apiKey,
           model = modelId,
+          endpointOverride = endpointOverrideFor(profile, modelId),
         )
         val sb = StringBuilder()
         orchestrator.stream(listOf("user" to prompt)).collect { chunk ->
@@ -845,6 +851,7 @@ class ChatViewModel @Inject constructor(
           baseUrl = p.effectiveApiBase(),
           apiKey = p.apiKey,
           model = p.selectedModelId,
+          endpointOverride = endpointOverrideFor(p, p.selectedModelId),
           tools = if (useTools) toolExecutor.buildToolDefs() else emptyList(),
           onToolCall = { name, args -> toolExecutor.execute(name, args) },
         )
@@ -912,6 +919,7 @@ class ChatViewModel @Inject constructor(
             baseUrl = p.effectiveApiBase(),
             apiKey = p.apiKey,
             model = modelId,
+            endpointOverride = endpointOverrideFor(p, modelId),
             tools = tools,
             onToolCall = onToolCall,
           )

@@ -23,6 +23,7 @@ class StreamingOrchestrator(
   private val baseUrl: String,
   private val apiKey: String,
   private val model: String,
+  private val endpointOverride: String = "",
   private val tools: List<ToolDef> = emptyList(),
   private val onToolCall: suspend (String, Map<String, Any?>) -> String = { _, _ -> "" },
 ) {
@@ -70,6 +71,7 @@ class StreamingOrchestrator(
     messages: List<Pair<String, String>>,
     imageBase64s: List<String> = emptyList(),
   ): Flow<ChatStreamChunk> = callbackFlow {
+    val chatUrl = resolveChatUrl()
     val rawMessages = messages.map { (role, content) ->
       JSONObject().put("role", role).put("content", content)
     }.toMutableList()
@@ -132,7 +134,7 @@ class StreamingOrchestrator(
 
       while (true) {
         val request = Request.Builder()
-          .url("${baseUrl.trimEnd('/')}/chat/completions")
+          .url(chatUrl)
           .header("Content-Type", "application/json; charset=utf-8")
           .header("Accept", "text/event-stream")
           .header("Connection", "close") // force fresh TCP — avoids cellular NAT killing reused sockets
@@ -444,6 +446,24 @@ class StreamingOrchestrator(
 
     awaitClose { }
   }.flowOn(Dispatchers.IO)
+
+  private fun resolveChatUrl(): String {
+    var base = baseUrl.trimEnd('/')
+    val eo = endpointOverride.trim()
+    if (eo.startsWith("https://") || eo.startsWith("http://")) return eo
+    val path = eo.removePrefix("/")
+    val chatPath = if (path.isNotBlank()) {
+      path
+    } else if (base.endsWith("/openai")) {
+      "chat/completions"
+    } else if (base.endsWith("/v1")) {
+      base = base.removeSuffix("/v1")
+      "v1/chat/completions"
+    } else {
+      "v1/chat/completions"
+    }
+    return "$base/$chatPath"
+  }
 
   private fun buildRequestBody(messages: List<JSONObject>): String {
     val body = JSONObject()
