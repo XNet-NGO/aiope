@@ -19,6 +19,7 @@ object ProotBootstrap {
 
   private const val TAG = "ProotBootstrap"
   private const val ROOTFS_VERSION = "rootfs_alpine_v1"
+  private const val REQUIRED_ABI = "arm64-v8a"
 
   fun envDir(ctx: Context) = File(ctx.filesDir, "env")
   fun rootfsDir(ctx: Context) = File(envDir(ctx), "alpine")
@@ -63,8 +64,9 @@ object ProotBootstrap {
       val rootfs = rootfsDir(ctx)
       val abis = Build.SUPPORTED_ABIS?.toList().orEmpty()
 
-      if ("arm64-v8a" !in abis) {
-        l("ERROR: Unsupported ABI (${abis.joinToString()}). Alpine (proot) currently requires arm64-v8a.")
+      if (REQUIRED_ABI !in abis) {
+        val foundAbi = abis.firstOrNull() ?: "unknown"
+        l("ERROR: Device architecture not supported. Found: $foundAbi. Alpine (proot) requires $REQUIRED_ABI.")
         return false
       }
 

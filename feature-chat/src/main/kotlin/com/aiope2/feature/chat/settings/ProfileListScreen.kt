@@ -190,7 +190,7 @@ internal fun ProfileList(
                       installed.value = ok && com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(ctx)
                       status.value = if (installed.value) {
                         "Installed"
-                      } else if (status.value.startsWith("ERROR:", ignoreCase = true) || status.value.startsWith("Error:", ignoreCase = true)) {
+                      } else if (status.value.startsWith("ERROR:", ignoreCase = true)) {
                         status.value
                       } else {
                         "Failed"

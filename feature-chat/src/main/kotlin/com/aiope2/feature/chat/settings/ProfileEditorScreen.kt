@@ -376,10 +376,11 @@ private suspend fun testConnection(p: ProviderProfile, mc: ModelConfig): String 
   try {
     var baseUrl = p.effectiveApiBase().trimEnd('/')
     val eo = mc.endpointOverride.trim()
-    if (eo.startsWith("https://") || eo.startsWith("http://")) {
+    val isAbsoluteUrl = eo.startsWith("https://") || eo.startsWith("http://")
+    if (isAbsoluteUrl) {
       baseUrl = eo
     }
-    val chatPath = if (eo.isNotBlank() && !eo.startsWith("https://") && !eo.startsWith("http://")) {
+    val chatPath = if (eo.isNotBlank() && !isAbsoluteUrl) {
       eo.removePrefix("/")
     } else if (baseUrl.endsWith("/openai")) {
       "chat/completions"
