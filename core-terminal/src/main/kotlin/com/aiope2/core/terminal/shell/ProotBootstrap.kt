@@ -98,11 +98,14 @@ object ProotBootstrap {
           rootfs.mkdirs()
         }
 
+        // ✅ FIX: Add armeabi-v7a (32-bit ARM) architecture detection
         val arch = System.getProperty("os.arch")?.lowercase() ?: "aarch64"
         val pdArch = when {
           "aarch64" in arch || "arm64" in arch -> "aarch64"
+          "armv7" in arch || "armv7l" in arch -> "armeabi-v7a"  // 32-bit ARM support
           "x86_64" in arch -> "x86_64"
-          else -> "aarch64"
+          "x86" in arch -> "x86"
+          else -> "aarch64" // fallback to 64-bit ARM
         }
         val url = "https://github.com/xnet-admin-1/box/releases/download/rootfs-alpine-3.21.3/box-alpine-3.21-$pdArch.tar.xz"
         val tarball = File(envDir, "rootfs.tar.xz")
@@ -174,50 +177,68 @@ object ProotBootstrap {
     }
   }
 
+  // ✅ FIX: Increase download timeouts for Alpine rootfs (60s conn, 120s read)
   private fun download(urlStr: String, dest: File, log: (String) -> Unit) {
     var url = URL(urlStr)
     var redirects = 0
     var conn: HttpURLConnection
+    var lastError: String? = null
+    
     while (true) {
-      conn = url.openConnection() as HttpURLConnection
-      conn.connectTimeout = 30_000
-      conn.readTimeout = 60_000
-      conn.instanceFollowRedirects = false
-      val code = conn.responseCode
-      if (code in 301..308) {
-        val loc = conn.getHeaderField("Location") ?: break
-        url = URL(url, loc)
-        conn.disconnect()
-        if (++redirects > 5) {
-          log("ERROR: too many redirects")
+      try {
+        conn = url.openConnection() as HttpURLConnection
+        conn.connectTimeout = 60_000  // Increased from 30s for slow networks
+        conn.readTimeout = 120_000    // Increased from 60s for large downloads
+        conn.instanceFollowRedirects = false
+        val code = conn.responseCode
+        if (code in 301..308) {
+          val loc = conn.getHeaderField("Location") ?: break
+          url = URL(url, loc)
+          conn.disconnect()
+          if (++redirects > 5) {
+            log("ERROR: too many redirects")
+            return
+          }
+          continue
+        }
+        if (code != 200) {
+          lastError = "HTTP $code"
+          log("ERROR: HTTP $code")
+          conn.disconnect()
+          
+          // Retry on server errors (5xx)
+          if (code in 500..599) {
+            log("Retrying after server error...")
+            Thread.sleep(2000) // Wait 2 seconds before retry
+            continue
+          }
           return
         }
-        continue
-      }
-      if (code != 200) {
-        log("ERROR: HTTP $code")
-        conn.disconnect()
-        return
-      }
-      break
-    }
-    val total = conn.contentLength.toLong()
-    var downloaded = 0L
-    BufferedInputStream(conn.inputStream).use { input ->
-      FileOutputStream(dest).use { output ->
-        val buf = ByteArray(65536)
-        var n: Int
-        while (input.read(buf).also { n = it } != -1) {
-          output.write(buf, 0, n)
-          downloaded += n
-          if (total > 0 && downloaded % (512 * 1024) < 65536) {
-            log("  ${downloaded / 1024}KB / ${total / 1024}KB")
+        
+        val total = conn.contentLength.toLong()
+        var downloaded = 0L
+        BufferedInputStream(conn.inputStream).use { input ->
+          FileOutputStream(dest).use { output ->
+            val buf = ByteArray(65536)
+            var n: Int
+            while (input.read(buf).also { n = it } != -1) {
+              output.write(buf, 0, n)
+              downloaded += n
+              if (total > 0 && downloaded % (512 * 1024) < 65536) {
+                log("  ${downloaded / 1024}KB / ${total / 1024}KB")
+              }
+            }
           }
         }
+        conn.disconnect()
+        log("  Download complete (${dest.length() / 1024}KB)")
+        return // Success
+      } catch (e: Exception) {
+        lastError = e.message
+        log("Download error: ${e.message}")
+        Thread.sleep(2000) // Wait before retry
       }
     }
-    conn.disconnect()
-    log("  Download complete (${dest.length() / 1024}KB)")
   }
 
   /** Fix proot stubs — ensure they're simple exit-0 scripts. */
