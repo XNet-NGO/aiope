@@ -21,6 +21,11 @@ android {
     versionCode = Configurations.versionCode
     versionName = Configurations.versionName
     buildConfigField("String", "GATEWAY_KEY", "\"${project.findProperty("GATEWAY_KEY") ?: ""}\"")
+
+    // ✅ NDK configuration: explicitly declare supported ABIs for native library compilation
+    ndk {
+      abiFilters.addAll(Configurations.supportedAbis)
+    }
   }
 
   buildFeatures { buildConfig = true }
@@ -43,6 +48,8 @@ android {
     resources {
       excludes.add("/META-INF/{AL2.0,LGPL2.1}")
     }
+    // ✅ CRITICAL: Enable legacy JNI packaging to support .so files in app/src/main/jniLibs/
+    // Without this, native libraries won't be included in the APK
     jniLibs.useLegacyPackaging = true
   }
 
