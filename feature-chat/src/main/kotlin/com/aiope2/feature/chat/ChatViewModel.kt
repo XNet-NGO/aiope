@@ -166,8 +166,10 @@ class ChatViewModel @Inject constructor(
               }
             }
             is StreamEvent.Error -> {
-              viewModelScope.launch(Dispatchers.Main) {
-                _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: ${event.message}")
+              if (!event.message.isNullOrBlank()) {
+                viewModelScope.launch(Dispatchers.Main) {
+                  _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: ${event.message}")
+                }
               }
               stopRealtimeVoice()
             }
@@ -185,8 +187,10 @@ class ChatViewModel @Inject constructor(
         }
       } catch (e: Exception) {
         if (e is kotlinx.coroutines.CancellationException) return@launch
+        val msg = e.message
+        if (msg.isNullOrBlank()) return@launch
         viewModelScope.launch(Dispatchers.Main) {
-          _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: ${e.message}")
+          _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: $msg")
         }
         stopRealtimeVoice()
       }
