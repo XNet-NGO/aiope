@@ -141,7 +141,7 @@ data class ProviderProfile(
         id = j.optString("id"),
         builtinId = j.optString("builtinId", "custom"),
         label = j.optString("label"),
-        apiKey = j.optString("apiKey"),
+        apiKey = j.optString("apiKey").trim(),
         apiBase = j.optString("apiBase"),
         selectedModelId = j.optString("selectedModelId"),
         isActive = j.optBoolean("isActive"),

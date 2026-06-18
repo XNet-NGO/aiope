@@ -136,7 +136,7 @@ class StreamingOrchestrator(
           .header("Content-Type", "application/json; charset=utf-8")
           .header("Accept", "text/event-stream")
           .header("Connection", "close") // force fresh TCP — avoids cellular NAT killing reused sockets
-          .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey") }
+          .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer ${apiKey.trim()}") }
           .post(body.toRequestBody(JSON_MT))
           .build()
 

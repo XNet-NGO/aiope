@@ -195,7 +195,7 @@ class ProviderStore @Inject constructor(
         val base = profile.effectiveApiBase().trimEnd('/')
         val url = if (base.endsWith("/v1")) "$base/models" else "$base/v1/models"
         val client = com.aiope2.feature.chat.engine.SafeOkHttp.builder().connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS).readTimeout(10, java.util.concurrent.TimeUnit.SECONDS).build()
-        val req = okhttp3.Request.Builder().url(url).addHeader("Authorization", "Bearer ${profile.apiKey}").build()
+        val req = okhttp3.Request.Builder().url(url).addHeader("Authorization", "Bearer ${profile.apiKey.trim()}").build()
         val body = client.newCall(req).execute().use { it.body?.string() ?: "" }
         val data = JSONObject(body).optJSONArray("data") ?: return@Thread
         val models = (0 until data.length()).map {

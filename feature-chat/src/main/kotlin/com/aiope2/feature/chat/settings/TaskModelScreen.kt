@@ -260,7 +260,7 @@ internal suspend fun fetchModels(baseUrl: String, apiKey: String): List<ModelDef
       else -> "$base/v1/models"
     }
     val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-    if (apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $apiKey")
+    if (apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
     conn.connectTimeout = 15_000
     conn.readTimeout = 15_000
     val body = conn.inputStream.bufferedReader().readText()

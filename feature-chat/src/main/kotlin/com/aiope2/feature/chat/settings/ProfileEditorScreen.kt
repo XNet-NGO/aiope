@@ -400,7 +400,7 @@ private suspend fun testConnection(p: ProviderProfile, mc: ModelConfig): String 
     val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
     conn.requestMethod = "POST"
     conn.setRequestProperty("Content-Type", "application/json")
-    if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+    if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey.trim()}")
     conn.connectTimeout = 15_000
     conn.readTimeout = 30_000
     conn.doOutput = true
@@ -442,7 +442,7 @@ private suspend fun testConnection(p: ProviderProfile, mc: ModelConfig): String 
         val tc = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         tc.requestMethod = "POST"
         tc.setRequestProperty("Content-Type", "application/json")
-        if (p.apiKey.isNotBlank()) tc.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+        if (p.apiKey.isNotBlank()) tc.setRequestProperty("Authorization", "Bearer ${p.apiKey.trim()}")
         tc.connectTimeout = 15_000
         tc.readTimeout = 30_000
         tc.doOutput = true
@@ -479,7 +479,7 @@ private suspend fun testConnection(p: ProviderProfile, mc: ModelConfig): String 
         val vc = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         vc.requestMethod = "POST"
         vc.setRequestProperty("Content-Type", "application/json")
-        if (p.apiKey.isNotBlank()) vc.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+        if (p.apiKey.isNotBlank()) vc.setRequestProperty("Authorization", "Bearer ${p.apiKey.trim()}")
         vc.connectTimeout = 15_000
         vc.readTimeout = 30_000
         vc.doOutput = true
@@ -500,7 +500,7 @@ private suspend fun testConnection(p: ProviderProfile, mc: ModelConfig): String 
         val ac = java.net.URL(au).openConnection() as java.net.HttpURLConnection
         ac.requestMethod = "POST"
         ac.setRequestProperty("Content-Type", "application/json")
-        if (p.apiKey.isNotBlank()) ac.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+        if (p.apiKey.isNotBlank()) ac.setRequestProperty("Authorization", "Bearer ${p.apiKey.trim()}")
         ac.connectTimeout = 10_000
         ac.readTimeout = 15_000
         ac.doOutput = true
@@ -531,7 +531,7 @@ private suspend fun testConnection(p: ProviderProfile, mc: ModelConfig): String 
         val vdc = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         vdc.requestMethod = "POST"
         vdc.setRequestProperty("Content-Type", "application/json")
-        if (p.apiKey.isNotBlank()) vdc.setRequestProperty("Authorization", "Bearer ${p.apiKey}")
+        if (p.apiKey.isNotBlank()) vdc.setRequestProperty("Authorization", "Bearer ${p.apiKey.trim()}")
         vdc.connectTimeout = 15_000
         vdc.readTimeout = 30_000
         vdc.doOutput = true
