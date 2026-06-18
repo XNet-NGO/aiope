@@ -215,7 +215,9 @@ private fun AssistantBubble(
         modifier = Modifier.fillMaxWidth(),
       ) {
         Column(Modifier.padding(12.dp)) {
-          val content = message.content.trimEnd().replace(Regex("""^\[Tools:[^\]]*]\n?"""), "")
+          val content = message.content.trimEnd().let { c ->
+            if (c.startsWith("[Tools:")) c.substringAfter("\n", "") else c
+          }
           val mdTheme = rememberMarkdownTheme(cs, com.aiope2.feature.chat.theme.LocalThemeState.current)
           // Detect aiope-ui blocks (complete = has closing ```)
           val hasUiBlock = content.contains("```aiope-ui")
