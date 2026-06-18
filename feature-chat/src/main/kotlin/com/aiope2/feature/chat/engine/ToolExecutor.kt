@@ -545,9 +545,12 @@ class ToolExecutor(
       .header("Accept-Encoding", "identity")
       .header("User-Agent", "aiope2/1.0")
       .build()
-    val body = httpClient.newCall(req).execute().use { if (it.isSuccessful) it.body?.string() ?: "" else throw Exception("HTTP ${it.code}") }
+    val body = try {
+      httpClient.newCall(req).execute().use { if (it.isSuccessful) it.body?.string() ?: "" else "" }
+    } catch (_: Exception) { "" }
+    if (body.isBlank()) return ddgFallback(query, categories)
     val json = org.json.JSONObject(body)
-    val results = json.optJSONArray("results") ?: return "No results found."
+    val results = json.optJSONArray("results") ?: return ddgFallback(query, categories)
     val limit = if (categories == "images") 20 else 10
     val sb = StringBuilder()
     for (i in 0 until minOf(results.length(), limit)) {
@@ -559,7 +562,30 @@ class ToolExecutor(
         sb.append("- ${r.optString("title")}\n  ${r.optString("url")}\n  ${r.optString("content")}\n")
       }
     }
-    return sb.toString().ifBlank { "No results found." }
+    return sb.toString().ifBlank { ddgFallback(query, categories) }
+  }
+
+  private fun ddgFallback(query: String, categories: String): String {
+    val u = "https://html.duckduckgo.com/html/?q=${java.net.URLEncoder.encode(query, "UTF-8")}"
+    val req = okhttp3.Request.Builder().url(u)
+      .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+      .build()
+    val html = try {
+      httpClient.newCall(req).execute().use { it.body?.string() ?: "" }
+    } catch (_: Exception) { return "Error: search unavailable" }
+    val pattern = Regex("""<a rel="nofollow" class="result__a" href="[^"]*uddg=([^&"]+)[^"]*">(.+?)</a>""")
+    val snippetPattern = Regex("""<a class="result__snippet"[^>]*>(.+?)</a>""")
+    val links = pattern.findAll(html).take(10).toList()
+    val snippets = snippetPattern.findAll(html).take(10).toList()
+    if (links.isEmpty()) return "No results found."
+    val sb = StringBuilder()
+    links.forEachIndexed { i, m ->
+      val url = java.net.URLDecoder.decode(m.groupValues[1], "UTF-8")
+      val title = m.groupValues[2].replace(Regex("<[^>]+>"), "")
+      val snippet = snippets.getOrNull(i)?.groupValues?.get(1)?.replace(Regex("<[^>]+>"), "") ?: ""
+      sb.append("- $title\n  $url\n  $snippet\n")
+    }
+    return sb.toString()
   }
 
   private suspend fun executeSearchWeb(query: String): String = try {
