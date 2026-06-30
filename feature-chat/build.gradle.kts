@@ -47,7 +47,7 @@ dependencies {
   implementation("ru.noties:jlatexmath-android-font-greek:0.2.0")
 
   // location
-  implementation("com.google.android.gms:play-services-location:21.3.0")
+  implementation("com.google.android.gms:play-services-location:21.4.0")
 
   // maps
   implementation("org.ramani-maps:ramani-maplibre:0.10.0")
