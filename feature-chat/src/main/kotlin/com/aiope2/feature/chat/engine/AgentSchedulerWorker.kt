@@ -105,7 +105,8 @@ class AgentSchedulerWorker(
     return try {
       // Resolve agent config
       val agent: AgentEntity? = dao.getAgentByName(task.agentName)
-      val systemPrompt = agent?.prompt ?: "You are a helpful assistant. Complete the task concisely."
+      val basePrompt = agent?.prompt ?: "You are a scheduled task agent. Complete the assigned task using your tools."
+      val systemPrompt = basePrompt + "\n\n## Environment\n- Date/Time: " + java.time.LocalDateTime.now().toString() + "\n- Platform: Android (AIOPE scheduled task)\n- Execution: Background (WorkManager)\n\n## Tool Execution\nYou MUST use tools to complete your task.\n- search_web: search the web\n- fetch_url: fetch URL content\n- read_file/write_file/list_directory: filesystem\n- run_sh: shell commands\n- send_sms: send SMS\n- send_notification: show notification\n- set_alarm: set alarm\n- ssh_exec: remote command\n- memory_store/memory_recall: persistent memory\n\nDO NOT describe what you would do — actually DO it with tools.\nIf a tool fails, try an alternative. When finished, summarize what was accomplished."
       val modelId = agent?.model?.ifEmpty { null } ?: provider.selectedModelId
       val temperature = agent?.temperature ?: 0.7f
 

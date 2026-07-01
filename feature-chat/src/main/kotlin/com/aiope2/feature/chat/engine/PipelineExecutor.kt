@@ -88,16 +88,45 @@ class PipelineExecutor(
     /** Parse orchestrate tool arguments into stages */
     fun parseStages(args: Map<String, Any?>): Pair<String, List<Stage>> {
       val task = args["task"]?.toString() ?: ""
-      val stagesRaw = args["stages"] as? List<*> ?: return task to emptyList()
+
+      // Handle both List<*> and JSONArray
+      val stagesRaw: List<Any?> = when (val raw = args["stages"]) {
+        is List<*> -> raw
+        is org.json.JSONArray -> (0 until raw.length()).map { raw.opt(it) }
+        else -> return task to emptyList()
+      }
 
       val stages = stagesRaw.mapNotNull { raw ->
-        val map = raw as? Map<*, *> ?: return@mapNotNull null
-        Stage(
-          name = map["name"]?.toString() ?: return@mapNotNull null,
-          agent = map["agent"]?.toString() ?: "default",
-          prompt = map["prompt"]?.toString() ?: return@mapNotNull null,
-          dependsOn = (map["depends_on"] as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList(),
-        )
+        // Each stage can be a Map or JSONObject
+        val name: String?
+        val agent: String?
+        val prompt: String?
+        val dependsOn: List<String>
+
+        when (raw) {
+          is Map<*, *> -> {
+            name = raw["name"]?.toString()
+            agent = raw["agent"]?.toString() ?: "default"
+            prompt = raw["prompt"]?.toString()
+            val deps = raw["depends_on"]
+            dependsOn = when (deps) {
+              is List<*> -> deps.mapNotNull { it?.toString() }
+              is org.json.JSONArray -> (0 until deps.length()).mapNotNull { deps.optString(it) }
+              else -> emptyList()
+            }
+          }
+          is org.json.JSONObject -> {
+            name = raw.optString("name", null)
+            agent = raw.optString("agent", "default")
+            prompt = raw.optString("prompt", null)
+            val deps = raw.optJSONArray("depends_on")
+            dependsOn = if (deps != null) (0 until deps.length()).mapNotNull { deps.optString(it) } else emptyList()
+          }
+          else -> return@mapNotNull null
+        }
+
+        if (name == null || prompt == null) return@mapNotNull null
+        Stage(name = name, agent = agent ?: "default", prompt = prompt, dependsOn = dependsOn)
       }
       return task to stages
     }

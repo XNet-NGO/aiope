@@ -159,7 +159,7 @@ private fun MonitorTab(
   }
 
   // Max 10 history: show running + up to (10 - running.size) persisted
-  val maxHistory = 10
+  val maxHistory = 30
   val runningIds = runningTasks.map { it.id }.toSet()
   val historySlots = (maxHistory - runningTasks.size).coerceAtLeast(0)
   val visiblePersisted = persistedTasks
