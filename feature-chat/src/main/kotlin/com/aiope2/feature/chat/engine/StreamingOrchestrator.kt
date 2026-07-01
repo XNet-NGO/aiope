@@ -25,6 +25,7 @@ class StreamingOrchestrator(
   private val model: String,
   private val tools: List<ToolDef> = emptyList(),
   private val onToolCall: suspend (String, Map<String, Any?>) -> String = { _, _ -> "" },
+  private val temperature: Float = 0.7f,
 ) {
   data class ToolDef(val name: String, val description: String, val parameters: JSONObject)
 
@@ -44,7 +45,7 @@ class StreamingOrchestrator(
       "read_file", "list_directory", "query_data", "search_web", "search_images",
       "fetch_url", "memory_recall", "get_location", "browser_content", "browser_elements",
       "search_location", "read_calendar", "read_contacts", "read_sms", "clipboard_read",
-      "device_info", "analyze_image", "image_generate", "task", "ssh_exec",
+      "device_info", "analyze_image", "image_generate", "ssh_exec",
     )
 
     private fun isTransientReset(msg: String): Boolean {
@@ -449,6 +450,7 @@ class StreamingOrchestrator(
     val body = JSONObject()
     body.put("model", model)
     body.put("stream", true)
+    body.put("temperature", temperature.toDouble())
     body.put("messages", JSONArray().apply { for (m in messages) put(m) })
     android.util.Log.e("AIOPE2", "Request: model=$model tools=${tools.size} msgs=${messages.size}")
     if (tools.isNotEmpty()) {

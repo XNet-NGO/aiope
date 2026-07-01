@@ -45,6 +45,10 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
   val modelLabel by viewModel._modelLabel.collectAsStateWithLifecycle()
   val browserVisible by viewModel.browserVisible.collectAsStateWithLifecycle()
   val browserMaximized by viewModel.browserMaximized.collectAsStateWithLifecycle()
+  val agentPanelVisible by viewModel.agentPanelVisible.collectAsStateWithLifecycle()
+  val agentRoster by viewModel.agentRoster.collectAsStateWithLifecycle()
+  val persistedTasks by viewModel.persistedTasks.collectAsStateWithLifecycle()
+  val scheduledTasks by viewModel.scheduledTasks.collectAsStateWithLifecycle()
   val agentMode by viewModel.agentMode.collectAsStateWithLifecycle()
   val autoRun by viewModel.autoRun.collectAsStateWithLifecycle()
   val subagentTasks by viewModel.subagentManager.tasks.collectAsStateWithLifecycle()
@@ -68,10 +72,12 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
           subagentTasks = subagentTasks,
           terminalVisible = terminalVisible,
           browserVisible = browserVisible,
+          agentPanelVisible = agentPanelVisible,
           imeVisible = imeVisible, modelLabel = modelLabel,
           listState = listState,
           onSend = { text, imgs -> viewModel.send(text, imgs) }, onStop = { viewModel.cancelStreaming() }, onToggleTerminal = viewModel::toggleTerminal,
           onToggleBrowser = { viewModel.toggleBrowser() },
+          onToggleAgentPanel = { viewModel.toggleAgentPanel() },
           onOpenSettings = onOpenSettings,
           onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
           onSwitchModel = { viewModel.switchModel(it) },
@@ -92,6 +98,23 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
         if (terminalVisible) {
           TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.width(360.dp).fillMaxHeight())
         }
+        if (agentPanelVisible) {
+          AgentPanel(
+            modifier = Modifier.width(360.dp).fillMaxHeight(),
+            agents = agentRoster,
+            runningTasks = subagentTasks,
+            persistedTasks = persistedTasks,
+            scheduledTasks = scheduledTasks,
+            models = remember { viewModel.getModelList().map { it.id } },
+            onSpawn = { agent, task, reportTo -> viewModel.spawnAgentFromPanel(agent, task, reportTo) },
+            onCancelTask = { viewModel.cancelAgentTask(it) },
+            onRerunTask = { viewModel.rerunAgentTask(it) },
+            onSaveAgent = { viewModel.saveAgent(it) },
+            onDeleteAgent = { viewModel.deleteAgent(it) },
+            onSaveSchedule = { viewModel.saveScheduledTask(it) },
+            onDeleteSchedule = { viewModel.deleteScheduledTask(it) },
+          )
+        }
       }
       if (browserVisible) {
         com.aiope2.feature.chat.browser.BrowserPanel(
@@ -111,10 +134,12 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
           subagentTasks = subagentTasks,
           terminalVisible = terminalVisible,
           browserVisible = browserVisible,
+          agentPanelVisible = agentPanelVisible,
           imeVisible = imeVisible, modelLabel = modelLabel,
           listState = listState,
           onSend = { text, imgs -> viewModel.send(text, imgs) }, onStop = { viewModel.cancelStreaming() }, onToggleTerminal = viewModel::toggleTerminal,
           onToggleBrowser = { viewModel.toggleBrowser() },
+          onToggleAgentPanel = { viewModel.toggleAgentPanel() },
           onOpenSettings = onOpenSettings,
           onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
           onSwitchModel = { viewModel.switchModel(it) },
@@ -134,6 +159,23 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
         )
         if (terminalVisible) {
           TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.fillMaxWidth().height(240.dp))
+        }
+        if (agentPanelVisible) {
+          AgentPanel(
+            modifier = Modifier.fillMaxWidth().height(240.dp),
+            agents = agentRoster,
+            runningTasks = subagentTasks,
+            persistedTasks = persistedTasks,
+            scheduledTasks = scheduledTasks,
+            models = remember { viewModel.getModelList().map { it.id } },
+            onSpawn = { agent, task, reportTo -> viewModel.spawnAgentFromPanel(agent, task, reportTo) },
+            onCancelTask = { viewModel.cancelAgentTask(it) },
+            onRerunTask = { viewModel.rerunAgentTask(it) },
+            onSaveAgent = { viewModel.saveAgent(it) },
+            onDeleteAgent = { viewModel.deleteAgent(it) },
+            onSaveSchedule = { viewModel.saveScheduledTask(it) },
+            onDeleteSchedule = { viewModel.deleteScheduledTask(it) },
+          )
         }
       }
       if (browserVisible) {
@@ -160,9 +202,10 @@ private fun ChatContent(
   onModeChange: (com.aiope2.feature.chat.engine.AgentMode) -> Unit = {},
   autoRun: Boolean = false,
   onAutoRunChange: (Boolean) -> Unit = {},
-  subagentTasks: List<com.aiope2.feature.chat.engine.SubagentManager.SubagentTask> = emptyList(),
+  subagentTasks: List<com.aiope2.feature.chat.engine.AgentExecutor.RunningTask> = emptyList(),
   terminalVisible: Boolean,
   browserVisible: Boolean,
+  agentPanelVisible: Boolean = false,
   imeVisible: Boolean,
   modelLabel: String,
   listState: androidx.compose.foundation.lazy.LazyListState,
@@ -170,6 +213,7 @@ private fun ChatContent(
   onStop: () -> Unit = {},
   onToggleTerminal: () -> Unit,
   onToggleBrowser: () -> Unit,
+  onToggleAgentPanel: () -> Unit = {},
   onOpenSettings: () -> Unit,
   onGetModels: () -> List<com.aiope2.core.network.ModelDef>,
   onGetActiveModelId: () -> String,
@@ -264,6 +308,14 @@ private fun ChatContent(
                   "Terminal",
                   modifier = Modifier.size(18.dp),
                   tint = if (terminalVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+              }
+              IconButton(onClick = onToggleAgentPanel, modifier = Modifier.size(36.dp)) {
+                Icon(
+                  Icons.Default.SmartToy,
+                  "Agents",
+                  modifier = Modifier.size(18.dp),
+                  tint = if (agentPanelVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 )
               }
               IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
@@ -401,7 +453,7 @@ private fun MessageList(
   onTranslate: ((String, String) -> Unit)? = null,
   onUiCallback: ((String, Map<String, String>) -> Unit)? = null,
   onRunCode: ((code: String, language: String) -> Unit)? = null,
-  subagentTasks: List<com.aiope2.feature.chat.engine.SubagentManager.SubagentTask> = emptyList(),
+  subagentTasks: List<com.aiope2.feature.chat.engine.AgentExecutor.RunningTask> = emptyList(),
   listState: androidx.compose.foundation.lazy.LazyListState,
   modifier: Modifier = Modifier,
 ) {

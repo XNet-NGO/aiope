@@ -8,6 +8,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ForkRight
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.VolumeOff
@@ -59,7 +61,7 @@ fun MessageBubble(
   onTranslate: ((String) -> Unit)? = null,
   onUiCallback: ((String, Map<String, String>) -> Unit)? = null,
   onRunCode: ((code: String, language: String) -> Unit)? = null,
-  subagentTasks: List<com.aiope2.feature.chat.engine.SubagentManager.SubagentTask> = emptyList(),
+  subagentTasks: List<com.aiope2.feature.chat.engine.AgentExecutor.RunningTask> = emptyList(),
 ) {
   val isUser = message.role == Role.USER
   val ctx = LocalContext.current
@@ -70,6 +72,8 @@ fun MessageBubble(
   CompositionLocalProvider(LocalTextSelectionColors provides selection) {
     if (isUser) {
       UserBubble(message, ctx, showMenu, { showMenu = it }, onEdit, onRetry, onCompact, onFork)
+    } else if (message.role == Role.AGENT_REPORT) {
+      AgentReportBubble(message)
     } else {
       AssistantBubble(message, ctx, isLastStreaming, onRetry, onCompact, onFork, onTranslate, onUiCallback, onRunCode, subagentTasks)
     }
@@ -169,7 +173,7 @@ private fun AssistantBubble(
   onTranslate: ((String) -> Unit)? = null,
   onUiCallback: ((String, Map<String, String>) -> Unit)? = null,
   onRunCode: ((code: String, language: String) -> Unit)? = null,
-  subagentTasks: List<com.aiope2.feature.chat.engine.SubagentManager.SubagentTask> = emptyList(),
+  subagentTasks: List<com.aiope2.feature.chat.engine.AgentExecutor.RunningTask> = emptyList(),
 ) {
   val cs = MaterialTheme.colorScheme
   val theme = com.aiope2.feature.chat.theme.LocalThemeState.current
@@ -721,5 +725,79 @@ internal fun saveImageToGallery(context: Context, bitmap: android.graphics.Bitma
     android.os.Handler(android.os.Looper.getMainLooper()).post { Toast.makeText(context, "Saved to gallery", Toast.LENGTH_SHORT).show() }
   } catch (e: Exception) {
     android.os.Handler(android.os.Looper.getMainLooper()).post { Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show() }
+  }
+}
+
+@Composable
+private fun AgentReportBubble(message: ChatMessage) {
+  val content = message.content
+  val theme = com.aiope2.feature.chat.theme.LocalThemeState.current
+  val agentName = Regex("Agent: (\\w+)").find(content)?.groupValues?.get(1) ?: "Agent"
+  val status = Regex("Status: (\\w+)").find(content)?.groupValues?.get(1) ?: "pending"
+  val task = Regex("Task: \"([^\"]+)\"").find(content)?.groupValues?.get(1) ?: ""
+  val result = content.substringAfter("Result:\n", "").removeSuffix("\n[/AGENT_REPORT]")
+
+  val statusColor = when (status) {
+    "completed" -> Color(0xFF4CAF50)
+    "failed" -> Color(0xFFFF5252)
+    else -> Color(0xFFFFB74D)
+  }
+
+  val bubbleColor = if (theme.useCustomBubbles && theme.agentReportBubbleColor != null) theme.agentReportBubbleColor else Color(0xFF1A1A2E)
+
+  Column(
+    Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp, vertical = 4.dp)
+      .clip(RoundedCornerShape(12.dp))
+      .background(bubbleColor)
+      .padding(12.dp),
+  ) {
+    // Header
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      Icon(
+        Icons.Default.SmartToy,
+        contentDescription = null,
+        modifier = Modifier.size(14.dp),
+        tint = statusColor,
+      )
+      Spacer(Modifier.width(6.dp))
+      Text(
+        "$agentName reported",
+        fontSize = 11.sp,
+        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+        color = statusColor,
+      )
+      Spacer(Modifier.weight(1f))
+      Text(
+        status,
+        fontSize = 9.sp,
+        fontFamily = FontFamily.Monospace,
+        color = statusColor,
+      )
+    }
+
+    // Task
+    if (task.isNotEmpty()) {
+      Spacer(Modifier.height(4.dp))
+      Text(
+        task,
+        fontSize = 10.sp,
+        color = Color(0xFF999999),
+        maxLines = 2,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+      )
+    }
+
+    // Result
+    if (result.isNotBlank()) {
+      Spacer(Modifier.height(6.dp))
+      Text(
+        result,
+        fontSize = 10.sp,
+        color = Color(0xFFBBBBBB),
+        lineHeight = 14.sp,
+      )
+    }
   }
 }
