@@ -21,6 +21,39 @@
 | aiope-gateway | `~/projects/aiope-gateway` | github.com/XNet-NGO/aiope-gateway |
 | xnet-keystore | `~/projects/xnet-keystore` | private |
 
+### AIOPE Monorepo Structure
+```
+aiope/
+├── app/                    # Android app module (MainActivity, Hilt, signing)
+├── build-logic/            # Gradle convention plugins
+├── buildSrc/               # Configurations.kt (versions, compileSdk)
+├── core-data/              # Data layer
+├── core-designsystem/      # Compose theme, icons, material deps
+├── core-model/             # Shared models
+├── core-navigation/        # Navigation
+├── core-network/           # ProviderProfile, ModelDef, API clients
+├── core-preferences/       # SharedPreferences
+├── core-terminal/          # Proot, shell, JNI native libs
+├── daemon/                 # aiope-remote (Go SSH daemon, multi-arch)
+│   ├── *.go                # SSH server, exec, sftp, auth, health
+│   └── scripts/            # build-installer.sh, installer-header.sh
+├── docs/                   # AGENT_SYSTEM_SPEC.md
+├── feature-chat/           # Main chat UI, agents, tools, streaming
+│   ├── db/                 # Room (ChatDatabase, entities, migrations)
+│   ├── di/                 # Hilt modules (ChatModule)
+│   ├── engine/             # AgentExecutor, PipelineExecutor, StreamingOrchestrator, ToolExecutor, WorkManager
+│   ├── settings/           # Settings screens (voice, MCP, profiles)
+│   ├── theme/              # ThemeState, ThemePrefs, ThemeSettingsScreen
+│   └── browser/            # BrowserPanel (WebView)
+├── feature-remote/         # Remote server SSH deploy + tool bridge
+│   ├── ssh/                # SshSessionManager, DeployUseCase
+│   ├── db/                 # RemoteServerEntity, dao
+│   ├── ui/                 # ServerListScreen, ViewModel
+│   └── assets/             # aiope-remote-installer.sh (bundled)
+├── gradle/                 # libs.versions.toml (dependency catalog)
+└── spotless/               # ktlint config
+```
+
 ### Production gateway (inf.xnet.ngo)
 - SSH: `ssh ubuntu@inf.xnet.ngo`
 - Blue/green deploy: `~/aiope-gateway/deploy.sh`
