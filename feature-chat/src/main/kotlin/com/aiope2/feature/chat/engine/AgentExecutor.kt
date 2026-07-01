@@ -45,7 +45,7 @@ class AgentExecutor(
   private val allToolNames = setOf(
     "search_web", "search_images", "search_location", "fetch_url",
     "read_file", "list_directory", "query_data", "memory_recall",
-    "write_file", "run_sh", "run_proot", "ssh_exec", "image_generate",
+    "write_file", "run_sh", "run_proot", "ssh_start", "ssh_exec", "image_generate",
     "analyze_image", "browser_content", "browser_elements",
   )
 
@@ -60,12 +60,16 @@ class AgentExecutor(
    */
   suspend fun runAgent(agentName: String, prompt: String, conversationId: String? = null): String {
     val agent = dao?.getAgentByName(agentName)
-    val allowedTools = resolveTools(agent)
+    if (agent == null && agentName != "default") {
+      val roster = dao?.getAgents()?.map { it.name }?.joinToString(", ") ?: "unknown"
+      return "<task_error>Unknown agent '$agentName'. Available agents: $roster</task_error>"
+    }
+    val allowedTools = resolveTools(agent, agentName)
     val config = resolveConfig(agent)
 
     val task = RunningTask(
       agentName = agent?.name ?: agentName,
-      description = prompt.take(80),
+      description = prompt,
     )
     _tasks.value = _tasks.value + task
 
@@ -88,6 +92,7 @@ class AgentExecutor(
 
       updateStage(task.id, Stage.READING)
       val sb = StringBuilder()
+      val toolLog = StringBuilder()
       val orchestrator = createOrchestrator(config, tools) { name, args ->
         if (name !in allowedTools) return@createOrchestrator "Tool '$name' not available to this agent"
         task.toolCalls.add(name)
@@ -103,10 +108,16 @@ class AgentExecutor(
           sb.append(chunk.content)
           updateTask(task.id) { it.copy(result = sb.toString()) }
         }
+        // Capture tool results as fallback if agent never produces final text
+        if (!chunk.toolResults.isNullOrEmpty()) {
+          chunk.toolResults.forEach { tr ->
+            toolLog.append("[${tr.name}]: ${tr.result.take(500)}\n")
+          }
+        }
         if (sb.length > 200) updateStage(task.id, Stage.SUMMARIZING)
       }
 
-      val result = sb.toString()
+      val result = sb.toString().ifEmpty { toolLog.toString().ifEmpty { "(agent completed with no output)" } }
       updateTask(task.id) { it.copy(stage = Stage.FINISHED, result = result) }
       dao?.updateAgentTask(task.id, "finished", result, System.currentTimeMillis())
       "<task_result>\n$result\n</task_result>"
@@ -127,10 +138,13 @@ class AgentExecutor(
     _tasks.value = emptyList()
   }
 
-  private fun resolveTools(agent: AgentEntity?): Set<String> {
-    if (agent == null) return readOnlyTools
-    val tools = agent.tools.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-    return if (tools.isEmpty()) readOnlyTools else tools.intersect(allToolNames)
+  private fun resolveTools(agent: AgentEntity?, agentName: String = "default"): Set<String> {
+    if (agent != null) {
+      val tools = agent.tools.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+      return if (tools.isEmpty()) readOnlyTools else tools.intersect(allToolNames)
+    }
+    // Agent not in roster — use read-only tools (force use of roster agents)
+    return readOnlyTools
   }
 
   private fun resolveConfig(agent: AgentEntity?): AgentConfig {

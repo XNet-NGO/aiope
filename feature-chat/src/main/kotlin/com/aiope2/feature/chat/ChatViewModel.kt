@@ -670,7 +670,7 @@ class ChatViewModel @Inject constructor(
     panelRefreshJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       while (_agentPanelVisible.value) {
         kotlinx.coroutines.delay(3000)
-        _persistedTasks.value = chatDao.getAgentTasks(10)
+        _persistedTasks.value = chatDao.getAgentTasks(30)
         _scheduledTasks.value = chatDao.getScheduledTasks()
       }
     }
@@ -679,7 +679,7 @@ class ChatViewModel @Inject constructor(
   private fun loadAgentPanelData() {
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       _agentRoster.value = chatDao.getAgents()
-      _persistedTasks.value = chatDao.getAgentTasks(10)
+      _persistedTasks.value = chatDao.getAgentTasks(30)
       _scheduledTasks.value = chatDao.getScheduledTasks()
     }
   }
@@ -687,7 +687,7 @@ class ChatViewModel @Inject constructor(
   fun spawnAgentFromPanel(agentName: String, task: String) {
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       subagentManager.runAgent(agentName, task)
-      _persistedTasks.value = chatDao.getAgentTasks(10)
+      _persistedTasks.value = chatDao.getAgentTasks(30)
     }
   }
 
@@ -700,7 +700,7 @@ class ChatViewModel @Inject constructor(
     // Update persisted
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       chatDao.updateAgentTask(taskId, "failed", "Cancelled by user", System.currentTimeMillis())
-      _persistedTasks.value = chatDao.getAgentTasks(10)
+      _persistedTasks.value = chatDao.getAgentTasks(30)
     }
   }
 
@@ -708,7 +708,7 @@ class ChatViewModel @Inject constructor(
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       val task = chatDao.getAgentTasks(50).firstOrNull { it.id == taskId } ?: return@launch
       subagentManager.runAgent(task.agentName, task.prompt)
-      _persistedTasks.value = chatDao.getAgentTasks(10)
+      _persistedTasks.value = chatDao.getAgentTasks(30)
     }
   }
 
@@ -896,7 +896,7 @@ class ChatViewModel @Inject constructor(
         if (isReasoning && currentReasoning.isNotEmpty()) {
           reasoningBlocks.add(currentReasoning.toString()); currentReasoning.clear(); isReasoning = false
         }
-        for (c in calls) toolCallsList.add("${c.name}(${c.arguments.values.firstOrNull()?.toString()?.take(80) ?: ""})")
+        for (c in calls) toolCallsList.add("${c.name}(${c.arguments.entries.joinToString(", ") { "${it.key}=${it.value}" }})")
       }
       chunk.toolResults?.let { results ->
         for (r in results) {
@@ -1039,8 +1039,34 @@ class ChatViewModel @Inject constructor(
           )
         },
         buildMessages = { agent, prompt ->
-          val sysPrompt = agent?.prompt ?: "You are a research subagent. Use your tools to search, read, and explore. Summarize your findings concisely in a single response. Do not ask questions."
-          listOf("system" to sysPrompt, "user" to prompt)
+          val agentPrompt = agent?.prompt ?: "You are a helpful agent. Complete the given task using your tools."
+          val remoteCtx = try { kotlinx.coroutines.runBlocking { remoteToolBridge.buildSystemContext() } } catch (_: Exception) { "" }
+          val envContext = """
+
+## Environment
+- Date/Time: ${java.time.LocalDateTime.now()}
+- Platform: Android (AIOPE agent system)
+- Agent: ${agent?.name ?: "default"}
+
+## Tool Execution
+You MUST use tools for ANY task involving information retrieval, file operations, or commands.
+- To search the web: call search_web
+- To fetch a URL: call fetch_url
+- To read a file: call read_file
+- To write a file: call write_file
+- To list a directory: call list_directory
+- To run a shell command: call run_sh
+- To connect to a remote server: call ssh_start with server NAME (not IP)
+- To run command on remote server: call ssh_exec with server NAME and command
+- To disconnect: call ssh_exit with server NAME
+
+IMPORTANT: For remote server operations, use ssh_start FIRST with the server name, then ssh_exec.
+DO NOT use run_sh with the ssh binary — it is not available on Android.
+DO NOT describe what you would do — actually DO it with tools.
+If a tool fails, try an alternative approach. Do not give up.
+When finished, provide a concise summary of results.
+$remoteCtx"""
+          listOf("system" to (agentPrompt + envContext), "user" to prompt)
         },
         getToolDefs = { te.buildToolDefs() },
         executeTool = { name, args -> te.execute(name, args) },

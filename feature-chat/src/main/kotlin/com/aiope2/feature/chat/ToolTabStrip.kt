@@ -85,14 +85,14 @@ internal fun ToolTabStrip(calls: List<String>, results: List<String>, errors: Li
           shape = RoundedCornerShape(12.dp),
           color = if (selHasError) cs.errorContainer.copy(alpha = 0.15f) else cs.surfaceContainer,
         ) {
-          Column(Modifier.padding(10.dp).heightIn(max = 160.dp).verticalScroll(rememberScrollState())) {
-            SelectionContainer {
+          Column(Modifier.padding(10.dp)) {
+            SelectionContainer(Modifier.heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
               Text(calls[selectedIdx], fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant, fontFamily = FontFamily.Monospace)
             }
             if (isDone) {
               Spacer(Modifier.height(6.dp))
               Surface(shape = RoundedCornerShape(8.dp), color = if (selHasError) cs.errorContainer.copy(alpha = 0.3f) else cs.surfaceContainerHighest, modifier = Modifier.fillMaxWidth()) {
-                SelectionContainer {
+                SelectionContainer(Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState())) {
                   Text(results[selectedIdx], fontSize = 12.sp, lineHeight = 16.sp, color = if (selHasError) cs.onErrorContainer else cs.onSurface, modifier = Modifier.padding(8.dp), fontFamily = FontFamily.Monospace)
                 }
               }
