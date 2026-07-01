@@ -107,19 +107,25 @@ ssh ubuntu@inf.xnet.ngo "~/aiope-gateway/deploy.sh"
 
 ## aiope-remote (daemon)
 
-Go SSH daemon deployed from AIOPE app to remote servers.
+Go SSH daemon deployed from AIOPE app to remote servers. The installer binary is bundled in the APK at `feature-remote/src/main/assets/aiope-remote-installer.sh`.
+
+**When daemon Go code changes, you must rebuild and rebundle before the Android build:**
 
 ### Build installer
 ```bash
 cd ~/projects/aiope/daemon
 GOBIN=/usr/local/go/bin/go bash scripts/build-installer.sh 0.1.0
-# Output: daemon/dist/aiope-remote-installer.sh (7.3MB, multi-arch)
+# Output: daemon/dist/aiope-remote-installer.sh (7.3MB, multi-arch: amd64+arm64+arm)
+
+# Bundle into APK assets
+cp daemon/dist/aiope-remote-installer.sh feature-remote/src/main/assets/
+
+# Then rebuild Android
+cd ~/projects/aiope
+./gradlew :app:assembleRelease -x spotlessCheck -x spotlessKotlinCheck
 ```
 
-### Update APK asset
-```bash
-cp daemon/dist/aiope-remote-installer.sh feature-remote/src/main/assets/
-```
+The installer is a self-extracting shell script: header (arch detection + systemd/openrc setup) + tar.gz payload (3 binaries + authorized_keys). On deploy, AIOPE SCPs it to the server via port 22, executes it, then connects to the daemon on port 2222.
 
 ### Manual service management
 ```bash
