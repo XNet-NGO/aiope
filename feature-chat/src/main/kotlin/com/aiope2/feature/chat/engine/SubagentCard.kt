@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun SubagentCard(task: SubagentManager.SubagentTask) {
+fun SubagentCard(task: AgentExecutor.RunningTask) {
   var expanded by remember { mutableStateOf(false) }
 
   Column(
@@ -46,7 +46,7 @@ fun SubagentCard(task: SubagentManager.SubagentTask) {
       .padding(vertical = 2.dp)
       .clip(RoundedCornerShape(8.dp))
       .background(Color(0xFF111111))
-      .clickable { if (task.stage == SubagentManager.Stage.FINISHED || task.stage == SubagentManager.Stage.ERROR) expanded = !expanded }
+      .clickable { if (task.stage == AgentExecutor.Stage.FINISHED || task.stage == AgentExecutor.Stage.ERROR) expanded = !expanded }
       .padding(horizontal = 8.dp, vertical = 5.dp),
   ) {
     Row(
@@ -66,10 +66,11 @@ fun SubagentCard(task: SubagentManager.SubagentTask) {
       Text("·", fontSize = 11.sp, color = Color(0xFF444444))
       // Stage chips
       val stages = listOf(
-        SubagentManager.Stage.SEARCHING to "searching",
-        SubagentManager.Stage.READING to "reading",
-        SubagentManager.Stage.SUMMARIZING to "summarizing",
-        SubagentManager.Stage.FINISHED to "finished",
+        AgentExecutor.Stage.SEARCHING to "searching",
+        AgentExecutor.Stage.READING to "reading",
+        AgentExecutor.Stage.EXECUTING to "executing",
+        AgentExecutor.Stage.SUMMARIZING to "summarizing",
+        AgentExecutor.Stage.FINISHED to "finished",
       )
       stages.forEach { (stage, label) ->
         StageLabel(label = label, state = chipState(task.stage, stage))
@@ -91,9 +92,9 @@ fun SubagentCard(task: SubagentManager.SubagentTask) {
 
 private enum class ChipState { DONE, ACTIVE, PENDING }
 
-private fun chipState(current: SubagentManager.Stage, target: SubagentManager.Stage): ChipState {
-  if (current == SubagentManager.Stage.ERROR) return ChipState.PENDING
-  val order = SubagentManager.Stage.entries
+private fun chipState(current: AgentExecutor.Stage, target: AgentExecutor.Stage): ChipState {
+  if (current == AgentExecutor.Stage.ERROR) return ChipState.PENDING
+  val order = AgentExecutor.Stage.entries
   val ci = order.indexOf(current)
   val ti = order.indexOf(target)
   return when {

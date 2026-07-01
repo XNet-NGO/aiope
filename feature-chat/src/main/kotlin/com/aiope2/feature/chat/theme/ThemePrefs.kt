@@ -32,6 +32,7 @@ class ThemePrefs(private val ctx: Context) {
     // Bubble colors
     val USER_BUBBLE_COLOR = intPreferencesKey("user_bubble_color")
     val AI_BUBBLE_COLOR = intPreferencesKey("ai_bubble_color")
+    val AGENT_REPORT_BUBBLE_COLOR = intPreferencesKey("agent_report_bubble_color")
     val USER_TEXT_COLOR = intPreferencesKey("user_text_color")
     val AI_TEXT_COLOR = intPreferencesKey("ai_text_color")
     val USE_CUSTOM_BUBBLES = booleanPreferencesKey("use_custom_bubbles")
@@ -68,6 +69,7 @@ class ThemePrefs(private val ctx: Context) {
 
   val userBubbleColor: Flow<Int?> = ds.data.map { it[USER_BUBBLE_COLOR] }
   val aiBubbleColor: Flow<Int?> = ds.data.map { it[AI_BUBBLE_COLOR] }
+  val agentReportBubbleColor: Flow<Int?> = ds.data.map { it[AGENT_REPORT_BUBBLE_COLOR] }
   val userTextColor: Flow<Int?> = ds.data.map { it[USER_TEXT_COLOR] }
   val aiTextColor: Flow<Int?> = ds.data.map { it[AI_TEXT_COLOR] }
   val useCustomBubbles: Flow<Boolean> = ds.data.map { it[USE_CUSTOM_BUBBLES] ?: false }

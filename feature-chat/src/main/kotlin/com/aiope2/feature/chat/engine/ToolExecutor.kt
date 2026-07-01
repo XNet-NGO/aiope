@@ -25,7 +25,7 @@ class ToolExecutor(
   private val onBrowserMaximized: (Boolean) -> Unit,
   private val resolveTaskModel: (ModelTask) -> Pair<ProviderProfile, String>,
   private val getAgentMode: () -> AgentMode = { AgentMode.CHAT },
-  var subagentManager: SubagentManager? = null,
+  var subagentManager: AgentExecutor? = null,
   var remoteToolBridge: RemoteToolBridge? = null,
 ) {
   var lastLocationData: LocationData? = null
@@ -85,7 +85,7 @@ class ToolExecutor(
     td("delete_sms", "Delete an SMS message by its ID (from read_sms).", """{"type":"object","properties":{"sms_id":{"type":"integer","description":"SMS ID from read_sms"}},"required":["sms_id"]}"""),
     td("device_info", "Get device info: battery, storage, RAM, network, model.", """{"type":"object","properties":{}}"""),
     td("media_control", "Control media playback (play/pause, next, previous, stop).", """{"type":"object","properties":{"action":{"type":"string","description":"One of: play_pause, next, previous, stop"}},"required":["action"]}"""),
-    td("task", "Spawn an async subagent to research or work on a task in the background. Use for parallel research, exploration, or any work that can run independently. Returns a task_id you can check later. The subagent has read-only access (search, fetch, read files).", """{"type":"object","properties":{"description":{"type":"string","description":"Short 3-5 word description"},"prompt":{"type":"string","description":"Detailed instructions for the subagent"}},"required":["description","prompt"]}"""),
+    td("orchestrate", "Execute a multi-agent pipeline (DAG). Stages without depends_on run in parallel. Results from completed stages are passed as context to dependent stages. Use for complex multi-step tasks requiring different specialists.", """{"type":"object","properties":{"task":{"type":"string","description":"Overall task description"},"stages":{"type":"array","description":"Pipeline stages","items":{"type":"object","properties":{"name":{"type":"string","description":"Unique stage name"},"agent":{"type":"string","description":"Agent name from roster"},"prompt":{"type":"string","description":"Task for this stage"},"depends_on":{"type":"array","items":{"type":"string"},"description":"Names of stages this depends on"}},"required":["name","agent","prompt"]}}},"required":["task","stages"]}"""),
   ) + (remoteToolBridge?.buildToolDefs()?.map { td(it.name, it.description, it.parameters) } ?: emptyList()).filter { toolStore.isToolEnabled(it.name) && it.name !in getAgentMode().disabledTools } + toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
     var defs = mcpManager.getToolDefs(server.id)
     if (defs.isEmpty()) {
@@ -482,11 +482,14 @@ class ToolExecutor(
         "Error: ${e.message}"
       }
 
-      "task" -> {
-        val mgr = subagentManager ?: return@execute "Tool 'task' not available"
-        val desc = args["description"]?.toString() ?: "research"
-        val prompt = args["prompt"]?.toString() ?: return@execute "Error: prompt required"
-         mgr.runBlocking(desc, prompt)
+      "orchestrate" -> {
+        val mgr = subagentManager ?: return@execute "Tool 'orchestrate' not available"
+        val (task, stages) = PipelineExecutor.parseStages(args)
+        if (stages.isEmpty()) return@execute "Error: no valid stages provided"
+        val pipeline = PipelineExecutor(agentExecutor = mgr) { progress ->
+          android.util.Log.i("AIOPE2", "Pipeline: $progress")
+        }
+        pipeline.runPipeline(task, stages)
       }
 
       "ssh_start", "ssh_exec", "ssh_exit" -> {

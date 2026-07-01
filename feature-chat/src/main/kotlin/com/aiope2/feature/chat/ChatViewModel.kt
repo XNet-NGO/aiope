@@ -255,6 +255,14 @@ class ChatViewModel @Inject constructor(
   val terminalVisible = _terminalVisible.asStateFlow()
   private val _browserVisible = MutableStateFlow(false)
   val browserVisible = _browserVisible.asStateFlow()
+  private val _agentPanelVisible = MutableStateFlow(false)
+  val agentPanelVisible = _agentPanelVisible.asStateFlow()
+  private val _agentRoster = MutableStateFlow<List<com.aiope2.feature.chat.db.AgentEntity>>(emptyList())
+  val agentRoster = _agentRoster.asStateFlow()
+  private val _persistedTasks = MutableStateFlow<List<com.aiope2.feature.chat.db.AgentTaskEntity>>(emptyList())
+  val persistedTasks = _persistedTasks.asStateFlow()
+  private val _scheduledTasks = MutableStateFlow<List<com.aiope2.feature.chat.db.ScheduledTaskEntity>>(emptyList())
+  val scheduledTasks = _scheduledTasks.asStateFlow()
   private val _browserMaximized = MutableStateFlow(false)
   val browserMaximized = _browserMaximized.asStateFlow()
 
@@ -553,6 +561,7 @@ class ChatViewModel @Inject constructor(
             Role.USER -> "user"
             Role.ASSISTANT -> "assistant"
             Role.SYSTEM -> "system"
+            Role.AGENT_REPORT -> "user"
             else -> null
           }
           if (role != null) {
@@ -644,6 +653,95 @@ class ChatViewModel @Inject constructor(
   }
   fun toggleBrowser() {
     _browserVisible.value = !_browserVisible.value
+  }
+  fun toggleAgentPanel() {
+    _agentPanelVisible.value = !_agentPanelVisible.value
+    if (_agentPanelVisible.value) loadAgentPanelData()
+  }
+
+  private fun loadAgentPanelData() {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      _agentRoster.value = chatDao.getAgents()
+      _persistedTasks.value = chatDao.getAgentTasks(10)
+      _scheduledTasks.value = chatDao.getScheduledTasks()
+    }
+  }
+
+  fun spawnAgentFromPanel(agentName: String, task: String, reportTo: String = "user") {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      val result = subagentManager.runAgent(agentName, task)
+      _persistedTasks.value = chatDao.getAgentTasks(10)
+
+      val cleanResult = result
+        .removePrefix("<task_result>\n").removeSuffix("\n</task_result>")
+        .removePrefix("<task_error>").removeSuffix("</task_error>")
+
+      when (reportTo) {
+        "agent" -> {
+          // Insert as agent_report role — primary agent sees this as a sub-agent reporting back
+          val taskId = subagentManager.tasks.value.lastOrNull()?.id ?: "unknown"
+          val status = if (result.startsWith("<task_error>")) "failed" else "completed"
+          val content = "[AGENT_REPORT]\nAgent: $agentName (task_id: $taskId)\nStatus: $status\nTask: \"$task\"\nResult:\n$cleanResult\n[/AGENT_REPORT]"
+          val msgId = java.util.UUID.randomUUID().toString()
+          chatDao.insertMessage(com.aiope2.feature.chat.db.MessageEntity(id = msgId, conversationId = conversationId, role = Role.AGENT_REPORT.value, content = content))
+          withContext(kotlinx.coroutines.Dispatchers.Main) {
+            _messages.value = _messages.value + ChatMessage(id = msgId, role = Role.AGENT_REPORT, content = content)
+            // Trigger LLM turn — resend uses current messages as context
+            resend("")
+          }
+        }
+        // "user" -> result stays in Monitor only (fire-and-forget)
+      }
+    }
+  }
+
+  fun cancelAgentTask(taskId: String) {
+    // Remove from running tasks list (the coroutine will be cancelled by scope)
+    val current = subagentManager.tasks.value
+    val task = current.firstOrNull { it.id == taskId } ?: return
+    // Mark as error in memory
+    val updated = current.map { if (it.id == taskId) it.copy(stage = com.aiope2.feature.chat.engine.AgentExecutor.Stage.ERROR, error = "Cancelled by user") else it }
+    // Update persisted
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      chatDao.updateAgentTask(taskId, "failed", "Cancelled by user", System.currentTimeMillis())
+      _persistedTasks.value = chatDao.getAgentTasks(10)
+    }
+  }
+
+  fun rerunAgentTask(taskId: String) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      val task = chatDao.getAgentTasks(50).firstOrNull { it.id == taskId } ?: return@launch
+      subagentManager.runAgent(task.agentName, task.prompt)
+      _persistedTasks.value = chatDao.getAgentTasks(10)
+    }
+  }
+
+  fun saveAgent(agent: com.aiope2.feature.chat.db.AgentEntity) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      chatDao.insertAgent(agent)
+      _agentRoster.value = chatDao.getAgents()
+    }
+  }
+
+  fun deleteAgent(id: String) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      chatDao.deleteAgent(id)
+      _agentRoster.value = chatDao.getAgents()
+    }
+  }
+
+  fun saveScheduledTask(task: com.aiope2.feature.chat.db.ScheduledTaskEntity) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      chatDao.insertScheduledTask(task)
+      _scheduledTasks.value = chatDao.getScheduledTasks()
+    }
+  }
+
+  fun deleteScheduledTask(id: String) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      chatDao.deleteScheduledTask(id)
+      _scheduledTasks.value = chatDao.getScheduledTasks()
+    }
   }
   fun setBrowserVisible(v: Boolean) {
     _browserVisible.value = v
@@ -908,8 +1006,8 @@ class ChatViewModel @Inject constructor(
     "memory_recall",
   )
 
-  private var _subagentManager: com.aiope2.feature.chat.engine.SubagentManager? = null
-  val subagentManager: com.aiope2.feature.chat.engine.SubagentManager get() {
+  private var _subagentManager: com.aiope2.feature.chat.engine.AgentExecutor? = null
+  val subagentManager: com.aiope2.feature.chat.engine.AgentExecutor get() {
     if (_subagentManager == null) toolExecutor // force lazy init which sets _subagentManager
     return _subagentManager!!
   }
@@ -929,27 +1027,28 @@ class ChatViewModel @Inject constructor(
       getAgentMode = { _agentMode.value },
       remoteToolBridge = remoteToolBridge,
     ).also { te ->
-      _subagentManager = com.aiope2.feature.chat.engine.SubagentManager(
-        createOrchestrator = { tools, onToolCall ->
+      _subagentManager = com.aiope2.feature.chat.engine.AgentExecutor(
+        createOrchestrator = { config, tools, onToolCall ->
           val taskStore = com.aiope2.core.network.TaskModelStore(getApplication())
           val tc = taskStore.getTaskConfig(com.aiope2.core.network.ModelTask.SUBAGENT)
           val p = if (tc.profileId != null) providerStore.getById(tc.profileId!!) ?: providerStore.getActive() else providerStore.getActive()
-          val modelId = tc.modelId ?: p.selectedModelId
+          val modelId = config.model.ifEmpty { tc.modelId ?: p.selectedModelId }
           com.aiope2.feature.chat.engine.StreamingOrchestrator(
             baseUrl = p.effectiveApiBase(),
             apiKey = p.apiKey,
             model = modelId,
             tools = tools,
             onToolCall = onToolCall,
+            temperature = config.temperature,
           )
         },
-        buildMessages = { prompt ->
-          listOf("system" to "You are a research subagent. Use your tools to search, read, and explore. Summarize your findings concisely in a single response. Do not ask questions.", "user" to prompt)
+        buildMessages = { agent, prompt ->
+          val sysPrompt = agent?.prompt ?: "You are a research subagent. Use your tools to search, read, and explore. Summarize your findings concisely in a single response. Do not ask questions."
+          listOf("system" to sysPrompt, "user" to prompt)
         },
-        getReadOnlyTools = { te.buildToolDefs().filter { it.name in subagentReadOnlyTools } },
-        executeReadOnlyTool = { name, args ->
-          if (name in subagentReadOnlyTools) te.execute(name, args) else "Tool '$name' not available to subagents"
-        },
+        getToolDefs = { te.buildToolDefs() },
+        executeTool = { name, args -> te.execute(name, args) },
+        dao = chatDao,
       )
       te.subagentManager = _subagentManager
     }

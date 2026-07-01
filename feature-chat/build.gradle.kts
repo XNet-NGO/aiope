@@ -62,6 +62,9 @@ dependencies {
   implementation(libs.okhttp)
   implementation(libs.okhttp.sse)
 
+  // work manager
+  implementation(libs.androidx.worker)
+
   // tokenizer
   implementation(libs.jtokkit)
   implementation(libs.pdfbox.android) {

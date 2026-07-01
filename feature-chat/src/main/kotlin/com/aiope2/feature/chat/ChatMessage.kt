@@ -22,6 +22,7 @@ enum class Role(val value: String) {
   ASSISTANT("assistant"),
   SYSTEM("system"),
   TOOL("tool"),
+  AGENT_REPORT("agent_report"),
   ;
 
   companion object {

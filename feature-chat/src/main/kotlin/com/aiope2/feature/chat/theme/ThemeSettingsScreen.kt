@@ -57,6 +57,7 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
   val aiBubbleOpacity by prefs.aiBubbleOpacity.collectAsState(initial = 1f)
   val userBubbleColor by prefs.userBubbleColor.collectAsState(initial = null)
   val aiBubbleColor by prefs.aiBubbleColor.collectAsState(initial = null)
+  val agentReportBubbleColor by prefs.agentReportBubbleColor.collectAsState(initial = null)
   val userTextColor by prefs.userTextColor.collectAsState(initial = null)
   val aiTextColor by prefs.aiTextColor.collectAsState(initial = null)
   val showThinking by prefs.showThinking.collectAsState(initial = true)
@@ -162,6 +163,9 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
           Spacer(Modifier.height(4.dp))
           Text("AI bubble", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
           ColorRow(selected = aiBubbleColor) { scope.launch { prefs.set(ThemePrefs.AI_BUBBLE_COLOR, it) } }
+          Spacer(Modifier.height(4.dp))
+          Text("Agent report bubble", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          ColorRow(selected = agentReportBubbleColor) { scope.launch { prefs.set(ThemePrefs.AGENT_REPORT_BUBBLE_COLOR, it) } }
           Text("AI text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
           ColorRow(selected = aiTextColor) { scope.launch { prefs.set(ThemePrefs.AI_TEXT_COLOR, it) } }
           Spacer(Modifier.height(4.dp))
