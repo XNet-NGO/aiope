@@ -10,8 +10,8 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/ssh"
-	"github.com/charmbracelet/wish"
-	"github.com/charmbracelet/wish/logging"
+	"charm.land/wish/v2"
+	"charm.land/wish/v2/logging"
 )
 
 func main() {
@@ -27,6 +27,7 @@ func main() {
 
 	s, err := wish.NewServer(
 		wish.WithAddress(fmt.Sprintf(":%s", port)),
+		wish.WithHostKeyPath(configDir+"/host_key"),
 		wish.WithPublicKeyAuth(func(ctx ssh.Context, key ssh.PublicKey) bool {
 			return AuthHandler(configDir, ctx, key)
 		}),

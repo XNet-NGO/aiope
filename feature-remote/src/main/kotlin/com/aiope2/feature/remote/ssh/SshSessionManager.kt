@@ -20,11 +20,12 @@ class SshSessionManager @Inject constructor() {
   companion object {
     init {
       try {
-        // Do NOT register BouncyCastle as a global JCA provider.
-        // It registers "BKS" keystore type which R8 strips the SPI class for,
-        // causing "BKS not found" when Android's TLS stack tries to use it.
-        // SSHJ works fine with the system "BC" provider on Android 16+.
-        net.schmizz.sshj.common.SecurityUtils.setSecurityProvider(null)
+        // Android ships a stripped BouncyCastle that lacks X25519/Ed25519.
+        // Remove it and insert the full BC from our dependency.
+        java.security.Security.removeProvider("BC")
+        val bcProvider = org.bouncycastle.jce.provider.BouncyCastleProvider()
+        java.security.Security.insertProviderAt(bcProvider, 1)
+        net.schmizz.sshj.common.SecurityUtils.setSecurityProvider("BC")
       } catch (_: Exception) {}
     }
   }
@@ -41,10 +42,27 @@ class SshSessionManager @Inject constructor() {
 
   private fun loadKey(client: SSHClient, privateKey: String): net.schmizz.sshj.userauth.keyprovider.KeyProvider {
     val keyContent = normalizeKey(privateKey)
-    val tmp = java.io.File.createTempFile("sshkey", ".pem")
+    // Always write to temp file — SSHJ's OpenSSHKeyFile works best from file
+    val tmp = java.io.File.createTempFile("sshkey", null)
     try {
       tmp.writeText(keyContent)
-      return client.loadKeys(tmp.absolutePath, null as String?)
+      // Use client.loadKeys which auto-detects format including OpenSSH
+      // The key detection needs the DefaultConfig's key file factories
+      val keys = client.loadKeys(tmp.absolutePath, null as net.schmizz.sshj.userauth.password.PasswordFinder?)
+      android.util.Log.e("AIOPE_SSH", "Key loaded via loadKeys: ${keys.private?.algorithm}")
+      return keys
+    } catch (e: Exception) {
+      android.util.Log.e("AIOPE_SSH", "loadKeys failed: ${e.message}, trying OpenSSHKeyFile directly")
+      // Direct OpenSSHKeyFile with file path
+      try {
+        val keyFile = net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile()
+        keyFile.init(java.io.File(tmp.absolutePath))
+        android.util.Log.e("AIOPE_SSH", "OpenSSHKeyFile loaded: ${keyFile.private?.algorithm}")
+        return keyFile
+      } catch (e2: Exception) {
+        android.util.Log.e("AIOPE_SSH", "OpenSSHKeyFile also failed: ${e2.message}")
+        throw IllegalStateException("Failed to load SSH key: ${e2.message ?: e.message}")
+      }
     } finally {
       tmp.delete()
     }
@@ -97,8 +115,11 @@ class SshSessionManager @Inject constructor() {
       throw IllegalStateException("Connect failed to $host:$port — ${e.message ?: e.javaClass.simpleName}")
     }
     try {
-      client.authPublickey(user, loadKey(client, privateKey))
+      val keyProvider = loadKey(client, privateKey)
+      android.util.Log.e("AIOPE_SSH", "Key loaded: private=${keyProvider.private?.algorithm} public=${keyProvider.public?.algorithm}")
+      client.authPublickey(user, keyProvider)
     } catch (e: Exception) {
+      android.util.Log.e("AIOPE_SSH", "Auth failed", e)
       client.disconnect()
       throw IllegalStateException("SSH auth failed: ${e.message}")
     }

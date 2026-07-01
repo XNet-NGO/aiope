@@ -99,7 +99,10 @@ class AgentExecutor(
         executeTool(name, args)
       }
       orchestrator.stream(messages).collect { chunk ->
-        if (chunk.content.isNotEmpty()) sb.append(chunk.content)
+        if (chunk.content.isNotEmpty()) {
+          sb.append(chunk.content)
+          updateTask(task.id) { it.copy(result = sb.toString()) }
+        }
         if (sb.length > 200) updateStage(task.id, Stage.SUMMARIZING)
       }
 

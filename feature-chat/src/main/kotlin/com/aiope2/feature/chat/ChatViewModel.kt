@@ -561,7 +561,6 @@ class ChatViewModel @Inject constructor(
             Role.USER -> "user"
             Role.ASSISTANT -> "assistant"
             Role.SYSTEM -> "system"
-            Role.AGENT_REPORT -> "user"
             else -> null
           }
           if (role != null) {
@@ -656,7 +655,25 @@ class ChatViewModel @Inject constructor(
   }
   fun toggleAgentPanel() {
     _agentPanelVisible.value = !_agentPanelVisible.value
-    if (_agentPanelVisible.value) loadAgentPanelData()
+    if (_agentPanelVisible.value) {
+      loadAgentPanelData()
+      startPanelRefresh()
+    } else {
+      panelRefreshJob?.cancel()
+    }
+  }
+
+  private var panelRefreshJob: kotlinx.coroutines.Job? = null
+
+  private fun startPanelRefresh() {
+    panelRefreshJob?.cancel()
+    panelRefreshJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      while (_agentPanelVisible.value) {
+        kotlinx.coroutines.delay(3000)
+        _persistedTasks.value = chatDao.getAgentTasks(10)
+        _scheduledTasks.value = chatDao.getScheduledTasks()
+      }
+    }
   }
 
   private fun loadAgentPanelData() {
@@ -667,31 +684,10 @@ class ChatViewModel @Inject constructor(
     }
   }
 
-  fun spawnAgentFromPanel(agentName: String, task: String, reportTo: String = "user") {
+  fun spawnAgentFromPanel(agentName: String, task: String) {
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-      val result = subagentManager.runAgent(agentName, task)
+      subagentManager.runAgent(agentName, task)
       _persistedTasks.value = chatDao.getAgentTasks(10)
-
-      val cleanResult = result
-        .removePrefix("<task_result>\n").removeSuffix("\n</task_result>")
-        .removePrefix("<task_error>").removeSuffix("</task_error>")
-
-      when (reportTo) {
-        "agent" -> {
-          // Insert as agent_report role — primary agent sees this as a sub-agent reporting back
-          val taskId = subagentManager.tasks.value.lastOrNull()?.id ?: "unknown"
-          val status = if (result.startsWith("<task_error>")) "failed" else "completed"
-          val content = "[AGENT_REPORT]\nAgent: $agentName (task_id: $taskId)\nStatus: $status\nTask: \"$task\"\nResult:\n$cleanResult\n[/AGENT_REPORT]"
-          val msgId = java.util.UUID.randomUUID().toString()
-          chatDao.insertMessage(com.aiope2.feature.chat.db.MessageEntity(id = msgId, conversationId = conversationId, role = Role.AGENT_REPORT.value, content = content))
-          withContext(kotlinx.coroutines.Dispatchers.Main) {
-            _messages.value = _messages.value + ChatMessage(id = msgId, role = Role.AGENT_REPORT, content = content)
-            // Trigger LLM turn — resend uses current messages as context
-            resend("")
-          }
-        }
-        // "user" -> result stays in Monitor only (fire-and-forget)
-      }
     }
   }
 

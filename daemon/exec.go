@@ -11,7 +11,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/ssh"
-	"github.com/charmbracelet/wish"
+	"charm.land/wish/v2"
 	"github.com/creack/pty"
 )
 

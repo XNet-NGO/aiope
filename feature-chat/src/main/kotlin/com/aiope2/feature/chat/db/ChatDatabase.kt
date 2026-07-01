@@ -94,9 +94,10 @@ data class AgentTaskEntity(
 @Entity(tableName = "scheduled_tasks")
 data class ScheduledTaskEntity(
   @PrimaryKey val id: String = java.util.UUID.randomUUID().toString(),
-  val agentId: String,
-  val agentName: String,
+  val agentId: String = "",
+  val agentName: String = "Timer Agent",
   val prompt: String,
+  val tools: String = "", // comma-separated tool names
   val cronHour: Int = -1, // -1 = every hour
   val cronMinute: Int = 0,
   val cronDaysOfWeek: String = "", // empty = every day, "1,2,3,4,5" = weekdays
@@ -260,7 +261,7 @@ interface ChatDao {
     ModelCacheEntity::class, SettingsKvEntity::class,
     AgentEntity::class, AgentTaskEntity::class, ScheduledTaskEntity::class,
   ],
-  version = 6,
+  version = 7,
 )
 abstract class ChatDatabase : RoomDatabase() {
   abstract fun chatDao(): ChatDao

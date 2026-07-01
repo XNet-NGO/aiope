@@ -71,7 +71,7 @@ class ServerListViewModel @Inject constructor(
 
   fun addAndDeploy(name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?) {
     val id = UUID.randomUUID().toString()
-    viewModelScope.launch {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       val server = RemoteServerEntity(
         id = id,
         name = name,
@@ -88,7 +88,7 @@ class ServerListViewModel @Inject constructor(
   }
 
   fun redeployServer(server: RemoteServerEntity) {
-    viewModelScope.launch { deploy(server) }
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { deploy(server) }
   }
 
   private suspend fun deploy(server: RemoteServerEntity) {

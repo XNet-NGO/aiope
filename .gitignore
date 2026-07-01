@@ -58,3 +58,4 @@ secrets.properties
 
 release.jks
 keystore.properties
+daemon/dist/

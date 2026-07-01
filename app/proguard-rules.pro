@@ -90,6 +90,15 @@
 
 # SSHJ / BouncyCastle
 -dontwarn sun.security.x509.X509Key
+-dontwarn org.ietf.jgss.**
+-keep class org.bouncycastle.** { *; }
+-dontwarn org.bouncycastle.**
+-keep class net.schmizz.sshj.** { *; }
+-keep class net.schmizz.sshj.userauth.keyprovider.** { *; }
+-keep class net.schmizz.sshj.common.** { *; }
+-keep class net.schmizz.sshj.transport.** { *; }
+-dontwarn net.schmizz.sshj.**
+-dontwarn net.i2p.crypto.**
 
 # PDFBox - optional JPEG2000 decoder not bundled
 -dontwarn com.gemalto.jp2.**

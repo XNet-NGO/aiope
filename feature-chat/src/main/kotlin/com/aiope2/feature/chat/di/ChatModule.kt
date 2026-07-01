@@ -55,6 +55,12 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
   }
 }
 
+val MIGRATION_6_7 = object : Migration(6, 7) {
+  override fun migrate(db: SupportSQLiteDatabase) {
+    db.execSQL("ALTER TABLE scheduled_tasks ADD COLUMN tools TEXT NOT NULL DEFAULT ''")
+  }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object ChatModule {
@@ -62,7 +68,7 @@ object ChatModule {
   @Singleton
   fun provideDatabase(@ApplicationContext ctx: Context): ChatDatabase {
     val db = Room.databaseBuilder(ctx, ChatDatabase::class.java, "aiope2-chat.db")
-      .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+      .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
       .addCallback(object : androidx.room.RoomDatabase.Callback() {
         override fun onCreate(db: SupportSQLiteDatabase) { /* seeded in open */ }
         override fun onOpen(db: SupportSQLiteDatabase) {

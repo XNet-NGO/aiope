@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="$HOME/.local/bin"
 CONFIG_DIR="$HOME/.aiope"
 PORT="${AIOPE_PORT:-2222}"
 MARKER="__ARCHIVE_BELOW__"
@@ -21,6 +21,7 @@ esac
 echo "Detected: $ARCH -> $BINARY"
 
 mkdir -p "$CONFIG_DIR"
+mkdir -p "$INSTALL_DIR"
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
 

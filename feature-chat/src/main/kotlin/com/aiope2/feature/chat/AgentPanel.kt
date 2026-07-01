@@ -28,6 +28,7 @@ import com.aiope2.feature.chat.db.AgentEntity
 import com.aiope2.feature.chat.db.AgentTaskEntity
 import com.aiope2.feature.chat.db.ScheduledTaskEntity
 import com.aiope2.feature.chat.engine.AgentExecutor
+import com.fluid.compose.UniversalMarkdown
 
 @Composable
 fun AgentPanel(
@@ -37,7 +38,7 @@ fun AgentPanel(
   persistedTasks: List<AgentTaskEntity> = emptyList(),
   scheduledTasks: List<ScheduledTaskEntity> = emptyList(),
   models: List<String> = emptyList(),
-  onSpawn: (agentName: String, task: String, reportTo: String) -> Unit = { _, _, _ -> },
+  onSpawn: (agentName: String, task: String) -> Unit = { _, _ -> },
   onSteerTask: (taskId: String, message: String) -> Unit = { _, _ -> },
   onCancelTask: (taskId: String) -> Unit = {},
   onRerunTask: (taskId: String) -> Unit = {},
@@ -91,11 +92,10 @@ fun AgentPanel(
 // ── Tab 1: Spawn ──
 
 @Composable
-private fun SpawnTab(agents: List<AgentEntity>, onSpawn: (String, String, String) -> Unit) {
+private fun SpawnTab(agents: List<AgentEntity>, onSpawn: (String, String) -> Unit) {
   var selectedAgent by remember { mutableStateOf("default") }
   var taskText by remember { mutableStateOf("") }
   var expanded by remember { mutableStateOf(false) }
-  var reportTo by remember { mutableStateOf("agent") } // agent, user, both
 
   Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
     // Agent picker
@@ -120,24 +120,11 @@ private fun SpawnTab(agents: List<AgentEntity>, onSpawn: (String, String, String
       textStyle = LocalTextStyle.current.copy(fontSize = 12.sp),
     )
 
-    // Report to
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-      Text("Report to:", fontSize = 10.sp, color = Color(0xFF888888))
-      listOf("agent" to "Agent", "user" to "User").forEach { (value, label) ->
-        FilterChip(
-          selected = reportTo == value,
-          onClick = { reportTo = value },
-          label = { Text(label, fontSize = 9.sp) },
-          modifier = Modifier.height(24.dp),
-        )
-      }
-    }
-
     // Spawn button
     Button(
       onClick = {
         if (taskText.isNotBlank()) {
-          onSpawn(selectedAgent, taskText, reportTo)
+          onSpawn(selectedAgent, taskText)
           taskText = ""
         }
       },
@@ -291,13 +278,11 @@ private fun RunningTaskDialog(
             .verticalScroll(scrollState)
             .padding(6.dp),
         ) {
-          Text(
-            task.result.ifEmpty { "..." },
-            fontSize = 10.sp,
-            color = Color(0xFF999999),
-            fontFamily = FontFamily.Monospace,
-            lineHeight = 13.sp,
-          )
+          if (task.result.isNotEmpty()) {
+            UniversalMarkdown(content = task.result, modifier = Modifier.fillMaxWidth())
+          } else {
+            Text("...", fontSize = 10.sp, color = Color(0xFF999999), fontFamily = FontFamily.Monospace)
+          }
         }
 
         // Steer input
@@ -373,13 +358,11 @@ private fun PersistedTaskDialog(
             .verticalScroll(scrollState)
             .padding(6.dp),
         ) {
-          Text(
-            task.result.ifEmpty { "(no output)" },
-            fontSize = 10.sp,
-            color = Color(0xFF999999),
-            fontFamily = FontFamily.Monospace,
-            lineHeight = 13.sp,
-          )
+          if (task.result.isNotEmpty()) {
+            UniversalMarkdown(content = task.result, modifier = Modifier.fillMaxWidth())
+          } else {
+            Text("(no output)", fontSize = 10.sp, color = Color(0xFF999999), fontFamily = FontFamily.Monospace)
+          }
         }
 
         // Steer input (works after completion to re-engage agent)
@@ -421,6 +404,7 @@ private fun TimersTab(
   onDelete: (String) -> Unit,
 ) {
   var showAdd by remember { mutableStateOf(false) }
+  var editingTimer by remember { mutableStateOf<ScheduledTaskEntity?>(null) }
 
   Column(Modifier.fillMaxSize()) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -437,7 +421,7 @@ private fun TimersTab(
     } else {
       LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         items(scheduledTasks, key = { it.id }) { timer ->
-          TimerRow(timer = timer, onDelete = { onDelete(timer.id) })
+          TimerRow(timer = timer, onEdit = { editingTimer = timer }, onDelete = { onDelete(timer.id) })
         }
       }
     }
@@ -446,15 +430,20 @@ private fun TimersTab(
   if (showAdd) {
     AddTimerDialog(agents = agents, onDismiss = { showAdd = false }, onSave = { onSave(it); showAdd = false })
   }
+
+  if (editingTimer != null) {
+    AddTimerDialog(agents = agents, editing = editingTimer, onDismiss = { editingTimer = null }, onSave = { onSave(it); editingTimer = null })
+  }
 }
 
 @Composable
-private fun TimerRow(timer: ScheduledTaskEntity, onDelete: () -> Unit) {
+private fun TimerRow(timer: ScheduledTaskEntity, onEdit: () -> Unit, onDelete: () -> Unit) {
   Row(
     Modifier
       .fillMaxWidth()
       .clip(RoundedCornerShape(6.dp))
       .background(Color(0xFF151515))
+      .clickable(onClick = onEdit)
       .padding(horizontal = 8.dp, vertical = 6.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
@@ -476,37 +465,24 @@ private fun TimerRow(timer: ScheduledTaskEntity, onDelete: () -> Unit) {
 }
 
 @Composable
-private fun AddTimerDialog(agents: List<AgentEntity>, onDismiss: () -> Unit, onSave: (ScheduledTaskEntity) -> Unit) {
-  var selectedAgent by remember { mutableStateOf("Researcher") }
-  var prompt by remember { mutableStateOf("") }
-  var preset by remember { mutableStateOf("daily") }
-  var hour by remember { mutableIntStateOf(9) }
-  var minute by remember { mutableIntStateOf(0) }
+private fun AddTimerDialog(agents: List<AgentEntity> = emptyList(), editing: ScheduledTaskEntity? = null, onDismiss: () -> Unit, onSave: (ScheduledTaskEntity) -> Unit) {
+  var prompt by remember { mutableStateOf(editing?.prompt ?: "") }
+  var selectedTools by remember { mutableStateOf(editing?.tools?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList<String>()) }
+  var preset by remember { mutableStateOf(if (editing?.oneShot == true) "once" else if (editing?.cronHour == -1) "hourly" else if (editing?.cronDaysOfWeek?.isNotEmpty() == true) "weekly" else "daily") }
+  var hour by remember { mutableIntStateOf(editing?.cronHour?.takeIf { it >= 0 } ?: 9) }
+  var minute by remember { mutableIntStateOf(editing?.cronMinute ?: 0) }
   var second by remember { mutableIntStateOf(0) }
-  var selectedDays by remember { mutableStateOf("") }
-  var selectedMonth by remember { mutableIntStateOf(-1) } // -1 = every month
-  var agentExpanded by remember { mutableStateOf(false) }
+  var selectedDays by remember { mutableStateOf(editing?.cronDaysOfWeek ?: "") }
+  var selectedMonth by remember { mutableIntStateOf(-1) }
 
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("New Timer", fontSize = 14.sp) },
+    title = { Text(if (editing != null) "Edit Timer" else "New Timer", fontSize = 14.sp) },
     text = {
       Column(
         Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        // Agent picker
-        Box {
-          OutlinedButton(onClick = { agentExpanded = true }, modifier = Modifier.fillMaxWidth()) {
-            Text(selectedAgent, fontSize = 12.sp)
-          }
-          DropdownMenu(expanded = agentExpanded, onDismissRequest = { agentExpanded = false }) {
-            agents.forEach { a ->
-              DropdownMenuItem(text = { Text(a.name, fontSize = 12.sp) }, onClick = { selectedAgent = a.name; agentExpanded = false })
-            }
-          }
-        }
-
         // Prompt
         OutlinedTextField(
           value = prompt,
@@ -516,6 +492,17 @@ private fun AddTimerDialog(agents: List<AgentEntity>, onDismiss: () -> Unit, onS
           textStyle = LocalTextStyle.current.copy(fontSize = 12.sp),
           minLines = 2,
         )
+
+        // Tools
+        Text("Tools", fontSize = 10.sp, color = Color(0xFF888888))
+        val timerToolGroups = listOf(
+          "Web" to listOf("search_web", "fetch_url"),
+          "Files" to listOf("read_file", "list_directory", "write_file"),
+          "Execute" to listOf("run_sh", "ssh_exec"),
+          "Device" to listOf("send_sms", "send_notification", "set_alarm"),
+          "Memory" to listOf("memory_store", "memory_recall"),
+        )
+        ToolGroupSelector(toolGroups = timerToolGroups, selectedTools = selectedTools, onToggle = { tool -> selectedTools = if (tool in selectedTools) selectedTools - tool else selectedTools + tool })
 
         // Preset chips
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -584,16 +571,16 @@ private fun AddTimerDialog(agents: List<AgentEntity>, onDismiss: () -> Unit, onS
     confirmButton = {
       TextButton(onClick = {
         if (prompt.isNotBlank()) {
-          val agent = agents.firstOrNull { it.name == selectedAgent }
           val cronHour = when (preset) {
             "hourly" -> -1
             else -> hour
           }
           onSave(
             ScheduledTaskEntity(
-              agentId = agent?.id ?: "",
-              agentName = selectedAgent,
+              id = editing?.id ?: java.util.UUID.randomUUID().toString(),
+              agentName = "Timer Agent",
               prompt = prompt,
+              tools = selectedTools.joinToString(","),
               cronHour = cronHour,
               cronMinute = minute,
               cronDaysOfWeek = if (preset == "weekly") selectedDays else "",
@@ -610,21 +597,49 @@ private fun AddTimerDialog(agents: List<AgentEntity>, onDismiss: () -> Unit, onS
 
 @Composable
 private fun NumberRoller(value: Int, range: IntRange, label: String, onValueChange: (Int) -> Unit) {
-  Column(horizontalAlignment = Alignment.CenterHorizontally) {
-    IconButton(onClick = { if (value < range.last) onValueChange(value + 1) }, modifier = Modifier.size(20.dp)) {
-      Text("▲", fontSize = 10.sp, color = Color(0xFF888888))
+  Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(48.dp)) {
+    IconButton(onClick = { if (value < range.last) onValueChange(value + 1) }, modifier = Modifier.size(32.dp)) {
+      Text("▲", fontSize = 16.sp, color = Color(0xFF888888))
     }
     Text(
       value.toString().padStart(2, '0'),
-      fontSize = 14.sp,
+      fontSize = 22.sp,
       fontFamily = FontFamily.Monospace,
       color = Color(0xFFCCCCCC),
       fontWeight = FontWeight.Medium,
     )
-    IconButton(onClick = { if (value > range.first) onValueChange(value - 1) }, modifier = Modifier.size(20.dp)) {
-      Text("▼", fontSize = 10.sp, color = Color(0xFF888888))
+    IconButton(onClick = { if (value > range.first) onValueChange(value - 1) }, modifier = Modifier.size(32.dp)) {
+      Text("▼", fontSize = 16.sp, color = Color(0xFF888888))
     }
-    Text(label, fontSize = 8.sp, color = Color(0xFF555555))
+    Text(label, fontSize = 10.sp, color = Color(0xFF555555))
+  }
+}
+
+// ── Shared: Tool Group Selector ──
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun ToolGroupSelector(
+  toolGroups: List<Pair<String, List<String>>>,
+  selectedTools: List<String>,
+  onToggle: (String) -> Unit,
+) {
+  Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    toolGroups.forEach { (group, tools) ->
+      Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(group, fontSize = 9.sp, color = Color(0xFF666666), fontWeight = FontWeight.Medium)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          tools.forEach { tool ->
+            FilterChip(
+              selected = tool in selectedTools,
+              onClick = { onToggle(tool) },
+              label = { Text(tool.replace("_", " "), fontSize = 9.sp) },
+              modifier = Modifier.height(26.dp),
+            )
+          }
+        }
+      }
+    }
   }
 }
 
@@ -753,13 +768,24 @@ private fun AgentEditorDialog(
           }
         }
 
-        // Tools
-        OutlinedTextField(
-          value = tools, onValueChange = { tools = it },
-          label = { Text("Tools (comma-separated)", fontSize = 10.sp) },
-          modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp),
-          textStyle = LocalTextStyle.current.copy(fontSize = 10.sp),
-          singleLine = true,
+        // Tools (selectable list)
+        Text("Tools", fontSize = 10.sp, color = Color(0xFF888888))
+        val builderToolGroups = listOf(
+          "Web" to listOf("search_web", "search_images", "search_location", "fetch_url"),
+          "Files" to listOf("read_file", "list_directory", "write_file"),
+          "Execute" to listOf("run_sh", "run_proot", "ssh_exec"),
+          "Memory" to listOf("memory_recall", "memory_store", "query_data"),
+          "Media" to listOf("image_generate", "analyze_image"),
+          "Browser" to listOf("browser_content", "browser_elements", "browser_click", "browser_fill", "browser_eval"),
+        )
+        val selectedTools = remember(tools) { tools.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet() }
+        ToolGroupSelector(
+          toolGroups = builderToolGroups,
+          selectedTools = selectedTools.toList(),
+          onToggle = { tool ->
+            if (tool in selectedTools) selectedTools.remove(tool) else selectedTools.add(tool)
+            tools = selectedTools.joinToString(",")
+          },
         )
 
         // Temperature slider
