@@ -129,7 +129,7 @@ object ShellDiscovery {
 
     args.addAll(
       listOf(
-        "-r", rootfs, "-0", "--link2symlink", "--sysvipc", "-L",
+        "-r", rootfs, "-0", "--link2symlink", "-L",
         "-w", "/root",
         "/usr/bin/env",
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",

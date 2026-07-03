@@ -15,7 +15,7 @@ object ProotExecutor {
 
   @Volatile private var currentProcess: Process? = null
 
-  fun exec(context: Context, command: String, timeoutMs: Long = 120_000): String {
+  fun exec(context: Context, command: String, timeoutMs: Long = 300_000): String {
     val filesDir = context.filesDir.absolutePath
     val rootfs = File(filesDir, "env/alpine")
     val nativeLibDir = context.applicationInfo.nativeLibraryDir
@@ -130,7 +130,7 @@ object ProotExecutor {
     args.addAll(
       listOf(
         "-r", rootfs.absolutePath,
-        "-0", "--link2symlink", "--sysvipc", "-L",
+        "-0", "--link2symlink", "-L",
         "-w", "/root",
         "/usr/bin/env",
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",

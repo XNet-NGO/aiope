@@ -147,7 +147,7 @@ class AgentSchedulerWorker(
       "read_file" to ("Read file contents" to """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
       "list_directory" to ("List directory" to """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
       "write_file" to ("Write file" to """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}"""),
-      "run_sh" to ("Execute shell command" to """{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}"""),
+      "run_sh" to ("Execute shell command. Set timeout: 10-30s for quick commands, 300-600s for builds." to """{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer","description":"Timeout in seconds, default 300"}},"required":["command"]}"""),
       "send_sms" to ("Send SMS message" to """{"type":"object","properties":{"to":{"type":"string","description":"Phone number"},"message":{"type":"string"}},"required":["to","message"]}"""),
       "send_notification" to ("Show a notification to the user" to """{"type":"object","properties":{"title":{"type":"string"},"body":{"type":"string"}},"required":["title","body"]}"""),
       "set_alarm" to ("Set an alarm" to """{"type":"object","properties":{"hour":{"type":"integer"},"minute":{"type":"integer"},"label":{"type":"string"}},"required":["hour","minute"]}"""),
@@ -167,10 +167,12 @@ class AgentSchedulerWorker(
       when (name) {
         "run_sh" -> {
           val cmd = args["command"]?.toString() ?: return "Error: no command"
+          val timeout = ((args["timeout"] as? Number)?.toLong() ?: 300) * 1000
           val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd))
           val output = proc.inputStream.bufferedReader().readText()
           val err = proc.errorStream.bufferedReader().readText()
-          proc.waitFor()
+          proc.waitFor(timeout, java.util.concurrent.TimeUnit.MILLISECONDS)
+          if (proc.isAlive) { proc.destroyForcibly(); return (output + err).take(4000) + "\n[timeout after ${timeout/1000}s]" }
           (output + err).take(4000)
         }
         "read_file" -> {
