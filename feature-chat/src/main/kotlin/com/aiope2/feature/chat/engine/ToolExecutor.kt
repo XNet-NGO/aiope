@@ -43,8 +43,8 @@ class ToolExecutor(
     .build()
 
   fun buildToolDefs() = listOf(
-    td("run_sh", "Execute Android shell command", """{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}"""),
-    td("run_proot", "Execute a command in the Alpine Linux proot environment. Use for apk, python, gcc, etc.", """{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}"""),
+    td("run_sh", "Execute Android shell command. Set timeout appropriately: 10-30s for simple commands (ls, cat, echo), 60-120s for network operations, 300-600s for builds/installs.", """{"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute"},"timeout":{"type":"integer","description":"Timeout in seconds. Default 300. Use 10-30 for quick commands, 300-600 for builds."}},"required":["command"]}"""),
+    td("run_proot", "Execute a command in the Alpine Linux proot environment. Use for apk, python, gcc, etc. Set timeout appropriately for the command.", """{"type":"object","properties":{"command":{"type":"string","description":"Command to execute in Alpine"},"timeout":{"type":"integer","description":"Timeout in seconds. Default 300. Use 60 for apk, 600 for builds."}},"required":["command"]}"""),
     td("read_file", "Read file contents", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
     td("write_file", "Write file", """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}"""),
     td("list_directory", "List directory", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
@@ -128,12 +128,16 @@ class ToolExecutor(
       return "⚠️ Tool '$name' is destructive and blocked in Chat mode. The user must switch to Build mode or enable Auto-Run to allow this action."
     }
     return when (name) {
-      "run_sh" -> com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "").let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+      "run_sh" -> {
+        val timeout = ((args["timeout"] as? Number)?.toLong() ?: 300) * 1000
+        com.aiope2.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+      }
 
       "run_proot" -> if (!com.aiope2.core.terminal.shell.ProotBootstrap.isInstalled(app)) {
         "Alpine not installed. Set up proot in Settings first."
       } else {
-        com.aiope2.core.terminal.shell.ProotExecutor.exec(app, args["command"]?.toString() ?: "").let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+        val timeout = ((args["timeout"] as? Number)?.toLong() ?: 300) * 1000
+        com.aiope2.core.terminal.shell.ProotExecutor.exec(app, args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
       }
 
       "read_file" -> try {

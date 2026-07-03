@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit
 /** Basic Android sh shell executor. */
 object ShellExecutor {
 
-  fun exec(command: String, timeoutMs: Long = 60_000): String = try {
+  fun exec(command: String, timeoutMs: Long = 300_000): String = try {
     val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
     val output = readAll(process.inputStream, timeoutMs)
     val stderr = readAll(process.errorStream, 1_000)
