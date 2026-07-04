@@ -1,14 +1,14 @@
 plugins {
-  id("aiope2.android.library")
-  id("aiope2.android.library.compose")
-  id("aiope2.android.feature")
-  id("aiope2.android.hilt")
-  id("aiope2.spotless")
+  id("aiope.android.library")
+  id("aiope.android.library.compose")
+  id("aiope.android.feature")
+  id("aiope.android.hilt")
+  id("aiope.spotless")
   id("com.google.devtools.ksp")
 }
 
 android {
-  namespace = "com.aiope2.feature.chat"
+  namespace = "ngo.xnet.aiope.feature.chat"
   defaultConfig {
     buildConfigField("String", "GATEWAY_KEY", "\"${project.findProperty("GATEWAY_KEY") ?: ""}\"")
   }

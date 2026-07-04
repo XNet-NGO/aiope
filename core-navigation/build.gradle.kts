@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 plugins {
-  id("aiope2.android.library")
-  id("aiope2.android.library.compose")
-  id("aiope2.android.hilt")
-  id("aiope2.spotless")
+  id("aiope.android.library")
+  id("aiope.android.library.compose")
+  id("aiope.android.hilt")
+  id("aiope.spotless")
 }
 
 android {
-  namespace = "com.aiope2.core.navigation"
+  namespace = "ngo.xnet.aiope.core.navigation"
 }
 
 dependencies {

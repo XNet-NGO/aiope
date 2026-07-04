@@ -15,7 +15,7 @@ dependencyResolutionManagement {
     flatDir { dirs("${rootProject.projectDir}/feature-chat/libs") }
   }
 }
-rootProject.name = "aiope2"
+rootProject.name = "aiope"
 include(":app")
 include(":core-model")
 include(":core-network")

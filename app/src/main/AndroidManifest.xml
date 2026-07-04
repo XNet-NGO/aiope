@@ -30,7 +30,7 @@
     android:name=".AiopeApp"
     android:allowBackup="false"
     android:icon="@mipmap/ic_launcher"
-    android:label="AIOPE 2"
+    android:label="AIOPE"
     android:roundIcon="@mipmap/ic_launcher_round"
     android:supportsRtl="true"
     android:usesCleartextTraffic="true"

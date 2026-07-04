@@ -2,7 +2,7 @@ plugins {
   `kotlin-dsl`
 }
 
-group = "com.aiope2.buildlogic"
+group = "ngo.xnet.aiope.buildlogic"
 
 java {
   sourceCompatibility = JavaVersion.VERSION_17
@@ -19,31 +19,31 @@ dependencies {
 gradlePlugin {
   plugins {
     register("androidApplicationCompose") {
-      id = "aiope2.android.application.compose"
+      id = "aiope.android.application.compose"
       implementationClass = "AndroidApplicationComposeConventionPlugin"
     }
     register("androidApplication") {
-      id = "aiope2.android.application"
+      id = "aiope.android.application"
       implementationClass = "AndroidApplicationConventionPlugin"
     }
     register("androidLibraryCompose") {
-      id = "aiope2.android.library.compose"
+      id = "aiope.android.library.compose"
       implementationClass = "AndroidLibraryComposeConventionPlugin"
     }
     register("androidLibrary") {
-      id = "aiope2.android.library"
+      id = "aiope.android.library"
       implementationClass = "AndroidLibraryConventionPlugin"
     }
     register("androidFeature") {
-      id = "aiope2.android.feature"
+      id = "aiope.android.feature"
       implementationClass = "AndroidFeatureConventionPlugin"
     }
     register("androidHilt") {
-      id = "aiope2.android.hilt"
+      id = "aiope.android.hilt"
       implementationClass = "AndroidHiltConventionPlugin"
     }
     register("spotless") {
-      id = "aiope2.spotless"
+      id = "aiope.spotless"
       implementationClass = "SpotlessConventionPlugin"
     }
   }

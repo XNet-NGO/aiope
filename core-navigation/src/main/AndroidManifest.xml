@@ -14,4 +14,4 @@
      See the License for the specific language governing permissions and
      limitations under the License.
 -->
-<manifest package="com.aiope2.core.navigation" />
+<manifest package="ngo.xnet.aiope.core.navigation" />

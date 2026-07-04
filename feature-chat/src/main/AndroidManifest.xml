@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-  package="com.aiope2.feature.chat">
+  package="ngo.xnet.aiope.feature.chat">
   <application>
     <activity
-      android:name="com.aiope2.feature.chat.engine.PermissionRequestActivity"
+      android:name="ngo.xnet.aiope.feature.chat.engine.PermissionRequestActivity"
       android:theme="@android:style/Theme.Translucent.NoTitleBar"
       android:exported="false" />
   </application>

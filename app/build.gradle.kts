@@ -1,21 +1,21 @@
 import java.util.Properties
 
 plugins {
-  id("aiope2.android.application")
-  id("aiope2.android.application.compose")
-  id("aiope2.android.hilt")
-  id("aiope2.spotless")
+  id("aiope.android.application")
+  id("aiope.android.application.compose")
+  id("aiope.android.hilt")
+  id("aiope.spotless")
   id("kotlin-parcelize")
   id("dagger.hilt.android.plugin")
   id("com.google.devtools.ksp")
 }
 
 android {
-  namespace = "com.aiope2"
+  namespace = "ngo.xnet.aiope"
   compileSdk = Configurations.compileSdk
 
   defaultConfig {
-    applicationId = "com.aiope2"
+    applicationId = "ngo.xnet.aiope"
     minSdk = Configurations.minSdk
     targetSdk = Configurations.targetSdk
     versionCode = Configurations.versionCode

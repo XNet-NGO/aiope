@@ -1,11 +1,11 @@
 plugins {
-  id("aiope2.android.library")
-  id("aiope2.android.hilt")
-  id("aiope2.spotless")
+  id("aiope.android.library")
+  id("aiope.android.hilt")
+  id("aiope.spotless")
 }
 
 android {
-  namespace = "com.aiope2.core.data"
+  namespace = "ngo.xnet.aiope.core.data"
 }
 
 dependencies {

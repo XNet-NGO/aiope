@@ -1,4 +1,4 @@
-import com.aiope2.configureAndroidCompose
+import ngo.xnet.aiope.configureAndroidCompose
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 
