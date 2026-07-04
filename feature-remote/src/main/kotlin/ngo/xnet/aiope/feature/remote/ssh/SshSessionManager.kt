@@ -147,7 +147,10 @@ class SshSessionManager @Inject constructor() {
   }
 
   fun disconnect(serverId: String) {
-    sessions.remove(serverId)?.disconnect()
+    val client = sessions.remove(serverId)
+    if (client != null) {
+      Thread { try { client.disconnect() } catch (_: Exception) {} }.start()
+    }
   }
 
   fun disconnectAll() {
