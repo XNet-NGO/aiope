@@ -26,6 +26,8 @@ AIOPE operates in four modes:
 - **Plan** -- read-only analysis mode; the AI explores context and produces a structured plan without executing anything
 - **Build** -- autonomous execution mode; the AI chains tools without asking for confirmation until the task is complete
 
+Plus a persistent **Agent System** -- spawn named agents, run multi-agent pipelines (orchestrate), and schedule recurring tasks with full tool access.
+
 The AI runs a tool loop: reason, call a tool, read the result, decide what to do next. Up to 140 rounds per turn. It handles multi-step tasks -- research a topic, write code, save it to a file, run it in the terminal, fix errors, and report back -- all in one conversation turn.
 
 **Auto-run**: a toggle next to the send button that keeps the AI working autonomously. When enabled, after any tool use the AI automatically continues without waiting for user input. Configurable continuation prompt in Agent settings. Max 20 auto-continue rounds per chain.
@@ -98,9 +100,9 @@ All configurable. Any model on any provider for any task.
 ### AI
 | Tool | Description |
 |---|---|
+| `orchestrate` | Execute multi-agent DAG pipelines with parallel stages |
 | `image_generate` | Text-to-image generation |
 | `analyze_image` | Vision/image analysis |
-| `task` | Spawn a subagent for parallel work |
 | `memory_store` / `memory_recall` / `memory_forget` | Persistent cross-conversation memory |
 
 ### Remote Servers (SSH)
@@ -129,6 +131,38 @@ Toggleable per-profile for models that don't handle structured output well.
 Manage and connect to remote Linux servers over SSH directly from the app. Add servers in Settings with host, port, user, and an Ed25519 private key. The AI sees available servers in its system prompt and can connect, run commands, and disconnect through tool calls.
 
 Supports Ed25519 and RSA keys via SSHJ with BouncyCastle. The companion [aiope-remote daemon](daemon/) (Go) can be deployed to servers for health monitoring and managed execution.
+
+---
+
+## Agent System
+
+A full multi-agent orchestration system accessible via the toolbar (SmartToy icon). Four tabs:
+
+### Spawn
+Pick an agent from the roster and assign a task. The agent runs in the background with its configured tools, model, and system prompt. Results appear in the Monitor tab.
+
+### Monitor
+Live dashboard showing all running and completed agent tasks (30 entry history). Tap any task to see:
+- Full streaming output (markdown rendered)
+- The original prompt
+- Steer input to redirect a running agent
+- Cancel (while running) or Rerun (after completion)
+
+### Timers
+Scheduled agent tasks with configurable tools. Set a prompt, select tools (search, fetch, shell, SMS, notification, alarm, SSH, memory), and choose a schedule (once, hourly, daily, weekly, monthly) with H:M:S time rollers. Runs via WorkManager in the background — even when the app is closed.
+
+### Builder
+Agent roster management. 8 builtin agents (Architect, Coder, Researcher, QA, DevOps, Security, Writer, Reviewer) plus custom agents. Full editor: name, system prompt, model picker, grouped tool selector, temperature, topP, topK, max context.
+
+### Orchestrate Tool
+The primary AI can call `orchestrate` to run multi-agent DAG pipelines:
+- Define stages with agent name, prompt, and dependencies
+- Stages without dependencies run in parallel (wavefront execution)
+- Results from completed stages flow as context to dependent stages
+- 5-minute timeout per stage, deadlock detection
+- Agents from the roster get their configured tools and system prompts
+
+Example: Researcher → Architect → Coder → QA (parallel with Reviewer)
 
 ---
 
@@ -237,7 +271,7 @@ Or download the latest APK from [Releases](https://github.com/XNet-NGO/AIOPE/rel
 ## Architecture
 
 ```
-app/                          Main Android module
+app/                          Main Android module (ngo.xnet.aiope)
 core-designsystem/            Theme, colors, typography
 core-network/                 LLM provider, SSE streaming, task model routing
 core-model/                   Shared interfaces (RemoteToolBridge)
@@ -246,12 +280,13 @@ core-data/                    Data layer
 core-terminal/                Terminal emulator, proot bootstrap
 daemon/                       Go daemon for remote servers (aiope-remote)
 feature-chat/
-  engine/                     StreamingOrchestrator, ToolExecutor, AgentMode, RealtimeStreaming, RealtimeAudioManager
+  engine/                     StreamingOrchestrator, ToolExecutor, AgentExecutor, PipelineExecutor, AgentSchedulerWorker, AgentMode, RealtimeStreaming
   dynamicui/                  aiope-ui parser, renderer, 30+ node types
   browser/                    WebBrowser, BrowserPanel, BrowserServer
   location/                   GPS provider, map cards, geocoding
   settings/                   Provider config, model-per-task, MCP, themes
   theme/                      ThemeProvider, ThemeState, ChatBackground
+  db/                         Room DB (conversations, messages, agents, tasks, schedules, memories)
 feature-remote/
   ssh/                        SshSessionManager, DeployUseCase
   tools/                      RemoteToolProvider (ssh_start, ssh_exec, ssh_exit)
