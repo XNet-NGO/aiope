@@ -23,7 +23,8 @@ object SafeOkHttp {
 
   fun builder(): OkHttpClient.Builder = try {
     OkHttpClient.Builder().sslSocketFactory(sslSocketFactory, trustManager)
-  } catch (_: Exception) {
+  } catch (e: Exception) {
+    android.util.Log.e("SafeOkHttp", "TLS setup failed, falling back to default builder", e)
     OkHttpClient.Builder()
   }
 }

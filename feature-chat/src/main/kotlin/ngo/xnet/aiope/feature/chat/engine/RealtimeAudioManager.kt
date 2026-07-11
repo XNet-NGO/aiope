@@ -34,6 +34,12 @@ class RealtimeAudioManager(
 
     /** Start mic capture loop — sends PCM as base64 JSON to the WebSocket */
     fun startCapture() {
+        // Guard against re-entry: release existing capture resources first
+        if (audioRecord != null) {
+            captureJob?.cancel(); captureJob = null
+            audioRecord?.stop(); audioRecord?.release(); audioRecord = null
+        }
+
         val bufSize = AudioRecord.getMinBufferSize(
             config.sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
         )

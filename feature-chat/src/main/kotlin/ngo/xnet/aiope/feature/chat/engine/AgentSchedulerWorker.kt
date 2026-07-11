@@ -26,17 +26,17 @@ class AgentSchedulerWorker(
 ) : CoroutineWorker(appContext, params) {
 
   override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+    val db = androidx.room.Room.databaseBuilder(
+      appContext, ChatDatabase::class.java, "aiope-chat.db"
+    ).addMigrations(
+      ngo.xnet.aiope.feature.chat.di.MIGRATION_1_2,
+      ngo.xnet.aiope.feature.chat.di.MIGRATION_2_3,
+      ngo.xnet.aiope.feature.chat.di.MIGRATION_3_4,
+      ngo.xnet.aiope.feature.chat.di.MIGRATION_4_5,
+      ngo.xnet.aiope.feature.chat.di.MIGRATION_5_6,
+      ngo.xnet.aiope.feature.chat.di.MIGRATION_6_7,
+    ).build()
     try {
-      val db = androidx.room.Room.databaseBuilder(
-        appContext, ChatDatabase::class.java, "aiope-chat.db"
-      ).addMigrations(
-        ngo.xnet.aiope.feature.chat.di.MIGRATION_1_2,
-        ngo.xnet.aiope.feature.chat.di.MIGRATION_2_3,
-        ngo.xnet.aiope.feature.chat.di.MIGRATION_3_4,
-        ngo.xnet.aiope.feature.chat.di.MIGRATION_4_5,
-        ngo.xnet.aiope.feature.chat.di.MIGRATION_5_6,
-        ngo.xnet.aiope.feature.chat.di.MIGRATION_6_7,
-      ).build()
       val dao = db.chatDao()
       val now = System.currentTimeMillis()
       val dueTasks = dao.getDueScheduledTasks(now)
@@ -90,10 +90,11 @@ class AgentSchedulerWorker(
         )
       }
 
-      db.close()
       Result.success()
     } catch (e: Exception) {
       Result.retry()
+    } finally {
+      db.close()
     }
   }
 
@@ -169,11 +170,12 @@ class AgentSchedulerWorker(
           val cmd = args["command"]?.toString() ?: return "Error: no command"
           val timeout = ((args["timeout"] as? Number)?.toLong() ?: 300) * 1000
           val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd))
-          val output = proc.inputStream.bufferedReader().readText()
-          val err = proc.errorStream.bufferedReader().readText()
+          // Read streams in separate threads to avoid pipe buffer deadlock
+          val stdoutFuture = java.util.concurrent.CompletableFuture.supplyAsync { proc.inputStream.bufferedReader().readText() }
+          val stderrFuture = java.util.concurrent.CompletableFuture.supplyAsync { proc.errorStream.bufferedReader().readText() }
           proc.waitFor(timeout, java.util.concurrent.TimeUnit.MILLISECONDS)
-          if (proc.isAlive) { proc.destroyForcibly(); return (output + err).take(4000) + "\n[timeout after ${timeout/1000}s]" }
-          (output + err).take(4000)
+          if (proc.isAlive) { proc.destroyForcibly(); return (stdoutFuture.get() + stderrFuture.get()).take(4000) + "\n[timeout after ${timeout/1000}s]" }
+          (stdoutFuture.get() + stderrFuture.get()).take(4000)
         }
         "read_file" -> {
           val path = args["path"]?.toString() ?: return "Error: no path"

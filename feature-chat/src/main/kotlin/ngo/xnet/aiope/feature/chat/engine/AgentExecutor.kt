@@ -5,6 +5,7 @@ import ngo.xnet.aiope.feature.chat.db.AgentTaskEntity
 import ngo.xnet.aiope.feature.chat.db.ChatDao
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import java.util.UUID
 
 /**
@@ -104,6 +105,11 @@ class AgentExecutor(
         executeTool(name, args)
       }
       orchestrator.stream(messages).collect { chunk ->
+        chunk.contentReplace?.let { replacement ->
+          sb.clear()
+          sb.append(replacement)
+          updateTask(task.id) { it.copy(result = sb.toString()) }
+        }
         if (chunk.content.isNotEmpty()) {
           sb.append(chunk.content)
           updateTask(task.id) { it.copy(result = sb.toString()) }
@@ -161,6 +167,6 @@ class AgentExecutor(
   private fun updateStage(id: String, stage: Stage) = updateTask(id) { it.copy(stage = stage) }
 
   private fun updateTask(id: String, transform: (RunningTask) -> RunningTask) {
-    _tasks.value = _tasks.value.map { if (it.id == id) transform(it) else it }
+    _tasks.update { list -> list.map { if (it.id == id) transform(it) else it } }
   }
 }

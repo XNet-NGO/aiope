@@ -45,6 +45,13 @@ object BrowserHolder {
     latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
     return browser!!
   }
+
+  /** Release the WebView to free memory. Call when browser panel is dismissed. */
+  fun release() {
+    val b = browser ?: return
+    browser = null
+    handler.post { b.destroy() }
+  }
 }
 
 @Composable
