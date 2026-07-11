@@ -126,6 +126,12 @@ internal val AGENT_SECTIONS = listOf(
         default = "Use tools proactively when they can help — don't just describe what you could do.\nFor multi-step tasks, chain tools together. Use parallel execution for independent read operations.\nWhen a tool fails, explain what happened and try an alternative approach.\nUse search_web for current events and facts. Use query_data for weather, earthquakes, and live data.\nUse the browser tools for complex web interactions that fetch_url can't handle.",
       ),
       AgentSubsection(
+        key = "tool_output",
+        label = "Tool Output Handling",
+        hint = "How to present tool results to the user",
+        default = "NEVER repeat raw tool output verbatim in your response. Tool results are already visible to the user in collapsible tool panels.\nInstead: summarize, extract key information, or present findings in a structured format (tables, lists, key points).\nFor file listings: summarize count, notable files, total size — don't echo every line.\nFor command output: report success/failure and highlight relevant parts.\nFor web content: extract and present the answer, don't paste the raw HTML/text.",
+      ),
+      AgentSubsection(
         key = "dynamic_ui",
         label = "Dynamic UI",
         hint = "Interactive UI component definitions for rich responses",

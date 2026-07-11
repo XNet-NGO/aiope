@@ -31,7 +31,7 @@ class ToolExecutor(
   var lastLocationData: LocationData? = null
   var locationUsedThisTurn = false
   private var cachedDataCategories: String? = null
-  var shellOutputLimit = 4000
+  var shellOutputLimit = 12000
   var fetchLimit = 30000
   var fileReadLimit = 50000
 
