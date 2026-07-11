@@ -125,6 +125,7 @@ class StreamingOrchestrator(
       var hasToolCalls = false
       var inThinkTag = false
       var thinkTagName = "think"
+      var hasStructuredReasoning = false
       val pendingTagBuf = StringBuilder()
       val sseErrorRef = java.util.concurrent.atomic.AtomicReference<String?>(null)
       val sseDoneRef = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -182,13 +183,15 @@ class StreamingOrchestrator(
 
                 // Text content
                 var content = delta.optString("content", "").let { if (it == "null") "" else it }
-                // Reasoning
+                // Reasoning from API field (models that support structured reasoning)
                 var reasoning = delta.optString("reasoning_content", "").let { if (it == "null") "" else it }.ifBlank {
                   delta.optString("reasoning", "").let { if (it == "null") "" else it }
                 }
+                // Track if this model uses structured reasoning (skip tag parsing if so)
+                if (reasoning.isNotEmpty()) hasStructuredReasoning = true
 
-                // Handle <think>/<thought>/<thinking> tags (may be split across chunks)
-                if (content.isNotEmpty()) {
+                // Handle <think>/<thought>/<thinking> tags (only for models that don't provide reasoning_content)
+                if (content.isNotEmpty() && !hasStructuredReasoning) {
                   pendingTagBuf.append(content)
                   content = ""
                   // Process buffer

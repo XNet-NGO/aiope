@@ -23,7 +23,7 @@ data class ModelConfig(
   val autoCompact: Boolean = false,
   val systemPromptOverride: String? = null,
   // Truncation limits
-  val shellOutputLimit: Int = 4000,
+  val shellOutputLimit: Int = 12000,
   val fetchLimit: Int = 30000,
   val fileReadLimit: Int = 50000,
 ) {
@@ -42,7 +42,7 @@ data class ModelConfig(
     put("contextTokens", contextTokens)
     put("autoCompact", autoCompact)
     systemPromptOverride?.let { put("systemPromptOverride", it) }
-    if (shellOutputLimit != 4000) put("shellOutputLimit", shellOutputLimit)
+    if (shellOutputLimit != 12000) put("shellOutputLimit", shellOutputLimit)
     if (fetchLimit != 30000) put("fetchLimit", fetchLimit)
     if (fileReadLimit != 50000) put("fileReadLimit", fileReadLimit)
   }
@@ -69,7 +69,7 @@ data class ModelConfig(
       } else {
         null
       },
-      shellOutputLimit = j.optInt("shellOutputLimit", 4000),
+      shellOutputLimit = j.optInt("shellOutputLimit", 12000),
       fetchLimit = j.optInt("fetchLimit", 30000),
       fileReadLimit = j.optInt("fileReadLimit", 50000),
     )
