@@ -886,6 +886,11 @@ class ChatViewModel @Inject constructor(
         if (!isReasoning) { isReasoning = true; currentReasoning.clear() }
         currentReasoning.append(r)
       }
+      // Handle content replacement (strips tool markup from display)
+      chunk.contentReplace?.let { replacement ->
+        sb.clear()
+        sb.append(replacement)
+      }
       if (chunk.content.isNotEmpty()) {
         if (isReasoning && currentReasoning.isNotEmpty()) {
           reasoningBlocks.add(currentReasoning.toString()); currentReasoning.clear(); isReasoning = false
@@ -912,7 +917,7 @@ class ChatViewModel @Inject constructor(
       val currentLen = sb.length
       val hasNewLine = chunk.content.contains('\n')
       val lineWorth = currentLen - lastUiLength >= charsPerLine
-      if (chunk.isDone || chunk.error != null || hasNewLine || lineWorth || chunk.toolCalls != null || chunk.toolResults != null || chunk.reasoning != null) {
+      if (chunk.isDone || chunk.error != null || hasNewLine || lineWorth || chunk.toolCalls != null || chunk.toolResults != null || chunk.reasoning != null || chunk.contentReplace != null) {
         lastUiLength = currentLen
         withContext(Dispatchers.Main) {
           _messages.value = _messages.value.toMutableList().also {

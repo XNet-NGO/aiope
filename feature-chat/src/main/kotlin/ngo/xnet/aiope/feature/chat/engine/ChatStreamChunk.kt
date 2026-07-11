@@ -8,6 +8,8 @@ data class ChatStreamChunk(
   val toolCalls: List<ToolCallInfo>? = null,
   val toolResults: List<ToolResultInfo>? = null,
   val error: String? = null,
+  /** When non-null, replace the entire accumulated content with this value (strips tool markup) */
+  val contentReplace: String? = null,
 )
 
 data class ToolCallInfo(val id: String, val name: String, val arguments: Map<String, Any?>)

@@ -87,8 +87,15 @@ class SshSessionManager @Inject constructor() {
   }
 
   suspend fun connect(server: RemoteServerEntity): String = withContext(Dispatchers.IO) {
-    sessions[server.id]?.let { if (it.isConnected) return@withContext server.id }
+    // If existing session is alive, reuse it; otherwise clean up the stale entry
+    sessions[server.id]?.let { existing ->
+      if (existing.isConnected) return@withContext server.id
+      // Stale session — disconnect and remove before reconnecting
+      sessions.remove(server.id)
+      try { existing.disconnect() } catch (_: Exception) {}
+    }
     val client = SSHClient()
+    client.connectTimeout = 15_000
     addTofuVerifier(client, server.host, server.port)
     client.connect(server.host, server.port)
     val privateKey = server.privateKey
@@ -108,6 +115,7 @@ class SshSessionManager @Inject constructor() {
 
   suspend fun connectWithKey(host: String, port: Int, user: String, privateKey: String): SSHClient = withContext(Dispatchers.IO) {
     val client = SSHClient()
+    client.connectTimeout = 15_000
     addTofuVerifier(client, host, port)
     try {
       client.connect(host, port)

@@ -26,9 +26,11 @@ import java.net.URLDecoder
 object BrowserServer {
   private const val TAG = "BrowserServer"
   private const val PORT = 8735
+  private const val MAX_CONNECTIONS = 10
   private var serverSocket: ServerSocket? = null
   private var job: Job? = null
   private var browserRef: WeakReference<() -> WebBrowser>? = null
+  private val connectionSemaphore = java.util.concurrent.Semaphore(MAX_CONNECTIONS)
 
   fun start(getBrowser: () -> WebBrowser) {
     if (job != null) return
@@ -40,6 +42,11 @@ object BrowserServer {
         Log.i(TAG, "Listening on port $PORT")
         while (isActive) {
           val socket = ss.accept()
+          if (!connectionSemaphore.tryAcquire()) {
+            // At capacity — reject
+            try { socket.close() } catch (_: Exception) {}
+            continue
+          }
           launch {
             try {
               val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
@@ -59,6 +66,7 @@ object BrowserServer {
               Log.e(TAG, "Request error", e)
             } finally {
               socket.close()
+              connectionSemaphore.release()
             }
           }
         }
