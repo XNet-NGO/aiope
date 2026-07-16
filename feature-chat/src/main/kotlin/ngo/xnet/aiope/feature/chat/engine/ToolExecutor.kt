@@ -46,10 +46,15 @@ class ToolExecutor(
   private fun getRagEngine(): org.xnet.aiope.inference.RagEngine {
     if (ragEngine == null) {
       val engine = org.xnet.aiope.inference.LlamaEngine()
-      val modelPath = "/sdcard/models/all-MiniLM-L6-v2-Q4_K_M.gguf"
-      if (java.io.File(modelPath).exists()) {
-        engine.loadModel(modelPath, contextSize = 256, nThreads = 4)
+      // Copy model from assets to internal storage if not already there
+      val modelFile = java.io.File(app.filesDir, "models/all-MiniLM-L6-v2-Q4_K_M.gguf")
+      if (!modelFile.exists()) {
+        modelFile.parentFile?.mkdirs()
+        app.assets.open("models/all-MiniLM-L6-v2-Q4_K_M.gguf").use { input ->
+          modelFile.outputStream().use { output -> input.copyTo(output) }
+        }
       }
+      engine.loadModel(modelFile.absolutePath, contextSize = 256, nThreads = 4)
       ragEngine = org.xnet.aiope.inference.RagEngine(app, engine)
     }
     return ragEngine!!
