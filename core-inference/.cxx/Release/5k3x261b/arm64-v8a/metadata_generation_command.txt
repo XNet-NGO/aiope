@@ -1,0 +1,20 @@
+                        -H/home/user-x/projects/aiope/core-inference/src/main/cpp
+-DCMAKE_SYSTEM_NAME=Android
+-DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+-DCMAKE_SYSTEM_VERSION=26
+-DANDROID_PLATFORM=android-26
+-DANDROID_ABI=arm64-v8a
+-DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
+-DANDROID_NDK=/home/user-x/android-sdk/ndk/28.2.13676358
+-DCMAKE_ANDROID_NDK=/home/user-x/android-sdk/ndk/28.2.13676358
+-DCMAKE_TOOLCHAIN_FILE=/home/user-x/android-sdk/ndk/28.2.13676358/build/cmake/android.toolchain.cmake
+-DCMAKE_MAKE_PROGRAM=/home/user-x/android-sdk/cmake/3.22.1/bin/ninja
+-DCMAKE_CXX_FLAGS=-std=c++17
+-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=/home/user-x/projects/aiope/core-inference/build/intermediates/cxx/Release/5k3x261b/obj/arm64-v8a
+-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=/home/user-x/projects/aiope/core-inference/build/intermediates/cxx/Release/5k3x261b/obj/arm64-v8a
+-B/home/user-x/projects/aiope/core-inference/.cxx/Release/5k3x261b/arm64-v8a
+-GNinja
+-DCMAKE_BUILD_TYPE=Release
+-DGGML_OPENMP=OFF
+                        Build command args: []
+                        Version: 2
