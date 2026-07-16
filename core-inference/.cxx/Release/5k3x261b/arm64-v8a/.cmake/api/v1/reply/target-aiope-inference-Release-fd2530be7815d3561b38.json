@@ -1,0 +1,204 @@
+{
+	"artifacts" : 
+	[
+		{
+			"path" : "/home/user-x/projects/aiope/core-inference/build/intermediates/cxx/Release/5k3x261b/obj/arm64-v8a/libaiope-inference.so"
+		}
+	],
+	"backtrace" : 1,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_library",
+			"target_link_libraries",
+			"target_include_directories"
+		],
+		"files" : 
+		[
+			"CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 11,
+				"parent" : 0
+			},
+			{
+				"command" : 1,
+				"file" : 0,
+				"line" : 19,
+				"parent" : 0
+			},
+			{
+				"command" : 2,
+				"file" : 0,
+				"line" : 13,
+				"parent" : 0
+			}
+		]
+	},
+	"compileGroups" : 
+	[
+		{
+			"compileCommandFragments" : 
+			[
+				{
+					"fragment" : "-g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -O3 -DNDEBUG  -fPIC"
+				}
+			],
+			"defines" : 
+			[
+				{
+					"backtrace" : 2,
+					"define" : "GGML_USE_CPU"
+				},
+				{
+					"define" : "aiope_inference_EXPORTS"
+				}
+			],
+			"includes" : 
+			[
+				{
+					"backtrace" : 3,
+					"path" : "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/include"
+				},
+				{
+					"backtrace" : 3,
+					"path" : "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/common"
+				},
+				{
+					"backtrace" : 3,
+					"path" : "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/ggml/include"
+				},
+				{
+					"backtrace" : 2,
+					"path" : "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/src/../include"
+				},
+				{
+					"backtrace" : 2,
+					"path" : "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/ggml/src/../include"
+				}
+			],
+			"language" : "CXX",
+			"sourceIndexes" : 
+			[
+				0
+			],
+			"sysroot" : 
+			{
+				"path" : "/home/user-x/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+			}
+		}
+	],
+	"dependencies" : 
+	[
+		{
+			"backtrace" : 2,
+			"id" : "ggml-base::@94de48a0d5830e0c5d2f"
+		},
+		{
+			"backtrace" : 2,
+			"id" : "ggml::@94de48a0d5830e0c5d2f"
+		},
+		{
+			"backtrace" : 2,
+			"id" : "ggml-cpu::@94de48a0d5830e0c5d2f"
+		},
+		{
+			"backtrace" : 2,
+			"id" : "llama::@fb8c1886b26de7beabc1"
+		}
+	],
+	"id" : "aiope-inference::@6890427a1f51a3e7e1df",
+	"link" : 
+	{
+		"commandFragments" : 
+		[
+			{
+				"fragment" : "-static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--no-undefined-version -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments  -Wl,--gc-sections",
+				"role" : "flags"
+			},
+			{
+				"backtrace" : 2,
+				"fragment" : "llama.cpp/src/libllama.a",
+				"role" : "libraries"
+			},
+			{
+				"backtrace" : 2,
+				"fragment" : "-landroid",
+				"role" : "libraries"
+			},
+			{
+				"backtrace" : 2,
+				"fragment" : "-llog",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "llama.cpp/ggml/src/libggml.a",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "llama.cpp/ggml/src/libggml-cpu.a",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "llama.cpp/ggml/src/libggml-base.a",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "-pthread",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "-lm",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "-ldl",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "-latomic -lm",
+				"role" : "libraries"
+			}
+		],
+		"language" : "CXX",
+		"sysroot" : 
+		{
+			"path" : "/home/user-x/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+		}
+	},
+	"name" : "aiope-inference",
+	"nameOnDisk" : "libaiope-inference.so",
+	"paths" : 
+	{
+		"build" : ".",
+		"source" : "."
+	},
+	"sourceGroups" : 
+	[
+		{
+			"name" : "Source Files",
+			"sourceIndexes" : 
+			[
+				0
+			]
+		}
+	],
+	"sources" : 
+	[
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "jni_bridge.cpp",
+			"sourceGroupIndex" : 0
+		}
+	],
+	"type" : "SHARED_LIBRARY"
+}

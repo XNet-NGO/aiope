@@ -18,7 +18,6 @@ target_include_directories(aiope-inference PRIVATE
 
 target_link_libraries(aiope-inference
     llama
-    common
     android
     log
 )
