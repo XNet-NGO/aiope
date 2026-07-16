@@ -19,6 +19,7 @@ dependencies {
   implementation(project(":core-data"))
   implementation(project(":core-model"))
   implementation(project(":core-terminal"))
+  implementation(project(":core-inference"))
 
   implementation(libs.androidx.lifecycle.runtimeCompose)
   implementation(libs.androidx.lifecycle.viewModelCompose)

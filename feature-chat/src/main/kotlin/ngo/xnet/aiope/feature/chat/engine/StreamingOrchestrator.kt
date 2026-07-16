@@ -588,6 +588,49 @@ class StreamingOrchestrator(
         results.add(name to mapOf(argKey to argValue))
       }
     }
+    if (results.isNotEmpty()) return results
+
+    // Pattern 6: <|tool_calls_section_begin|> <|tool_call_begin|> functions.name:N <|tool_call_argument_begin|> {json} <|tool_call_end|> <|tool_calls_section_end|> (Kimi-K2 format)
+    if (text.contains("<|tool_call_begin|>")) {
+      val callRegex = Regex("""<\|tool_call_begin\|>\s*functions\.([^:]+):\d+\s*<\|tool_call_argument_begin\|>\s*(\{.*?\})\s*<\|tool_call_end\|>""", RegexOption.DOT_MATCHES_ALL)
+      for (m in callRegex.findAll(text)) {
+        val name = m.groupValues[1].trim()
+        if (name in toolNames) {
+          try {
+            val argsObj = JSONObject(m.groupValues[2].trim())
+            val args = argsObj.keys().asSequence().associateWith { k -> argsObj.opt(k) }
+            results.add(name to args)
+          } catch (_: Exception) {}
+        }
+      }
+    }
+    if (results.isNotEmpty()) return results
+
+    // Pattern 7: <|tool_call>call:func_name{key:<|"|>value<|"|>}<tool_call|> (Gemma 4 native)
+    if (text.contains("<|tool_call>")) {
+      val gemmaRegex = Regex("""<\|tool_call>call:(\w+)\{(.*?)\}<tool_call\|>""", RegexOption.DOT_MATCHES_ALL)
+      for (m in gemmaRegex.findAll(text)) {
+        val name = m.groupValues[1].trim()
+        if (name in toolNames) {
+          val rawArgs = m.groupValues[2]
+          val args = mutableMapOf<String, Any?>()
+          // Parse key:<|"|>value<|"|> pairs
+          val argPattern = Regex("""(\w+):<\|"\|>(.*?)<\|"\|>""")
+          for (am in argPattern.findAll(rawArgs)) {
+            args[am.groupValues[1]] = am.groupValues[2]
+          }
+          // Parse key:number pairs
+          val numPattern = Regex("""(\w+):(\d+(?:\.\d+)?)""")
+          for (nm in numPattern.findAll(rawArgs)) {
+            if (nm.groupValues[1] !in args) {
+              val v = nm.groupValues[2]
+              args[nm.groupValues[1]] = if (v.contains(".")) v.toDouble() else v.toInt()
+            }
+          }
+          if (args.isNotEmpty()) results.add(name to args)
+        }
+      }
+    }
     return results
   }
 
@@ -620,6 +663,12 @@ class StreamingOrchestrator(
     cleaned = Regex("""<minimax:tool_call>.*?</minimax:tool_call>""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
     // Strip <tool_call>...</tool_call> blocks
     cleaned = Regex("""<tool_call>.*?</tool_call>""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
+    // Strip <|tool_calls_section_begin|>...<|tool_calls_section_end|> blocks (Kimi-K2)
+    cleaned = Regex("""<\|tool_calls_section_begin\|>.*?<\|tool_calls_section_end\|>""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
+    // Strip standalone <|tool_call_begin|>...<|tool_call_end|> (if no section wrapper)
+    cleaned = Regex("""<\|tool_call_begin\|>.*?<\|tool_call_end\|>""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
+    // Strip <|tool_call>call:...<tool_call|> (Gemma 4 native)
+    cleaned = Regex("""<\|tool_call>.*?<tool_call\|>""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
     // Strip ```json tool call blocks (only those with name+arguments pattern)
     cleaned = Regex("""```(?:json)?\s*\{[^`]*?"name"\s*:.*?"(?:arguments|parameters)"\s*:.*?\}\s*```""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
     // Strip standalone JSON tool call objects

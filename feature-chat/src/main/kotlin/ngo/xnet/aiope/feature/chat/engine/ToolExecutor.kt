@@ -42,6 +42,19 @@ class ToolExecutor(
     .followRedirects(true)
     .build()
 
+  private var ragEngine: org.xnet.aiope.inference.RagEngine? = null
+  private fun getRagEngine(): org.xnet.aiope.inference.RagEngine {
+    if (ragEngine == null) {
+      val engine = org.xnet.aiope.inference.LlamaEngine()
+      val modelPath = "/sdcard/models/all-MiniLM-L6-v2-Q4_K_M.gguf"
+      if (java.io.File(modelPath).exists()) {
+        engine.loadModel(modelPath, contextSize = 256, nThreads = 4)
+      }
+      ragEngine = org.xnet.aiope.inference.RagEngine(app, engine)
+    }
+    return ragEngine!!
+  }
+
   fun buildToolDefs() = listOf(
     td("run_sh", "Execute Android shell command. Set timeout appropriately: 10-30s for simple commands (ls, cat, echo), 60-120s for network operations, 300-600s for builds/installs.", """{"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute"},"timeout":{"type":"integer","description":"Timeout in seconds. Default 300. Use 10-30 for quick commands, 300-600 for builds."}},"required":["command"]}"""),
     td("run_proot", "Execute a command in the Alpine Linux proot environment. Use for apk, python, gcc, etc. Set timeout appropriately for the command.", """{"type":"object","properties":{"command":{"type":"string","description":"Command to execute in Alpine"},"timeout":{"type":"integer","description":"Timeout in seconds. Default 300. Use 60 for apk, 600 for builds."}},"required":["command"]}"""),
@@ -85,6 +98,8 @@ class ToolExecutor(
     td("delete_sms", "Delete an SMS message by its ID (from read_sms).", """{"type":"object","properties":{"sms_id":{"type":"integer","description":"SMS ID from read_sms"}},"required":["sms_id"]}"""),
     td("device_info", "Get device info: battery, storage, RAM, network, model.", """{"type":"object","properties":{}}"""),
     td("media_control", "Control media playback (play/pause, next, previous, stop).", """{"type":"object","properties":{"action":{"type":"string","description":"One of: play_pause, next, previous, stop"}},"required":["action"]}"""),
+    td("rag_search", "Search the local on-device knowledge base using semantic similarity. Returns relevant document chunks with scores.", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"},"top_k":{"type":"integer","description":"Number of results (default 5)"}},"required":["query"]}"""),
+    td("rag_index", "Index a document into the local knowledge base for semantic search.", """{"type":"object","properties":{"title":{"type":"string","description":"Document title"},"content":{"type":"string","description":"Text content to index"}},"required":["title","content"]}"""),
     td("orchestrate", "Execute a multi-agent pipeline (DAG). Each stage dispatches a named agent from the roster with its configured tools. Stages without depends_on run in parallel. Results from completed stages are passed as context to dependent stages.", """{"type":"object","properties":{"task":{"type":"string","description":"Overall task description"},"stages":{"type":"array","description":"Pipeline stages","items":{"type":"object","properties":{"name":{"type":"string","description":"Unique stage name"},"agent":{"type":"string","description":"Agent from roster: Architect, Coder, Researcher, QA, DevOps, Security, Writer, or Reviewer"},"prompt":{"type":"string","description":"Detailed task for this stage"},"depends_on":{"type":"array","items":{"type":"string"},"description":"Names of stages this depends on"}},"required":["name","agent","prompt"]}}},"required":["task","stages"]}"""),
   ) + (remoteToolBridge?.buildToolDefs()?.map { td(it.name, it.description, it.parameters) } ?: emptyList()).filter { toolStore.isToolEnabled(it.name) && it.name !in getAgentMode().disabledTools } + toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
     var defs = mcpManager.getToolDefs(server.id)
@@ -484,6 +499,26 @@ class ToolExecutor(
         "Media: $action"
       } catch (e: Exception) {
         "Error: ${e.message}"
+      }
+
+
+      "rag_search" -> {
+        val query = args["query"]?.toString() ?: return "Error: query required"
+        val topK = (args["top_k"] as? Number)?.toInt() ?: 5
+        try {
+          val results = getRagEngine().search(query, topK)
+          if (results.isEmpty()) "No results found in knowledge base."
+          else results.joinToString("\n\n") { "[${String.format("%.2f", it.score)}] ${it.title}\n${it.text.take(300)}" }
+        } catch (e: Exception) { "RAG error: ${e.message}" }
+      }
+
+      "rag_index" -> {
+        val title = args["title"]?.toString() ?: return "Error: title required"
+        val content = args["content"]?.toString() ?: return "Error: content required"
+        try {
+          val docId = getRagEngine().indexDocument(title, content)
+          "Indexed document '$title' (id: $docId)"
+        } catch (e: Exception) { "RAG index error: ${e.message}" }
       }
 
       "orchestrate" -> {
