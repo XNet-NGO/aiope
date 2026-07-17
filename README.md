@@ -11,7 +11,7 @@
 
 **An AI that doesn't just talk. It acts.**
 
-AIOPE is an Android AI assistant with 46 tools, realtime voice with full tool access, a full Linux terminal, browser automation, location awareness, live data feeds, remote server management, and the ability to build native interactive UI on the fly. It connects to any OpenAI-compatible API and runs the entire tool loop on-device.
+AIOPE is an Android AI assistant with 48 tools, realtime voice with full tool access, on-device RAG with local embeddings, a full Linux terminal, browser automation, location awareness, live data feeds, remote server management, and the ability to build native interactive UI on the fly. It connects to any OpenAI-compatible API and runs the entire tool loop on-device.
 
 It ships with the [AIOPE Gateway](https://github.com/XNet-NGO/aiope-gateway) -- a self-hosted inference proxy that routes to Google AI Studio, Pollinations, and other providers with a single API key. The gateway handles model routing, rate limiting, and API key management so the client stays clean. Due to costs we might not provide free models. We will always support those that BYOK.
 
@@ -51,7 +51,7 @@ All configurable. Any model on any provider for any task.
 
 ---
 
-## Tools (46)
+## Tools (48)
 
 ### System
 | Tool | Description |
@@ -104,6 +104,8 @@ All configurable. Any model on any provider for any task.
 | `image_generate` | Text-to-image generation |
 | `analyze_image` | Vision/image analysis |
 | `memory_store` / `memory_recall` / `memory_forget` | Persistent cross-conversation memory |
+| `rag_search` | Semantic search over locally indexed documents |
+| `rag_index` | Index a document into the on-device knowledge base |
 
 ### Remote Servers (SSH)
 | Tool | Description |
@@ -170,7 +172,7 @@ Example: Researcher → Architect → Coder → QA (parallel with Reviewer)
 
 Tap the mic button to start a live voice conversation. AIOPE connects to Google's Gemini Live API via the gateway and streams bidirectional audio in real time.
 
-- **Full tool access** -- all 46 tools work during voice, executed natively on-device
+- **Full tool access** -- all 48 tools work during voice, executed natively on-device
 - **Acoustic echo cancellation** -- speak while the AI is talking to interrupt
 - **Live transcription** -- both user and model speech rendered in chat as it happens
 - **System prompt** -- your full agent persona and instructions apply to voice sessions
@@ -184,6 +186,27 @@ The AI can browse the web, run shell commands, check your calendar, send message
 ## Browser
 
 A shared WebView that both the user and AI can control simultaneously. The AI navigates pages, reads content, clicks elements, fills forms, runs JavaScript, and scrolls -- all through tool calls. Split view alongside chat or full screen.
+
+---
+
+## On-Device RAG
+
+A fully local Retrieval-Augmented Generation system running entirely on-device with no network required.
+
+- **Embedding model**: MiniLM-L6-v2 Q4 (21MB) bundled as an APK asset
+- **Inference**: llama.cpp compiled for ARM64 via NDK/CMake (JNI bridge)
+- **Vector store**: SQLite with cosine similarity search
+- **Chunking**: Sentence-aware with configurable overlap
+- **PDF support**: Text extraction via PDFBox for uploaded documents
+
+### How it works
+
+1. Upload documents through **Settings > RAG Documents** (text files, PDFs)
+2. Documents are chunked, embedded with MiniLM, and stored locally
+3. The AI uses `rag_search` to find relevant chunks by semantic similarity
+4. The AI uses `rag_index` to store new knowledge from conversations
+
+All processing happens on the device CPU -- no data leaves the phone. The embedding model loads on first use and stays in memory for the session.
 
 ---
 
@@ -262,9 +285,11 @@ Or download the latest APK from [Releases](https://github.com/XNet-NGO/AIOPE/rel
 ### Requirements
 
 - Android 8.0+ (API 26)
+- ARM64 device (for on-device RAG inference)
 - Internet connection for API calls
 - GPS for location features (optional)
 - ~100MB for proot Linux environment (optional)
+- ~21MB additional for MiniLM embedding model (bundled in APK)
 
 ---
 
@@ -278,13 +303,14 @@ core-model/                   Shared interfaces (RemoteToolBridge)
 core-preferences/             DataStore preferences
 core-data/                    Data layer
 core-terminal/                Terminal emulator, proot bootstrap
+core-inference/               On-device llama.cpp (NDK/JNI), LlamaEngine, RagEngine
 daemon/                       Go daemon for remote servers (aiope-remote)
 feature-chat/
   engine/                     StreamingOrchestrator, ToolExecutor, AgentExecutor, PipelineExecutor, AgentSchedulerWorker, AgentMode, RealtimeStreaming
   dynamicui/                  aiope-ui parser, renderer, 30+ node types
   browser/                    WebBrowser, BrowserPanel, BrowserServer
   location/                   GPS provider, map cards, geocoding
-  settings/                   Provider config, model-per-task, MCP, themes
+  settings/                   Provider config, model-per-task, MCP, themes, RAG documents
   theme/                      ThemeProvider, ThemeState, ChatBackground
   db/                         Room DB (conversations, messages, agents, tasks, schedules, memories)
 feature-remote/
@@ -304,7 +330,7 @@ AIOPE was built by one developer and an AI pair in under a month. No team. No fu
 
 The developer is disabled. AI-assisted development is the accessibility tool that closed the gap between vision and execution. AIOPE exists because the same paradigm it demonstrates -- a human directing an AI to build at a pace that shouldn't be possible -- is the paradigm that built it.
 
-No other Android app ships a Linux terminal, browser automation, SSH remote management, 46 tools with a 140-round autonomous loop, dynamic native UI generation, provider-agnostic model routing, and MCP support in a single package. The apps that come closest are backed by teams of hundreds.
+No other Android app ships a Linux terminal, browser automation, SSH remote management, 48 tools with a 140-round autonomous loop, on-device RAG with local embeddings, dynamic native UI generation, provider-agnostic model routing, and MCP support in a single package. The apps that come closest are backed by teams of hundreds.
 
 This one was built by two.
 
@@ -332,6 +358,8 @@ AIOPE builds on the following open-source projects, each under their original li
 | Markdown base | [antgroup/FluidMarkdown](https://github.com/antgroup/FluidMarkdown) | Apache 2.0 |
 | Markwon | [noties/markwon](https://github.com/noties/markwon) | Apache 2.0 |
 | Terminal | [termux/termux-app](https://github.com/termux/termux-app) | GPL 3.0 |
+| llama.cpp | [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) | MIT |
+| PDFBox Android | [TomRoush/PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) | Apache 2.0 |
 | MapLibre | [maplibre/maplibre-native](https://github.com/maplibre/maplibre-native) | BSD 2-Clause |
 | CommonMark | [commonmark/commonmark-java](https://github.com/commonmark/commonmark-java) | BSD 2-Clause |
 | Prism4j | [noties/Prism4j](https://github.com/noties/Prism4j) | Apache 2.0 |
