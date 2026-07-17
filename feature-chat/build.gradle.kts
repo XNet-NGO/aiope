@@ -73,7 +73,7 @@ dependencies {
   }
 
   // datastore
-  implementation("androidx.datastore:datastore-preferences:1.1.7")
+  implementation("androidx.datastore:datastore-preferences:1.2.1")
 
   // exoplayer for video backgrounds
   implementation("androidx.media3:media3-exoplayer:1.6.1")

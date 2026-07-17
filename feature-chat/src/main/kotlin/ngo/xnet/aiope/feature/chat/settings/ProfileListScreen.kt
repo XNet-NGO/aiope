@@ -43,6 +43,7 @@ internal fun ProfileList(
   onVoice: () -> Unit = {},
   onTheme: () -> Unit = {},
   onProviders: () -> Unit = {},
+  onRag: () -> Unit = {},
   onBack: () -> Unit,
 ) {
   val theme = ngo.xnet.aiope.feature.chat.theme.LocalThemeState.current
@@ -102,6 +103,12 @@ internal fun ProfileList(
           headlineContent = { Text("Tools") },
           supportingContent = { Text("Enable or disable individual tools", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
           modifier = Modifier.clickable { onTools() },
+        )
+        HorizontalDivider()
+        ListItem(
+          headlineContent = { Text("RAG Documents") },
+          supportingContent = { Text("Upload and manage files for on-device retrieval", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+          modifier = Modifier.clickable { onRag() },
         )
         HorizontalDivider()
 

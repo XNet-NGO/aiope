@@ -9,9 +9,9 @@ class LlamaEngine {
 
     val isLoaded: Boolean get() = handle != 0L
 
-    fun loadModel(path: String, contextSize: Int = 4096, nThreads: Int = 4): Boolean {
+    fun loadModel(path: String, contextSize: Int = 4096, nThreads: Int = 4, embedding: Boolean = false): Boolean {
         check(handle != 0L) { "Engine closed" }
-        return nativeLoadModel(handle, path, contextSize, nThreads)
+        return nativeLoadModel(handle, path, contextSize, nThreads, embedding)
     }
 
     fun generate(
@@ -42,7 +42,7 @@ class LlamaEngine {
 
     private external fun nativeCreate(): Long
     private external fun nativeDestroy(handle: Long)
-    private external fun nativeLoadModel(handle: Long, path: String, contextSize: Int, nThreads: Int): Boolean
+    private external fun nativeLoadModel(handle: Long, path: String, contextSize: Int, nThreads: Int, embedding: Boolean): Boolean
     private external fun nativeGenerate(handle: Long, prompt: String, maxTokens: Int, temperature: Float, topP: Float, repeatPenalty: Float, callback: StreamCallback): Boolean
     private external fun nativeEmbed(handle: Long, text: String): FloatArray?
     private external fun nativeAbort(handle: Long)
