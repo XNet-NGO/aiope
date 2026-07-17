@@ -83,5 +83,5 @@ dependencies {
   implementation(libs.hilt.android)
   implementation(libs.androidx.hilt.navigation.compose)
   ksp(libs.hilt.compiler)
-  implementation("com.google.errorprone:error_prone_annotations:2.28.0")
+  implementation("com.google.errorprone:error_prone_annotations:2.50.0")
 }
