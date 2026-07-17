@@ -94,7 +94,7 @@ Java_org_xnet_aiope_inference_LlamaEngine_nativeDestroy(JNIEnv *, jobject, jlong
 extern "C" JNIEXPORT jboolean JNICALL
 Java_org_xnet_aiope_inference_LlamaEngine_nativeLoadModel(
         JNIEnv *env, jobject, jlong handle,
-        jstring jPath, jint contextSize, jint nThreads) {
+        jstring jPath, jint contextSize, jint nThreads, jboolean embedding) {
 
     auto *state = getState(handle);
     if (!state) return JNI_FALSE;
@@ -110,7 +110,7 @@ Java_org_xnet_aiope_inference_LlamaEngine_nativeLoadModel(
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = 0;
 
-    LOGI("Loading model: %s (ctx=%d, threads=%d)", path.c_str(), contextSize, nThreads);
+    LOGI("Loading model: %s (ctx=%d, threads=%d, embedding=%d)", path.c_str(), contextSize, nThreads, (int)embedding);
 
     state->model = llama_model_load_from_file(path.c_str(), model_params);
     if (!state->model) {
@@ -123,9 +123,13 @@ Java_org_xnet_aiope_inference_LlamaEngine_nativeLoadModel(
     ctx_params.n_threads = (nThreads > 0) ? nThreads : 6;
     ctx_params.n_threads_batch = ctx_params.n_threads;
     ctx_params.n_batch   = 512;
-    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
-    ctx_params.type_k    = GGML_TYPE_Q8_0;
-    ctx_params.type_v    = GGML_TYPE_Q8_0;
+    ctx_params.embeddings = (embedding == JNI_TRUE);
+
+    if (!embedding) {
+        ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+        ctx_params.type_k    = GGML_TYPE_Q8_0;
+        ctx_params.type_v    = GGML_TYPE_Q8_0;
+    }
 
     state->ctx = llama_init_from_model(state->model, ctx_params);
     if (!state->ctx) {

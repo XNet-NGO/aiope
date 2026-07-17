@@ -56,6 +56,42 @@ class RagEngine(context: Context, private val engine: LlamaEngine) {
         db.delete("documents", "id = ?", arrayOf(docId))
     }
 
+    fun deleteAllDocuments() {
+        db.delete("embeddings", null, null)
+        db.delete("chunks", null, null)
+        db.delete("documents", null, null)
+    }
+
+    data class DocumentInfo(
+        val id: String,
+        val title: String,
+        val source: String,
+        val chunkCount: Int,
+        val createdAt: String
+    )
+
+    fun listDocuments(): List<DocumentInfo> {
+        val results = mutableListOf<DocumentInfo>()
+        val cursor = db.rawQuery(
+            "SELECT id, title, source, chunk_count, created_at FROM documents ORDER BY created_at DESC",
+            null
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                results.add(
+                    DocumentInfo(
+                        id = it.getString(0),
+                        title = it.getString(1),
+                        source = it.getString(2) ?: "",
+                        chunkCount = it.getInt(3),
+                        createdAt = it.getString(4) ?: ""
+                    )
+                )
+            }
+        }
+        return results
+    }
+
     // --- Search ---
 
     data class SearchResult(

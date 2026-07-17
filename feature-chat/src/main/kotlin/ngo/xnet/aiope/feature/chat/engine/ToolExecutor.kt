@@ -54,7 +54,7 @@ class ToolExecutor(
           modelFile.outputStream().use { output -> input.copyTo(output) }
         }
       }
-      engine.loadModel(modelFile.absolutePath, contextSize = 256, nThreads = 4)
+      engine.loadModel(modelFile.absolutePath, contextSize = 256, nThreads = 4, embedding = true)
       ragEngine = org.xnet.aiope.inference.RagEngine(app, engine)
     }
     return ragEngine!!
