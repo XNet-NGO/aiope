@@ -384,8 +384,23 @@ private fun ChatContent(
           onFork = { idx -> onFork(idx) },
           onTranslate = onTranslate,
           onUiCallback = { event, data ->
-            val msg = if (data.isNotEmpty()) "Responded with: ${data.entries.joinToString(", ") { "${it.key}: ${it.value}" }}" else "Pressed: $event"
-            onSend(msg, emptyList())
+            when (event) {
+              "switch-mode" -> {
+                val mode = data["mode"]?.uppercase()?.let { m ->
+                  try { ngo.xnet.aiope.feature.chat.engine.AgentMode.valueOf(m) } catch (_: Exception) { null }
+                }
+                if (mode != null) onModeChange(mode)
+              }
+              "switch-model" -> data["model"]?.let { onSwitchModel(it) }
+              "auto-run" -> onAutoRunChange(data["enabled"]?.toBooleanStrictOrNull() ?: true)
+              "open-settings" -> onOpenSettings()
+              "toggle-terminal" -> onToggleTerminal()
+              "toggle-browser" -> onToggleBrowser()
+              else -> {
+                val msg = if (data.isNotEmpty()) "Responded with: ${data.entries.joinToString(", ") { "${it.key}: ${it.value}" }}" else "Pressed: $event"
+                onSend(msg, emptyList())
+              }
+            }
           },
           onRunCode = { code, lang ->
             onSend("Execute this $lang code using run_proot:\n```$lang\n$code\n```", emptyList())

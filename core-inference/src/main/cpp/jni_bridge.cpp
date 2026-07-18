@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <csetjmp>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -13,6 +14,18 @@
 #define TAG "inf-serv"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+
+// Thread-local jump buffer for catching GGML aborts without crashing
+static thread_local jmp_buf g_jmp_buf;
+static thread_local bool g_jmp_active = false;
+
+static void ggml_abort_handler(const char *error_message) {
+    LOGE("GGML abort intercepted: %s", error_message ? error_message : "unknown");
+    if (g_jmp_active) {
+        longjmp(g_jmp_buf, 1);
+    }
+    // If no jump buffer active, let it crash normally
+}
 
 struct EngineState {
     llama_model   *model   = nullptr;
@@ -46,35 +59,56 @@ static std::string tokenToString(const llama_vocab *vocab, llama_token token) {
     return std::string(buf, n);
 }
 
-// Validate Modified UTF-8 for JNI
-static bool isValidModifiedUtf8(const std::string &s) {
+// Validate Modified UTF-8 for JNI and convert 4-byte UTF-8 to surrogate pairs
+static std::string toModifiedUtf8(const std::string &s) {
+    std::string result;
+    result.reserve(s.size());
     const unsigned char *p = (const unsigned char *)s.data();
     const unsigned char *end = p + s.size();
     while (p < end) {
         unsigned char c = *p;
-        if (c == 0) return false;
-        if (c < 0x80) { p++; continue; }
+        if (c == 0) { p++; continue; } // skip nulls
+        if (c < 0x80) { result += (char)c; p++; continue; }
         int len;
         if      ((c & 0xE0) == 0xC0) len = 2;
         else if ((c & 0xF0) == 0xE0) len = 3;
-        else return false; // 4-byte not valid in Modified UTF-8
-        if (p + len > end) return false;
+        else if ((c & 0xF8) == 0xF0) len = 4;
+        else { p++; continue; } // invalid, skip
+        if (p + len > end) break; // incomplete sequence
+        // Validate continuation bytes
+        bool valid = true;
         for (int j = 1; j < len; j++) {
-            if ((p[j] & 0xC0) != 0x80) return false;
+            if ((p[j] & 0xC0) != 0x80) { valid = false; break; }
         }
-        if (len == 3) {
-            uint32_t cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
-            if (cp >= 0xD800 && cp <= 0xDFFF) return false;
+        if (!valid) { p++; continue; }
+        if (len <= 3) {
+            // 2-byte and 3-byte pass through directly
+            for (int j = 0; j < len; j++) result += (char)p[j];
+        } else {
+            // 4-byte UTF-8 -> surrogate pair in Modified UTF-8
+            uint32_t cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12) |
+                          ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+            cp -= 0x10000;
+            uint16_t hi = 0xD800 + (cp >> 10);
+            uint16_t lo = 0xDC00 + (cp & 0x3FF);
+            // Encode each surrogate as 3-byte Modified UTF-8
+            result += (char)(0xE0 | (hi >> 12));
+            result += (char)(0x80 | ((hi >> 6) & 0x3F));
+            result += (char)(0x80 | (hi & 0x3F));
+            result += (char)(0xE0 | (lo >> 12));
+            result += (char)(0x80 | ((lo >> 6) & 0x3F));
+            result += (char)(0x80 | (lo & 0x3F));
         }
         p += len;
     }
-    return true;
+    return result;
 }
 
 // --- JNI: lifecycle ---
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_org_xnet_aiope_inference_LlamaEngine_nativeCreate(JNIEnv *, jobject) {
+    ggml_set_abort_callback(ggml_abort_handler);
     return reinterpret_cast<jlong>(new EngineState());
 }
 
@@ -126,9 +160,8 @@ Java_org_xnet_aiope_inference_LlamaEngine_nativeLoadModel(
     ctx_params.embeddings = (embedding == JNI_TRUE);
 
     if (!embedding) {
-        ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
-        ctx_params.type_k    = GGML_TYPE_Q8_0;
-        ctx_params.type_v    = GGML_TYPE_Q8_0;
+        // Use default attention and KV types for maximum model compatibility
+        ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
     }
 
     state->ctx = llama_init_from_model(state->model, ctx_params);
@@ -152,7 +185,10 @@ Java_org_xnet_aiope_inference_LlamaEngine_nativeGenerate(
         jfloat repeatPenalty, jobject callback) {
 
     auto *state = getState(handle);
-    if (!state || !state->model || !state->ctx) return JNI_FALSE;
+    if (!state || !state->model || !state->ctx) {
+        LOGE("Generate: invalid state (null model or ctx)");
+        return JNI_FALSE;
+    }
 
     state->abort_flag.store(false);
     llama_memory_clear(llama_get_memory(state->ctx), true);
@@ -161,9 +197,14 @@ Java_org_xnet_aiope_inference_LlamaEngine_nativeGenerate(
     jmethodID onToken    = env->GetMethodID(cbClass, "onToken", "(Ljava/lang/String;)Z");
     jmethodID onComplete = env->GetMethodID(cbClass, "onComplete", "(FI)V");
 
-    if (!onToken || !onComplete) return JNI_FALSE;
+    if (!onToken || !onComplete) {
+        LOGE("Generate: callback methods not found");
+        return JNI_FALSE;
+    }
 
     std::string prompt = jstringToStd(env, jPrompt);
+    LOGI("Generate: prompt_len=%zu maxTokens=%d temp=%.2f", prompt.size(), maxTokens, temperature);
+
     const llama_vocab *vocab = llama_model_get_vocab(state->model);
 
     // Tokenize
@@ -176,33 +217,84 @@ Java_org_xnet_aiope_inference_LlamaEngine_nativeGenerate(
         n_tokens = llama_tokenize(vocab, prompt.c_str(), prompt.size(),
                                   tokens.data(), tokens.size(), true, true);
     }
-    if (n_tokens < 0) return JNI_FALSE;
+    if (n_tokens < 0) {
+        LOGE("Generate: tokenization failed");
+        return JNI_FALSE;
+    }
     tokens.resize(n_tokens);
+    LOGI("Generate: tokenized %d tokens", n_tokens);
+
+    // Check token count vs context size
+    uint32_t n_ctx = llama_n_ctx(state->ctx);
+    if ((uint32_t)n_tokens >= n_ctx) {
+        LOGE("Generate: prompt (%d tokens) exceeds context (%u), truncating", n_tokens, n_ctx);
+        tokens.resize(n_ctx - 4);
+        n_tokens = tokens.size();
+    }
 
     // Sampler
     llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
     llama_sampler *smpl = llama_sampler_chain_init(sparams);
 
-    float temp = (temperature > 0.0f) ? temperature : 0.8f;
+    float temp = (temperature >= 0.0f) ? temperature : 0.8f;
     float top_p_val = (topP > 0.0f && topP <= 1.0f) ? topP : 0.95f;
     float rep_pen = (repeatPenalty > 0.0f) ? repeatPenalty : 1.1f;
 
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(64, rep_pen, 0.0f, 0.0f));
-    llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p_val, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_temp(temp));
-    llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    // Only add penalties if actually penalizing (rep_pen > 1.0)
+    if (rep_pen > 1.001f) {
+        llama_sampler_chain_add(smpl, llama_sampler_init_penalties(64, rep_pen, 0.0f, 0.0f));
+    }
+
+    if (temp < 0.001f) {
+        // Greedy decoding — just pick argmax
+        llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
+    } else {
+        if (top_p_val < 0.999f) {
+            llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p_val, 1));
+        }
+        llama_sampler_chain_add(smpl, llama_sampler_init_temp(temp));
+        llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    }
 
     if (state->sampler) llama_sampler_free(state->sampler);
     state->sampler = smpl;
 
-    // Evaluate prompt
+    // Evaluate prompt (protected against GGML abort)
+    LOGI("Generate: decoding prompt...");
+    g_jmp_active = true;
+    if (setjmp(g_jmp_buf) != 0) {
+        LOGE("Generate: GGML abort during prompt decode");
+        g_jmp_active = false;
+        llama_sampler_free(smpl);
+        state->sampler = nullptr;
+        return JNI_FALSE;
+    }
     llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
-    if (llama_decode(state->ctx, batch) != 0) return JNI_FALSE;
+    int decode_status = llama_decode(state->ctx, batch);
+    g_jmp_active = false;
+    if (decode_status != 0) {
+        LOGE("Generate: prompt decode failed with status %d", decode_status);
+        return JNI_FALSE;
+    }
+    LOGI("Generate: prompt decoded, starting generation...");
 
     // Generate
     auto gen_start = std::chrono::steady_clock::now();
     int tokens_generated = 0;
     int max = (maxTokens > 0) ? maxTokens : 512;
+
+    // Protect generation loop against GGML aborts
+    g_jmp_active = true;
+    if (setjmp(g_jmp_buf) != 0) {
+        LOGE("Generate: GGML abort during token generation (after %d tokens)", tokens_generated);
+        g_jmp_active = false;
+        // Still return what we have
+        auto gen_end = std::chrono::steady_clock::now();
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(gen_end - gen_start).count();
+        float tps = (elapsed_ms > 0) ? (tokens_generated * 1000.0f / elapsed_ms) : 0.0f;
+        env->CallVoidMethod(callback, onComplete, tps, (jint)tokens_generated);
+        return tokens_generated > 0 ? JNI_TRUE : JNI_FALSE;
+    }
 
     for (int i = 0; i < max; i++) {
         if (state->abort_flag.load()) break;
@@ -212,7 +304,8 @@ Java_org_xnet_aiope_inference_LlamaEngine_nativeGenerate(
 
         std::string piece = tokenToString(vocab, new_token);
         if (piece.empty()) continue;
-        if (!isValidModifiedUtf8(piece)) continue;
+        piece = toModifiedUtf8(piece);
+        if (piece.empty()) continue;
 
         jstring jPiece = env->NewStringUTF(piece.c_str());
         if (!jPiece) {
@@ -227,9 +320,14 @@ Java_org_xnet_aiope_inference_LlamaEngine_nativeGenerate(
         tokens_generated++;
 
         llama_batch next = llama_batch_get_one(&new_token, 1);
-        if (llama_decode(state->ctx, next) != 0) break;
+        if (llama_decode(state->ctx, next) != 0) {
+            LOGE("Generate: decode failed at token %d", tokens_generated);
+            break;
+        }
     }
+    g_jmp_active = false;
 
+    LOGI("Generate: done, %d tokens generated", tokens_generated);
     auto gen_end = std::chrono::steady_clock::now();
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(gen_end - gen_start).count();
     float tps = (elapsed_ms > 0) ? (tokens_generated * 1000.0f / elapsed_ms) : 0.0f;

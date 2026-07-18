@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -53,7 +55,29 @@ fun AiopeUiRenderer(
     initForm(node, formState)
     frozen?.values?.let { formState.putAll(it) }
   }
-  CompositionLocalProvider(LocalFrozenSubmission provides frozen) {
+  val systemUriHandler = LocalUriHandler.current
+  val aiopeUriHandler = remember(onCallback) {
+    object : UriHandler {
+      override fun openUri(uri: String) {
+        if (uri.startsWith("aiope://")) {
+          // Parse aiope://action?key=value&key2=value2
+          val withoutScheme = uri.removePrefix("aiope://")
+          val parts = withoutScheme.split("?", limit = 2)
+          val action = parts[0].trimEnd('/')
+          val params = if (parts.size > 1) {
+            parts[1].split("&").associate { p ->
+              val kv = p.split("=", limit = 2)
+              kv[0] to (kv.getOrNull(1)?.let { java.net.URLDecoder.decode(it, "UTF-8") } ?: "")
+            }
+          } else emptyMap()
+          onCallback(action, params)
+        } else {
+          try { systemUriHandler.openUri(uri) } catch (_: Exception) {}
+        }
+      }
+    }
+  }
+  CompositionLocalProvider(LocalUriHandler provides aiopeUriHandler, LocalFrozenSubmission provides frozen) {
     Surface(
       modifier = modifier.fillMaxWidth(),
       shape = RoundedCornerShape(16.dp),

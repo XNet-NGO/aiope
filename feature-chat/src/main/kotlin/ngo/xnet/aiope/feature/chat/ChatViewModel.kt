@@ -46,6 +46,14 @@ class ChatViewModel @Inject constructor(
   private fun isOnline(): Boolean =
     connectivityManager?.activeNetwork?.let { connectivityManager.getNetworkCapabilities(it)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) } ?: false
 
+  private var localChatEngine: org.xnet.aiope.inference.LocalChatEngine? = null
+  private fun getLocalChatEngine(): org.xnet.aiope.inference.LocalChatEngine {
+    if (localChatEngine == null) {
+      localChatEngine = org.xnet.aiope.inference.LocalChatEngine(getApplication())
+    }
+    return localChatEngine!!
+  }
+
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
   val messages = _messages.asStateFlow()
 
@@ -436,11 +444,28 @@ class ChatViewModel @Inject constructor(
     return profile to modelId
   }
 
-  /** Translate a message using the TRANSLATION task model */
+  /** Translate a message using the local model (fallback to cloud) */
   fun translateMessage(messageId: String, language: String) {
     viewModelScope.launch(Dispatchers.IO) {
       try {
         val msg = _messages.value.find { it.id == messageId } ?: return@launch
+
+        // Try local model first
+        val localResult = try {
+          getLocalChatEngine().translate(msg.content, language)
+        } catch (_: Exception) { null }
+
+        if (localResult != null) {
+          val updated = _messages.value.toMutableList()
+          val idx = updated.indexOfFirst { it.id == messageId }
+          if (idx >= 0) {
+            updated[idx] = updated[idx].copy(translation = localResult)
+            _messages.value = updated
+          }
+          return@launch
+        }
+
+        // Fallback to cloud
         val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.TRANSLATION)
         val prompt = "Translate the following text to $language. Reply with ONLY the translation, nothing else:\n\n${msg.content}"
         val orchestrator = StreamingOrchestrator(
@@ -471,10 +496,22 @@ class ChatViewModel @Inject constructor(
     }
   }
 
-  /** Generate a conversation title using the TITLE task model */
+  /** Generate a conversation title using the local model (fallback to cloud) */
   private fun generateTitle(firstMessage: String) {
     viewModelScope.launch(Dispatchers.IO) {
       try {
+        // Try local model first
+        val localTitle = try {
+          getLocalChatEngine().generateTitle(firstMessage)
+        } catch (_: Exception) { null }
+
+        if (localTitle != null) {
+          chatDao.updateConversation(conversationId, localTitle)
+          refreshConversations()
+          return@launch
+        }
+
+        // Fallback to cloud
         val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.TITLE)
         val prompt = "Generate a short title (max 6 words) for a conversation that starts with: \"${firstMessage.take(200)}\". Reply with ONLY the title, no quotes."
         val orchestrator = StreamingOrchestrator(

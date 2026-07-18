@@ -1,0 +1,51 @@
+//
+// SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+#pragma once
+
+#include <cstddef>
+#include <memory>
+#include <optional>
+#include <string_view>
+#include <vector>
+
+#include "test/common/data_type.hpp"
+#include "test/common/matrix_portion.hpp"
+#include "test/common/span.hpp"
+#include "test/nextgen/harness/kernel_wrapper.hpp"
+#include "test/nextgen/operators/matmul/matmul_bias_mode.hpp"
+#include "test/nextgen/operators/matmul/matmul_dims.hpp"
+#include "test/nextgen/quantization/quantizer.hpp"
+
+namespace kai::test {
+
+/// Matrix multiplication operator.
+struct MatMulOperator {
+    std::string_view name;
+
+    bool (*is_cpu_supported)();
+    bool (*is_shape_suitable)(size_t shape_m, size_t shape_n, size_t shape_k, const MatrixPortion& portion);
+
+    std::vector<MatMulBiasMode> supported_bias_modes;
+
+    std::optional<std::unique_ptr<Quantizer>> lhs_quant;
+    std::optional<std::unique_ptr<Quantizer>> rhs_quant;
+    std::optional<std::unique_ptr<Quantizer>> bias_quant;
+
+    DataType lhs_dtype;
+    DataType rhs_dtype;
+    DataType bias_dtype;
+    DataType acc_dtype;
+    DataType dst_dtype;
+
+    std::optional<std::unique_ptr<KernelWrapper<MatShape>>> pack_lhs;
+    std::optional<std::unique_ptr<KernelWrapper<MatShape>>> pack_rhs;
+    std::unique_ptr<KernelWrapper<MatMulShape>> matmul;
+};
+
+[[nodiscard]] Span<const MatMulOperator> get_available_matmul_operators();
+
+}  // namespace kai::test

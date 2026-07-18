@@ -1,0 +1,21 @@
+# ninja log v5
+0	9	1784327567433180775	kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-mkdir	bfc3eecce7292df0
+0	9	1784327567433180775	/home/user-x/projects/aiope/core-inference/.cxx/Release/1z2v1q04/arm64-v8a/_deps/kleidiai_download-subbuild/kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-mkdir	bfc3eecce7292df0
+9	2885	1784327570310132530	kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-download	26b06bda5d8f7844
+9	2885	1784327570310132530	/home/user-x/projects/aiope/core-inference/.cxx/Release/1z2v1q04/arm64-v8a/_deps/kleidiai_download-subbuild/kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-download	26b06bda5d8f7844
+2885	2888	1784327570312132496	kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-update	4cd74243bc9d7724
+2885	2888	1784327570312132496	/home/user-x/projects/aiope/core-inference/.cxx/Release/1z2v1q04/arm64-v8a/_deps/kleidiai_download-subbuild/kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-update	4cd74243bc9d7724
+2888	2890	1784327570314132463	kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-patch	9c7cff8d9ea5d9c0
+2888	2890	1784327570314132463	/home/user-x/projects/aiope/core-inference/.cxx/Release/1z2v1q04/arm64-v8a/_deps/kleidiai_download-subbuild/kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-patch	9c7cff8d9ea5d9c0
+2890	2892	1784327570317132412	kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-configure	6db9e0526bfacba8
+2890	2892	1784327570317132412	/home/user-x/projects/aiope/core-inference/.cxx/Release/1z2v1q04/arm64-v8a/_deps/kleidiai_download-subbuild/kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-configure	6db9e0526bfacba8
+2892	2894	1784327570319132379	kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-build	1315361e8b132dae
+2892	2894	1784327570319132379	/home/user-x/projects/aiope/core-inference/.cxx/Release/1z2v1q04/arm64-v8a/_deps/kleidiai_download-subbuild/kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-build	1315361e8b132dae
+2894	2896	1784327570321132345	kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-install	d7a6c1774d2d55c
+2894	2896	1784327570321132345	/home/user-x/projects/aiope/core-inference/.cxx/Release/1z2v1q04/arm64-v8a/_deps/kleidiai_download-subbuild/kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-install	d7a6c1774d2d55c
+2896	2899	1784327570323132312	kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-test	3e045e365466fafe
+2896	2899	1784327570323132312	/home/user-x/projects/aiope/core-inference/.cxx/Release/1z2v1q04/arm64-v8a/_deps/kleidiai_download-subbuild/kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-test	3e045e365466fafe
+2899	2902	1784327570326132261	CMakeFiles/kleidiai_download-populate-complete	9284b74ebc6c9984
+2899	2902	1784327570326132261	kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-done	9284b74ebc6c9984
+2899	2902	1784327570326132261	/home/user-x/projects/aiope/core-inference/.cxx/Release/1z2v1q04/arm64-v8a/_deps/kleidiai_download-subbuild/CMakeFiles/kleidiai_download-populate-complete	9284b74ebc6c9984
+2899	2902	1784327570326132261	/home/user-x/projects/aiope/core-inference/.cxx/Release/1z2v1q04/arm64-v8a/_deps/kleidiai_download-subbuild/kleidiai_download-populate-prefix/src/kleidiai_download-populate-stamp/kleidiai_download-populate-done	9284b74ebc6c9984

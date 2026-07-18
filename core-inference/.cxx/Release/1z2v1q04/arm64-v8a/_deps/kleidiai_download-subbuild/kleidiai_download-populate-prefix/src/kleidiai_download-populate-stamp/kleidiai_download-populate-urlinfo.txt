@@ -1,0 +1,3 @@
+repository='external project URL'
+module='https://github.com/ARM-software/kleidiai/releases/download/v1.24.0/kleidiai-v1.24.0-src.tar.gz'
+tag='MD5=2f02ebe29573d45813e671eb304f2a00'

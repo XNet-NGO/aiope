@@ -377,7 +377,9 @@ private fun AssistantBubble(
             listOf(
               "English" to "English", "Spanish" to "Spanish", "French" to "French", "German" to "German",
               "Chinese" to "Chinese", "Japanese" to "Japanese", "Korean" to "Korean", "Portuguese" to "Portuguese",
-              "Russian" to "Russian", "Arabic" to "Arabic", "Hindi" to "Hindi", "Italian" to "Italian",
+              "Russian" to "Russian", "Hindi" to "Hindi", "Italian" to "Italian", "Dutch" to "Dutch",
+              "Polish" to "Polish", "Czech" to "Czech", "Romanian" to "Romanian", "Swedish" to "Swedish",
+              "Urdu" to "Urdu", "Arabic" to "Arabic",
             ).forEach { (label, lang) ->
               DropdownMenuItem(text = { Text(label, fontSize = 13.sp) }, onClick = {
                 onTranslate(lang)
