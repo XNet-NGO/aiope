@@ -632,14 +632,104 @@ class ChatViewModel @Inject constructor(
             topP = p.activeModelConfig().topP?.toDouble() ?: 0.9
           )
           val sb = StringBuilder()
+          val reasoningBlocks = mutableListOf<String>()
+          val currentReasoning = StringBuilder()
+          var inThinkTag = false
+          var thinkTagName = "think"
+          val pendingBuf = StringBuilder()
+
           localLlmEngine.generateStream(text).collect { chunk ->
-            sb.append(chunk)
+            // Parse <think>/<thinking> tags into reasoning blocks
+            pendingBuf.append(chunk)
+            val buf = pendingBuf.toString()
+
+            if (!inThinkTag) {
+              val openTag = listOf("<think>", "<thinking>", "<thought>").firstOrNull { buf.contains(it) }
+              if (openTag != null) {
+                inThinkTag = true
+                thinkTagName = openTag.removePrefix("<").removeSuffix(">")
+                val before = buf.substringBefore(openTag)
+                if (before.isNotEmpty()) sb.append(before)
+                val afterOpen = buf.substringAfter(openTag)
+                pendingBuf.clear()
+                // Check if close is in same chunk
+                val closeTag = "</$thinkTagName>"
+                if (afterOpen.contains(closeTag)) {
+                  reasoningBlocks.add(afterOpen.substringBefore(closeTag))
+                  val afterClose = afterOpen.substringAfter(closeTag)
+                  if (afterClose.isNotEmpty()) sb.append(afterClose)
+                  inThinkTag = false
+                } else {
+                  currentReasoning.append(afterOpen)
+                }
+              } else if (buf.endsWith("<") || (buf.length < 12 && buf.contains("<"))) {
+                // Partial tag, keep buffering
+                return@collect
+              } else {
+                sb.append(buf)
+                pendingBuf.clear()
+              }
+            } else {
+              // Inside think tag — look for close
+              val closeTag = "</$thinkTagName>"
+              if (buf.contains(closeTag)) {
+                currentReasoning.append(buf.substringBefore(closeTag))
+                reasoningBlocks.add(currentReasoning.toString())
+                currentReasoning.clear()
+                val afterClose = buf.substringAfter(closeTag)
+                if (afterClose.isNotEmpty()) sb.append(afterClose)
+                pendingBuf.clear()
+                inThinkTag = false
+              } else {
+                currentReasoning.append(buf)
+                pendingBuf.clear()
+                // Update UI with reasoning in progress
+                withContext(Dispatchers.Main) {
+                  val allReasoning = reasoningBlocks + currentReasoning.toString()
+                  _messages.value = _messages.value.toMutableList().also {
+                    it[it.lastIndex] = it.last().copy(
+                      content = sb.toString(),
+                      reasoning = allReasoning,
+                      isReasoningDone = false,
+                    )
+                  }
+                }
+                return@collect
+              }
+            }
+
+            // Update UI with content
             withContext(Dispatchers.Main) {
+              val allReasoning = if (reasoningBlocks.isNotEmpty() || currentReasoning.isNotEmpty())
+                reasoningBlocks + (if (currentReasoning.isNotEmpty()) listOf(currentReasoning.toString()) else emptyList())
+              else emptyList()
               _messages.value = _messages.value.toMutableList().also {
-                it[it.lastIndex] = it.last().copy(content = sb.toString())
+                it[it.lastIndex] = it.last().copy(
+                  content = sb.toString(),
+                  reasoning = allReasoning,
+                  isReasoningDone = !inThinkTag,
+                )
               }
             }
           }
+
+          // Flush any remaining pending buffer
+          if (pendingBuf.isNotEmpty()) {
+            if (inThinkTag) {
+              currentReasoning.append(pendingBuf)
+              reasoningBlocks.add(currentReasoning.toString())
+            } else {
+              sb.append(pendingBuf)
+            }
+          }
+          // Final UI update
+          val allReasoning = reasoningBlocks.toList()
+          withContext(Dispatchers.Main) {
+            _messages.value = _messages.value.toMutableList().also {
+              it[it.lastIndex] = it.last().copy(content = sb.toString(), reasoning = allReasoning, isReasoningDone = true)
+            }
+          }
+
           // Persist
           val finalMsg = _messages.value.lastOrNull() ?: return@launch
           chatDao.insertMessage(MessageEntity(id = finalMsg.id, conversationId = conversationId, role = Role.ASSISTANT.value, content = finalMsg.content))
