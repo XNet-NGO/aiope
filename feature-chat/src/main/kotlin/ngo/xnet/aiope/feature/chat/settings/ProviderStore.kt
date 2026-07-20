@@ -29,6 +29,26 @@ class ProviderStore @Inject constructor(
     }
     seedTaskDefaults()
     ensureLiveModel()
+    ensureLocalProvider()
+  }
+
+  /** Auto-create a "Local (On-Device)" provider if .litertlm models exist */
+  private fun ensureLocalProvider() {
+    val modelsDir = java.io.File(ctx.filesDir, "models/local")
+    val hasModels = modelsDir.exists() && modelsDir.listFiles()?.any { it.extension == "litertlm" } == true
+    val existing = getAll().any { it.builtinId == "local" }
+    if (hasModels && !existing) {
+      val local = ProviderProfile(
+        id = "local_device",
+        builtinId = "local",
+        label = "Local (On-Device)",
+        apiKey = "",
+        apiBase = "",
+        selectedModelId = modelsDir.listFiles()?.firstOrNull { it.extension == "litertlm" }?.name ?: "",
+        isActive = false,
+      )
+      save(local)
+    }
   }
 
   private fun ensureLiveModel() {

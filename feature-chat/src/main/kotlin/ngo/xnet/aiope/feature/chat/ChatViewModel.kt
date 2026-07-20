@@ -476,32 +476,30 @@ class ChatViewModel @Inject constructor(
     return profile to modelId
   }
 
-  /** Translate a message using the local model (fallback to cloud) */
+  /** Translate a message using the configured task model (may be local or cloud) */
   fun translateMessage(messageId: String, language: String) {
     viewModelScope.launch(Dispatchers.IO) {
       try {
         val msg = _messages.value.find { it.id == messageId } ?: return@launch
 
-        // Try LiteRT-LM local model first (always active)
-        val localResult = if (localLlmEngine.isLoaded) {
-          try { localLlmEngine.translate(msg.content, language) } catch (_: Exception) { null }
-        } else {
-          // Fallback to llama.cpp local
-          try { getLocalChatEngine().translate(msg.content, language) } catch (_: Exception) { null }
-        }
-
-        if (localResult != null) {
-          val updated = _messages.value.toMutableList()
-          val idx = updated.indexOfFirst { it.id == messageId }
-          if (idx >= 0) {
-            updated[idx] = updated[idx].copy(translation = localResult)
-            _messages.value = updated
-          }
-          return@launch
-        }
-
-        // Fallback to cloud
+        // Resolve configured provider for TRANSLATION task
         val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.TRANSLATION)
+
+        // Route to local engine if configured provider is "local"
+        if (profile.builtinId == "local" && localLlmEngine.isLoaded) {
+          val localResult = try { localLlmEngine.translate(msg.content, language) } catch (_: Exception) { null }
+          if (localResult != null) {
+            val updated = _messages.value.toMutableList()
+            val idx = updated.indexOfFirst { it.id == messageId }
+            if (idx >= 0) {
+              updated[idx] = updated[idx].copy(translation = localResult)
+              _messages.value = updated
+            }
+            return@launch
+          }
+        }
+
+        // Cloud path
         val prompt = "Translate the following text to $language. Reply with ONLY the translation, nothing else:\n\n${msg.content}"
         val orchestrator = StreamingOrchestrator(
           baseUrl = profile.effectiveApiBase(),
@@ -531,26 +529,23 @@ class ChatViewModel @Inject constructor(
     }
   }
 
-  /** Generate a conversation title using the local model (fallback to cloud) */
+  /** Generate a conversation title using the configured TITLE task model */
   private fun generateTitle(firstMessage: String) {
     viewModelScope.launch(Dispatchers.IO) {
       try {
-        // Try LiteRT-LM local model first (always active)
-        val localTitle = if (localLlmEngine.isLoaded) {
-          try { localLlmEngine.generateTitle(firstMessage) } catch (_: Exception) { null }
-        } else {
-          // Fallback to llama.cpp local
-          try { getLocalChatEngine().generateTitle(firstMessage) } catch (_: Exception) { null }
-        }
-
-        if (localTitle != null) {
-          chatDao.updateConversation(conversationId, localTitle)
-          refreshConversations()
-          return@launch
-        }
-
-        // Fallback to cloud
         val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.TITLE)
+
+        // Route to local engine if configured provider is "local"
+        if (profile.builtinId == "local" && localLlmEngine.isLoaded) {
+          val localTitle = try { localLlmEngine.generateTitle(firstMessage) } catch (_: Exception) { null }
+          if (localTitle != null) {
+            chatDao.updateConversation(conversationId, localTitle)
+            refreshConversations()
+            return@launch
+          }
+        }
+
+        // Cloud path
         val prompt = "Generate a short title (max 6 words) for a conversation that starts with: \"${firstMessage.take(200)}\". Reply with ONLY the title, no quotes."
         val orchestrator = StreamingOrchestrator(
           baseUrl = profile.effectiveApiBase(),
