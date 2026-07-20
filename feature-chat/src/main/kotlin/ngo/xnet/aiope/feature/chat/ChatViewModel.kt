@@ -1185,6 +1185,36 @@ class ChatViewModel @Inject constructor(
       _messages.value = _messages.value + assistantMsg
       try {
         val p = providerStore.getActive()
+
+        // --- LOCAL PATH FOR RESEND ---
+        if (p.builtinId == "local" || (!isOnline() && localLlmEngine.isLoaded)) {
+          if (!localLlmEngine.isLoaded) {
+            withContext(Dispatchers.Main) {
+              _messages.value = _messages.value.toMutableList().also {
+                it[it.lastIndex] = it.last().copy(content = "⚠️ Local model is still loading.")
+              }
+            }
+            _isStreaming.value = false
+            return@launch
+          }
+          val agentPrompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
+          localLlmEngine.createConversation(systemPrompt = agentPrompt.takeIf { it.isNotBlank() })
+          val sb = StringBuilder()
+          localLlmEngine.generateStream(text).collect { chunk ->
+            sb.append(chunk)
+            withContext(Dispatchers.Main) {
+              _messages.value = _messages.value.toMutableList().also {
+                it[it.lastIndex] = it.last().copy(content = sb.toString())
+              }
+            }
+          }
+          val finalMsg = _messages.value.last()
+          chatDao.insertMessage(MessageEntity(id = finalMsg.id, conversationId = conversationId, role = Role.ASSISTANT.value, content = finalMsg.content))
+          _isStreaming.value = false
+          return@launch
+        }
+        // --- END LOCAL PATH ---
+
         val mc = p.activeModelConfig()
         val useTools = mc.toolsOverride != false
         val chatMessages = buildSystemMessages(mc)
