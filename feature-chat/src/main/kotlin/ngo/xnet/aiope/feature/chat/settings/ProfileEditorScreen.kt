@@ -487,15 +487,39 @@ private fun LocalProviderEditor(
 
     Spacer(Modifier.height(24.dp))
 
+    // Abilities
+    Section("Abilities")
+    val initMc = profile.activeModelConfig()
+    var toolsEnabled by remember { mutableStateOf(initMc.toolsOverride ?: false) }
+    var autoDetect by remember { mutableStateOf(initMc.toolsOverride == null && initMc.visionOverride == null) }
+    LabeledSwitch("Auto-detect", autoDetect) { autoDetect = it }
+    if (!autoDetect) {
+      LabeledSwitch("Tool Calling", toolsEnabled) { toolsEnabled = it }
+    }
+
+    Spacer(Modifier.height(16.dp))
+
     // Sampling parameters
     Section("Parameters")
-    var temperature by remember { mutableStateOf(profile.activeModelConfig().temperature ?: 0.7f) }
-    var topP by remember { mutableStateOf(profile.activeModelConfig().topP ?: 0.9f) }
-    var topK by remember { mutableStateOf(profile.activeModelConfig().topK ?: 40) }
+    var temperature by remember { mutableStateOf(initMc.temperature ?: 0.7f) }
+    var topP by remember { mutableStateOf(initMc.topP ?: 0.9f) }
+    var topK by remember { mutableStateOf(initMc.topK ?: 40) }
+    var maxTokens by remember { mutableStateOf(initMc.maxTokens ?: 0) }
 
     LogSlider("Temperature", temperature, 0f, 2f) { temperature = it }
     LogSlider("Top-P", topP, 0f, 1f) { topP = it }
     TopKSlider("Top-K", topK) { topK = it }
+    StepSlider("Max Tokens", maxTokens, TOKEN_STEPS) { maxTokens = it }
+
+    Spacer(Modifier.height(16.dp))
+
+    // Context
+    Section("Context")
+    var contextTokens by remember { mutableStateOf(initMc.contextTokens.takeIf { it > 0 } ?: 4096) }
+    var autoCompact by remember { mutableStateOf(initMc.autoCompact) }
+
+    HistorySlider("Context Tokens", contextTokens) { contextTokens = it }
+    LabeledSwitch("Auto-compact at 95%", autoCompact) { autoCompact = it }
 
     Spacer(Modifier.height(24.dp))
 
@@ -516,7 +540,16 @@ private fun LocalProviderEditor(
 
     // Save
     Button(onClick = {
-      val mc = ModelConfig(modelId = selectedModel, temperature = temperature, topP = topP, topK = topK)
+      val mc = ModelConfig(
+        modelId = selectedModel,
+        temperature = temperature,
+        topP = topP,
+        topK = topK,
+        maxTokens = if (maxTokens > 0) maxTokens else null,
+        contextTokens = contextTokens,
+        autoCompact = autoCompact,
+        toolsOverride = if (autoDetect) null else toolsEnabled,
+      )
       val updated = profile.copy(selectedModelId = selectedModel, modelConfigs = mapOf(selectedModel to mc))
       store.save(updated)
       onSave(updated)
