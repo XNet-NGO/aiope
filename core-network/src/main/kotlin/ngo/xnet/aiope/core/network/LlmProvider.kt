@@ -222,6 +222,7 @@ object ProviderTemplates {
       ),
     ),
     BuiltinProvider("custom", "Custom", "", apiKeyHint = "API key", requiresApiKey = false),
+    BuiltinProvider("local", "Local (On-Device)", "", apiKeyHint = "", requiresApiKey = false),
   )
   val byId = ALL.associateBy { it.id }
 }
