@@ -5,6 +5,6 @@ includedir=/usr/local/include
 
 Name: llama
 Description: Port of Facebook's LLaMA model in C/C++
-Version: 0.0.0
+Version: 0.0.1002
 Libs: -L${libdir} -lggml -lggml-base -lllama
 Cflags: -I${includedir}

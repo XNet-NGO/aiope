@@ -208,7 +208,7 @@
 			[
 				{
 					"backtrace" : 0,
-					"define" : "GGML_COMMIT=\"unknown\""
+					"define" : "GGML_COMMIT=\"1fec2f2\""
 				},
 				{
 					"backtrace" : 7,
@@ -368,7 +368,7 @@
 			[
 				{
 					"backtrace" : 0,
-					"define" : "GGML_COMMIT=\"unknown\""
+					"define" : "GGML_COMMIT=\"1fec2f2\""
 				},
 				{
 					"backtrace" : 7,

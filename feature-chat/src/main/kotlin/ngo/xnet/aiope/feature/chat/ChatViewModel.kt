@@ -54,6 +54,37 @@ class ChatViewModel @Inject constructor(
     return localChatEngine!!
   }
 
+  // LiteRT-LM local engine — always active alongside cloud
+  private val localLlmEngine = org.xnet.aiope.inference.LocalLlmEngine(application)
+  private var localLlmModelPath: String? = null
+
+  /** Preload LiteRT-LM if .litertlm models exist in internal storage */
+  private fun preloadLocalLlm() {
+    val modelsDir = java.io.File(getApplication<android.app.Application>().filesDir, "models/local")
+    if (!modelsDir.exists()) return
+    // Prefer .litertlm files (LLM), skip .tflite (embeddings)
+    val model = modelsDir.listFiles()
+      ?.filter { it.extension == "litertlm" }
+      ?.maxByOrNull { it.length() } // pick largest LLM model
+      ?: return
+    viewModelScope.launch(Dispatchers.IO) {
+      val success = localLlmEngine.load(model.absolutePath)
+      if (success) {
+        localLlmModelPath = model.absolutePath
+        android.util.Log.i("ChatVM", "Local LLM preloaded: ${model.name}")
+      } else {
+        android.util.Log.w("ChatVM", "Local LLM preload failed: ${model.name}")
+      }
+    }
+  }
+
+  /** Check if resolved task model points to local provider */
+  private fun isLocalProvider(profileId: String?): Boolean {
+    if (profileId == null) return false
+    val profile = providerStore.getById(profileId)
+    return profile?.builtinId == "local"
+  }
+
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
   val messages = _messages.asStateFlow()
 
@@ -319,6 +350,7 @@ class ChatViewModel @Inject constructor(
 
   init {
     refreshModelLabel()
+    preloadLocalLlm()
     ngo.xnet.aiope.feature.chat.browser.BrowserServer.start { getBrowser() }
     getBrowser() // preload WebView on main thread
     viewModelScope.launch {
@@ -450,10 +482,13 @@ class ChatViewModel @Inject constructor(
       try {
         val msg = _messages.value.find { it.id == messageId } ?: return@launch
 
-        // Try local model first
-        val localResult = try {
-          getLocalChatEngine().translate(msg.content, language)
-        } catch (_: Exception) { null }
+        // Try LiteRT-LM local model first (always active)
+        val localResult = if (localLlmEngine.isLoaded) {
+          try { localLlmEngine.translate(msg.content, language) } catch (_: Exception) { null }
+        } else {
+          // Fallback to llama.cpp local
+          try { getLocalChatEngine().translate(msg.content, language) } catch (_: Exception) { null }
+        }
 
         if (localResult != null) {
           val updated = _messages.value.toMutableList()
@@ -500,10 +535,13 @@ class ChatViewModel @Inject constructor(
   private fun generateTitle(firstMessage: String) {
     viewModelScope.launch(Dispatchers.IO) {
       try {
-        // Try local model first
-        val localTitle = try {
-          getLocalChatEngine().generateTitle(firstMessage)
-        } catch (_: Exception) { null }
+        // Try LiteRT-LM local model first (always active)
+        val localTitle = if (localLlmEngine.isLoaded) {
+          try { localLlmEngine.generateTitle(firstMessage) } catch (_: Exception) { null }
+        } else {
+          // Fallback to llama.cpp local
+          try { getLocalChatEngine().generateTitle(firstMessage) } catch (_: Exception) { null }
+        }
 
         if (localTitle != null) {
           chatDao.updateConversation(conversationId, localTitle)
@@ -536,8 +574,8 @@ class ChatViewModel @Inject constructor(
   private var lastSendHash = 0
 
   fun send(text: String, imageUris: List<String> = emptyList()) {
-    if (!isOnline()) {
-      _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ No internet connection. Please check your network and try again.")
+    if (!isOnline() && !localLlmEngine.isLoaded) {
+      _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ No internet connection and no local model loaded. Please check your network or import a model in Settings.")
       return
     }
     val now = System.currentTimeMillis()
@@ -574,6 +612,48 @@ class ChatViewModel @Inject constructor(
       _messages.value = _messages.value + assistantMsg
 
       val p = providerStore.getActive()
+
+      // --- LOCAL INFERENCE PATH ---
+      // Use local LLM when: offline, or active provider is "local"
+      val useLocal = localLlmEngine.isLoaded && (!isOnline() || p.builtinId == "local")
+      if (useLocal && imageUris.isEmpty()) {
+        try {
+          // Set up conversation with user's agent persona
+          val agentPrompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
+          localLlmEngine.createConversation(
+            systemPrompt = agentPrompt.takeIf { it.isNotBlank() },
+            temperature = p.activeModelConfig().temperature?.toDouble() ?: 0.7,
+            topK = 40,
+            topP = p.activeModelConfig().topP?.toDouble() ?: 0.9
+          )
+          val sb = StringBuilder()
+          localLlmEngine.generateStream(text).collect { chunk ->
+            sb.append(chunk)
+            withContext(Dispatchers.Main) {
+              _messages.value = _messages.value.toMutableList().also {
+                it[it.lastIndex] = it.last().copy(content = sb.toString())
+              }
+            }
+          }
+          // Persist
+          val finalMsg = _messages.value.lastOrNull() ?: return@launch
+          chatDao.insertMessage(MessageEntity(id = finalMsg.id, conversationId = conversationId, role = Role.ASSISTANT.value, content = finalMsg.content))
+          if (_messages.value.size <= 3) {
+            chatDao.updateConversation(conversationId, text.take(50))
+            generateTitle(text)
+          }
+        } catch (_: kotlinx.coroutines.CancellationException) {
+        } catch (e: Exception) {
+          val updated = _messages.value.toMutableList()
+          updated[updated.lastIndex] = updated.last().copy(content = "Local model error: ${e.message}")
+          _messages.value = updated
+        } finally {
+          _isStreaming.value = false
+        }
+        return@launch
+      }
+      // --- END LOCAL INFERENCE PATH ---
+
       val mc = p.activeModelConfig()
       toolExecutor.shellOutputLimit = mc.shellOutputLimit
       toolExecutor.fetchLimit = mc.fetchLimit
@@ -971,8 +1051,8 @@ class ChatViewModel @Inject constructor(
   }
 
   private fun resend(text: String) {
-    if (!isOnline()) {
-      _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ No internet connection. Please check your network and try again.")
+    if (!isOnline() && !localLlmEngine.isLoaded) {
+      _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ No internet connection and no local model loaded.")
       return
     }
     cancelStreaming()
@@ -1136,6 +1216,7 @@ $remoteCtx"""
 
   override fun onCleared() {
     super.onCleared()
+    localLlmEngine.close()
     kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) { remoteToolBridge.disconnectAll() }
   }
 }
