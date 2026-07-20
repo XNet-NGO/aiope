@@ -77,6 +77,13 @@ internal fun ProfileEditor(
       actions = { IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete") } },
     )
   }) { pad ->
+    // ══════════════════════════════════════════════════════════════
+    // LOCAL PROVIDER — simplified editor with file picker
+    // ══════════════════════════════════════════════════════════════
+    if (p.builtinId == "local") {
+      LocalProviderEditor(p, store, onSave, onDelete, onBack, Modifier.fillMaxSize().padding(pad))
+      return@Scaffold
+    }
     Column(Modifier.fillMaxSize().padding(pad).padding(16.dp).verticalScroll(rememberScrollState())) {
       // ══════════════════════════════════════════════════════════════
       // PROVIDER SETTINGS (shared across all models)
@@ -368,6 +375,155 @@ internal fun ProfileEditor(
   }
   Text("$label: $display", style = MaterialTheme.typography.bodySmall)
   Slider(value = idx.toFloat(), onValueChange = { onChange(HISTORY_STEPS[it.toInt().coerceIn(0, HISTORY_STEPS.size - 1)]) }, valueRange = 0f..(HISTORY_STEPS.size - 1).toFloat())
+}
+
+// ── Network ──
+
+// ── Local Provider Editor ──
+
+@Composable
+private fun LocalProviderEditor(
+  profile: ProviderProfile,
+  store: ProviderStore,
+  onSave: (ProviderProfile) -> Unit,
+  onDelete: () -> Unit,
+  onBack: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val ctx = androidx.compose.ui.platform.LocalContext.current
+  val modelsDir = remember { java.io.File(ctx.filesDir, "models/local").apply { mkdirs() } }
+  var localModels by remember { mutableStateOf(modelsDir.listFiles()?.filter { it.extension == "litertlm" }?.sortedByDescending { it.length() } ?: emptyList()) }
+  var selectedModel by remember { mutableStateOf(profile.selectedModelId) }
+  var modelExpanded by remember { mutableStateOf(false) }
+  var importing by remember { mutableStateOf(false) }
+  val scope = rememberCoroutineScope()
+
+  // File picker
+  val filePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+    contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+  ) { uri ->
+    if (uri == null) return@rememberLauncherForActivityResult
+    importing = true
+    scope.launch(Dispatchers.IO) {
+      try {
+        val resolver = ctx.contentResolver
+        // Get filename
+        val cursor = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+        val name = cursor?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "model.litertlm"
+        cursor?.close()
+        val dest = java.io.File(modelsDir, name)
+        resolver.openInputStream(uri)?.use { input ->
+          dest.outputStream().use { output -> input.copyTo(output, 8192) }
+        }
+        withContext(Dispatchers.Main) {
+          localModels = modelsDir.listFiles()?.filter { it.extension == "litertlm" }?.sortedByDescending { it.length() } ?: emptyList()
+          selectedModel = name
+          importing = false
+        }
+      } catch (e: Exception) {
+        withContext(Dispatchers.Main) { importing = false }
+        android.util.Log.e("LocalProvider", "Import failed", e)
+      }
+    }
+  }
+
+  Column(modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
+    // Model selector
+    Section("On-Device Model")
+    if (localModels.isEmpty()) {
+      Text("No models imported yet. Use the button below to add a .litertlm model.", style = MaterialTheme.typography.bodyMedium)
+    } else {
+      ExposedDropdownMenuBox(expanded = modelExpanded, onExpandedChange = { modelExpanded = it }) {
+        OutlinedTextField(
+          value = selectedModel.ifBlank { "Select model" },
+          onValueChange = {},
+          readOnly = true,
+          label = { Text("Active Model") },
+          trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded) },
+          modifier = Modifier.fillMaxWidth().menuAnchor(),
+        )
+        ExposedDropdownMenu(expanded = modelExpanded, onDismissRequest = { modelExpanded = false }) {
+          localModels.forEach { file ->
+            val sizeMB = file.length() / (1024 * 1024)
+            DropdownMenuItem(
+              text = { Text("${file.name}  (${sizeMB}MB)") },
+              onClick = {
+                selectedModel = file.name
+                modelExpanded = false
+              },
+            )
+          }
+        }
+      }
+    }
+
+    Spacer(Modifier.height(16.dp))
+
+    // Import button
+    Button(
+      onClick = { filePicker.launch(arrayOf("*/*")) },
+      enabled = !importing,
+      modifier = Modifier.fillMaxWidth(),
+    ) {
+      Text(if (importing) "Importing…" else "Import Model (.litertlm)")
+    }
+
+    // Delete model
+    if (localModels.isNotEmpty() && selectedModel.isNotBlank()) {
+      Spacer(Modifier.height(8.dp))
+      OutlinedButton(
+        onClick = {
+          java.io.File(modelsDir, selectedModel).delete()
+          localModels = modelsDir.listFiles()?.filter { it.extension == "litertlm" }?.sortedByDescending { it.length() } ?: emptyList()
+          selectedModel = localModels.firstOrNull()?.name ?: ""
+        },
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+      ) {
+        Text("Delete Selected Model")
+      }
+    }
+
+    Spacer(Modifier.height(24.dp))
+
+    // Sampling parameters
+    Section("Parameters")
+    var temperature by remember { mutableStateOf(profile.activeModelConfig().temperature ?: 0.7f) }
+    var topP by remember { mutableStateOf(profile.activeModelConfig().topP ?: 0.9f) }
+    var topK by remember { mutableStateOf(profile.activeModelConfig().topK ?: 40) }
+
+    LogSlider("Temperature", temperature, 0f, 2f) { temperature = it }
+    LogSlider("Top-P", topP, 0f, 1f) { topP = it }
+    TopKSlider("Top-K", topK) { topK = it }
+
+    Spacer(Modifier.height(24.dp))
+
+    // Info
+    Card(
+      Modifier.fillMaxWidth(),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+    ) {
+      Column(Modifier.padding(12.dp)) {
+        Text("Local inference runs entirely on-device using LiteRT.", style = MaterialTheme.typography.bodySmall)
+        Text("• No internet required", style = MaterialTheme.typography.bodySmall)
+        Text("• GPU accelerated (OpenCL)", style = MaterialTheme.typography.bodySmall)
+        Text("• Models: .litertlm format", style = MaterialTheme.typography.bodySmall)
+      }
+    }
+
+    Spacer(Modifier.height(24.dp))
+
+    // Save
+    Button(onClick = {
+      val mc = ModelConfig(modelId = selectedModel, temperature = temperature, topP = topP, topK = topK)
+      val updated = profile.copy(selectedModelId = selectedModel, modelConfigs = mapOf(selectedModel to mc))
+      store.save(updated)
+      onSave(updated)
+    }, modifier = Modifier.fillMaxWidth()) { Text("Save & Activate") }
+
+    Spacer(Modifier.height(32.dp))
+  }
 }
 
 // ── Network ──
