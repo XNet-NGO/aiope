@@ -29,12 +29,10 @@ class LocalLlmEngine(private val context: Context) {
         try {
             close()
             val file = File(modelPath)
-            // NPU for G5-compiled models, GPU otherwise
-            val backend = if (file.name.contains("Google_Tensor_G5", ignoreCase = true)) {
-                Backend.NPU(nativeLibraryDir = context.applicationInfo.nativeLibraryDir)
-            } else {
-                Backend.GPU()
-            }
+            // Use GPU for all models (NPU registration currently fails on this device)
+            // Only use GPU if model is under 4GB to avoid GPU OOM
+            val fileSizeMB = file.length() / (1024 * 1024)
+            val backend = if (fileSizeMB < 4096) Backend.GPU() else Backend.CPU()
 
             val config = EngineConfig(
                 modelPath = modelPath,
@@ -46,12 +44,19 @@ class LocalLlmEngine(private val context: Context) {
             engine!!.initialize()
             // Create default conversation
             createConversation()
-            android.util.Log.i("LocalLlm", "Loaded: ${file.name} backend=$backend")
+            android.util.Log.i("LocalLlm", "Loaded: ${file.name} backend=$backend size=${fileSizeMB}MB")
             true
         } catch (e: Exception) {
-            android.util.Log.e("LocalLlm", "Load failed, trying CPU fallback", e)
-            // Fallback to CPU
+            android.util.Log.e("LocalLlm", "Load failed: ${e.message}", e)
+            engine = null
+            // Try CPU fallback for smaller models only
             try {
+                val file = File(modelPath)
+                val fileSizeMB = file.length() / (1024 * 1024)
+                if (fileSizeMB > 2000) {
+                    android.util.Log.w("LocalLlm", "Model too large for CPU fallback (${fileSizeMB}MB)")
+                    return@withContext false
+                }
                 val config = EngineConfig(
                     modelPath = modelPath,
                     backend = Backend.CPU(),

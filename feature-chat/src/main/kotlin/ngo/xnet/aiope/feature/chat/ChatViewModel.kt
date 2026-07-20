@@ -62,18 +62,46 @@ class ChatViewModel @Inject constructor(
   private fun preloadLocalLlm() {
     val modelsDir = java.io.File(getApplication<android.app.Application>().filesDir, "models/local")
     if (!modelsDir.exists()) return
-    // Prefer .litertlm files (LLM), skip .tflite (embeddings)
-    val model = modelsDir.listFiles()
-      ?.filter { it.extension == "litertlm" }
-      ?.maxByOrNull { it.length() } // pick largest LLM model
+    val models = modelsDir.listFiles()?.filter { it.extension == "litertlm" } ?: return
+    if (models.isEmpty()) return
+
+    // Use the model selected in the local provider profile, or fallback to smallest (safest for GPU)
+    val localProfile = providerStore.getAll().firstOrNull { it.builtinId == "local" }
+    val selectedName = localProfile?.selectedModelId
+    val model = models.firstOrNull { it.name == selectedName }
+      ?: models.minByOrNull { it.length() } // smallest is safest for GPU memory
       ?: return
+
     viewModelScope.launch(Dispatchers.IO) {
-      val success = localLlmEngine.load(model.absolutePath)
-      if (success) {
-        localLlmModelPath = model.absolutePath
-        android.util.Log.i("ChatVM", "Local LLM preloaded: ${model.name}")
-      } else {
-        android.util.Log.w("ChatVM", "Local LLM preload failed: ${model.name}")
+      // Delay to let GPU resources from prior process fully release
+      kotlinx.coroutines.delay(2000)
+      try {
+        val success = localLlmEngine.load(model.absolutePath)
+        if (success) {
+          localLlmModelPath = model.absolutePath
+          android.util.Log.i("ChatVM", "Local LLM preloaded: ${model.name}")
+        } else {
+          // Try other available models as fallback
+          val fallback = models.filter { it != model }.firstOrNull { f ->
+            try { localLlmEngine.load(f.absolutePath) } catch (_: Exception) { false }
+          }
+          if (fallback != null) {
+            localLlmModelPath = fallback.absolutePath
+            android.util.Log.i("ChatVM", "Local LLM preloaded (fallback): ${fallback.name}")
+          } else {
+            android.util.Log.w("ChatVM", "No local models could be loaded")
+          }
+        }
+      } catch (e: Exception) {
+        android.util.Log.e("ChatVM", "Local LLM preload error: ${e.message}")
+        // Try fallback models
+        val fallback = models.filter { it != model }.firstOrNull { f ->
+          try { localLlmEngine.load(f.absolutePath) } catch (_: Exception) { false }
+        }
+        if (fallback != null) {
+          localLlmModelPath = fallback.absolutePath
+          android.util.Log.i("ChatVM", "Local LLM preloaded (fallback): ${fallback.name}")
+        }
       }
     }
   }
