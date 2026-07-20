@@ -486,7 +486,8 @@ class ChatViewModel @Inject constructor(
         val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.TRANSLATION)
 
         // Route to local engine if configured provider is "local"
-        if (profile.builtinId == "local" && localLlmEngine.isLoaded) {
+        if (profile.builtinId == "local") {
+          if (!localLlmEngine.isLoaded) return@launch // local not ready, skip silently
           val localResult = try { localLlmEngine.translate(msg.content, language) } catch (_: Exception) { null }
           if (localResult != null) {
             val updated = _messages.value.toMutableList()
@@ -495,8 +496,8 @@ class ChatViewModel @Inject constructor(
               updated[idx] = updated[idx].copy(translation = localResult)
               _messages.value = updated
             }
-            return@launch
           }
+          return@launch
         }
 
         // Cloud path
@@ -536,13 +537,14 @@ class ChatViewModel @Inject constructor(
         val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.TITLE)
 
         // Route to local engine if configured provider is "local"
-        if (profile.builtinId == "local" && localLlmEngine.isLoaded) {
+        if (profile.builtinId == "local") {
+          if (!localLlmEngine.isLoaded) return@launch // local not ready, skip
           val localTitle = try { localLlmEngine.generateTitle(firstMessage) } catch (_: Exception) { null }
           if (localTitle != null) {
             chatDao.updateConversation(conversationId, localTitle)
             refreshConversations()
-            return@launch
           }
+          return@launch
         }
 
         // Cloud path
@@ -609,9 +611,17 @@ class ChatViewModel @Inject constructor(
       val p = providerStore.getActive()
 
       // --- LOCAL INFERENCE PATH ---
-      // Use local LLM when: offline, or active provider is "local"
-      val useLocal = localLlmEngine.isLoaded && (!isOnline() || p.builtinId == "local")
-      if (useLocal && imageUris.isEmpty()) {
+      // Use local LLM when: active provider is "local", or offline with local model available
+      if (p.builtinId == "local" || (!isOnline() && localLlmEngine.isLoaded)) {
+        if (!localLlmEngine.isLoaded) {
+          withContext(Dispatchers.Main) {
+            _messages.value = _messages.value.toMutableList().also {
+              it[it.lastIndex] = it.last().copy(content = "⚠️ Local model is still loading. Please wait a moment and try again.")
+            }
+          }
+          _isStreaming.value = false
+          return@launch
+        }
         try {
           // Set up conversation with user's agent persona
           val agentPrompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
