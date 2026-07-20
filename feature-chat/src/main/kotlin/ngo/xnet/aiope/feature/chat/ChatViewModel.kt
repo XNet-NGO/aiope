@@ -1124,13 +1124,20 @@ class ChatViewModel @Inject constructor(
           }
           val agentPrompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
           localLlmEngine.createConversation(systemPrompt = agentPrompt.takeIf { it.isNotBlank() })
-          val sb = StringBuilder()
+          val rawSb = StringBuilder()
           localLlmEngine.generateStream(text).collect { chunk ->
-            sb.append(chunk)
+            rawSb.append(chunk)
+            val parsed = parseThinkTags(rawSb.toString())
             withContext(Dispatchers.Main) {
               _messages.value = _messages.value.toMutableList().also {
-                it[it.lastIndex] = it.last().copy(content = sb.toString())
+                it[it.lastIndex] = it.last().copy(content = parsed.content, reasoning = parsed.reasoning, isReasoningDone = parsed.isDone)
               }
+            }
+          }
+          val finalParsed = parseThinkTags(rawSb.toString())
+          withContext(Dispatchers.Main) {
+            _messages.value = _messages.value.toMutableList().also {
+              it[it.lastIndex] = it.last().copy(content = finalParsed.content, reasoning = finalParsed.reasoning, isReasoningDone = true)
             }
           }
           val finalMsg = _messages.value.last()
