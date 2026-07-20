@@ -659,102 +659,27 @@ class ChatViewModel @Inject constructor(
             topK = 40,
             topP = p.activeModelConfig().topP?.toDouble() ?: 0.9
           )
-          val sb = StringBuilder()
-          val reasoningBlocks = mutableListOf<String>()
-          val currentReasoning = StringBuilder()
-          var inThinkTag = false
-          var thinkTagName = "think"
-          val pendingBuf = StringBuilder()
+          val rawSb = StringBuilder()
 
           localLlmEngine.generateStream(text).collect { chunk ->
-            // Parse <think>/<thinking> tags into reasoning blocks
-            pendingBuf.append(chunk)
-            val buf = pendingBuf.toString()
-
-            if (!inThinkTag) {
-              val openTag = listOf("<think>", "<thinking>", "<thought>").firstOrNull { buf.contains(it) }
-              if (openTag != null) {
-                inThinkTag = true
-                thinkTagName = openTag.removePrefix("<").removeSuffix(">")
-                val before = buf.substringBefore(openTag)
-                if (before.isNotEmpty()) sb.append(before)
-                val afterOpen = buf.substringAfter(openTag)
-                pendingBuf.clear()
-                // Check if close is in same chunk
-                val closeTag = "</$thinkTagName>"
-                if (afterOpen.contains(closeTag)) {
-                  reasoningBlocks.add(afterOpen.substringBefore(closeTag))
-                  val afterClose = afterOpen.substringAfter(closeTag)
-                  if (afterClose.isNotEmpty()) sb.append(afterClose)
-                  inThinkTag = false
-                } else {
-                  currentReasoning.append(afterOpen)
-                }
-              } else if (buf.endsWith("<") || (buf.length < 12 && buf.contains("<"))) {
-                // Partial tag, keep buffering
-                return@collect
-              } else {
-                sb.append(buf)
-                pendingBuf.clear()
-              }
-            } else {
-              // Inside think tag — look for close
-              val closeTag = "</$thinkTagName>"
-              if (buf.contains(closeTag)) {
-                currentReasoning.append(buf.substringBefore(closeTag))
-                reasoningBlocks.add(currentReasoning.toString())
-                currentReasoning.clear()
-                val afterClose = buf.substringAfter(closeTag)
-                if (afterClose.isNotEmpty()) sb.append(afterClose)
-                pendingBuf.clear()
-                inThinkTag = false
-              } else {
-                currentReasoning.append(buf)
-                pendingBuf.clear()
-                // Update UI with reasoning in progress
-                withContext(Dispatchers.Main) {
-                  val allReasoning = reasoningBlocks + currentReasoning.toString()
-                  _messages.value = _messages.value.toMutableList().also {
-                    it[it.lastIndex] = it.last().copy(
-                      content = sb.toString(),
-                      reasoning = allReasoning,
-                      isReasoningDone = false,
-                    )
-                  }
-                }
-                return@collect
-              }
-            }
-
-            // Update UI with content
+            rawSb.append(chunk)
+            val parsed = parseThinkTags(rawSb.toString())
             withContext(Dispatchers.Main) {
-              val allReasoning = if (reasoningBlocks.isNotEmpty() || currentReasoning.isNotEmpty())
-                reasoningBlocks + (if (currentReasoning.isNotEmpty()) listOf(currentReasoning.toString()) else emptyList())
-              else emptyList()
               _messages.value = _messages.value.toMutableList().also {
                 it[it.lastIndex] = it.last().copy(
-                  content = sb.toString(),
-                  reasoning = allReasoning,
-                  isReasoningDone = !inThinkTag,
+                  content = parsed.content,
+                  reasoning = parsed.reasoning,
+                  isReasoningDone = parsed.isDone,
                 )
               }
             }
           }
 
-          // Flush any remaining pending buffer
-          if (pendingBuf.isNotEmpty()) {
-            if (inThinkTag) {
-              currentReasoning.append(pendingBuf)
-              reasoningBlocks.add(currentReasoning.toString())
-            } else {
-              sb.append(pendingBuf)
-            }
-          }
-          // Final UI update
-          val allReasoning = reasoningBlocks.toList()
+          // Final parse
+          val finalParsed = parseThinkTags(rawSb.toString())
           withContext(Dispatchers.Main) {
             _messages.value = _messages.value.toMutableList().also {
-              it[it.lastIndex] = it.last().copy(content = sb.toString(), reasoning = allReasoning, isReasoningDone = true)
+              it[it.lastIndex] = it.last().copy(content = finalParsed.content, reasoning = finalParsed.reasoning, isReasoningDone = true)
             }
           }
 
@@ -1366,6 +1291,37 @@ $remoteCtx"""
     return msgs
   }
   private fun getBrowser() = ngo.xnet.aiope.feature.chat.browser.BrowserHolder.getOrCreate(getApplication())
+
+  private data class ParsedThinkResult(val content: String, val reasoning: List<String>, val isDone: Boolean)
+
+  /** Parse <think>/<thinking>/<thought> tags from raw text into content + reasoning blocks */
+  private fun parseThinkTags(raw: String): ParsedThinkResult {
+    val tagNames = listOf("think", "thinking", "thought")
+    var text = raw
+    val reasoning = mutableListOf<String>()
+
+    for (tag in tagNames) {
+      val open = "<$tag>"
+      val close = "</$tag>"
+      while (text.contains(open)) {
+        val startIdx = text.indexOf(open)
+        val before = text.substring(0, startIdx)
+        val afterOpen = text.substring(startIdx + open.length)
+        val closeIdx = afterOpen.indexOf(close)
+        if (closeIdx >= 0) {
+          // Complete think block
+          reasoning.add(afterOpen.substring(0, closeIdx))
+          text = before + afterOpen.substring(closeIdx + close.length)
+        } else {
+          // Open tag without close — reasoning still in progress
+          reasoning.add(afterOpen)
+          text = before
+          return ParsedThinkResult(text.trim(), reasoning, isDone = false)
+        }
+      }
+    }
+    return ParsedThinkResult(text.trim(), reasoning, isDone = true)
+  }
 
   override fun onCleared() {
     super.onCleared()
