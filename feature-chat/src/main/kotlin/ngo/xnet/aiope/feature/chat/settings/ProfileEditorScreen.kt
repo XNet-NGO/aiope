@@ -74,7 +74,7 @@ internal fun ProfileEditor(
       colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = if (ngo.xnet.aiope.feature.chat.theme.LocalThemeState.current.useBackground) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.MaterialTheme.colorScheme.surface),
       title = { Text(p.label.ifBlank { "Edit Provider" }) },
       navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-      actions = { IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete") } },
+      actions = { if (p.builtinId != "local") { IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete") } } },
     )
   }) { pad ->
     // ══════════════════════════════════════════════════════════════
