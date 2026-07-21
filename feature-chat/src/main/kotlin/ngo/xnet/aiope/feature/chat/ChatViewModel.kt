@@ -662,18 +662,60 @@ class ChatViewModel @Inject constructor(
           }
           val rawSb = StringBuilder()
 
-          localLlmEngine.generateStream(text).collect { chunk ->
-            rawSb.append(chunk)
-            val parsed = parseThinkTags(rawSb.toString())
-            withContext(Dispatchers.Main) {
-              _messages.value = _messages.value.toMutableList().also {
-                it[it.lastIndex] = it.last().copy(
-                  content = parsed.content,
-                  reasoning = parsed.reasoning,
-                  isReasoningDone = parsed.isDone,
-                )
+          // Try sending to existing conversation; if template mismatch, reset and retry with context
+          try {
+            localLlmEngine.generateStream(text).collect { chunk ->
+              rawSb.append(chunk)
+              val parsed = parseThinkTags(rawSb.toString())
+              withContext(Dispatchers.Main) {
+                _messages.value = _messages.value.toMutableList().also {
+                  it[it.lastIndex] = it.last().copy(
+                    content = parsed.content,
+                    reasoning = parsed.reasoning,
+                    isReasoningDone = parsed.isDone,
+                  )
+                }
               }
             }
+          } catch (e: Exception) {
+            if (e.message?.contains("rendered template string") == true || e.message?.contains("INTERNAL") == true) {
+              // Template mismatch from thinking model — reset and retry with history in prompt
+              android.util.Log.w("ChatVM", "LiteRT conversation template mismatch, resetting with context")
+              val agentPrompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
+              localLlmEngine.createConversation(
+                systemPrompt = agentPrompt.takeIf { it.isNotBlank() },
+                temperature = p.activeModelConfig().temperature?.toDouble() ?: 0.7,
+                topK = 40,
+                topP = p.activeModelConfig().topP?.toDouble() ?: 0.9
+              )
+              // Build context from recent messages
+              val history = _messages.value.dropLast(2).takeLast(10)
+              val contextPrompt = if (history.isNotEmpty()) {
+                val ctx = history.joinToString("\n") { msg ->
+                  when (msg.role) {
+                    Role.USER -> "User: ${msg.content}"
+                    Role.ASSISTANT -> "Assistant: ${msg.content}"
+                    else -> ""
+                  }
+                }
+                "Previous conversation:\n$ctx\n\nUser: $text"
+              } else text
+
+              rawSb.clear()
+              localLlmEngine.generateStream(contextPrompt).collect { chunk ->
+                rawSb.append(chunk)
+                val parsed = parseThinkTags(rawSb.toString())
+                withContext(Dispatchers.Main) {
+                  _messages.value = _messages.value.toMutableList().also {
+                    it[it.lastIndex] = it.last().copy(
+                      content = parsed.content,
+                      reasoning = parsed.reasoning,
+                      isReasoningDone = parsed.isDone,
+                    )
+                  }
+                }
+              }
+            } else throw e
           }
 
           // Final parse
