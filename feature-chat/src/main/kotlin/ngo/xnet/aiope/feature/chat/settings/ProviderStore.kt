@@ -61,20 +61,8 @@ class ProviderStore @Inject constructor(
   }
 
   private fun seedTaskDefaults() {
-    val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(ctx)
-    val gw = getAll().firstOrNull { it.builtinId == "aiope_gateway" } ?: return
-    fun seed(task: ngo.xnet.aiope.core.network.ModelTask, model: String) {
-      if (taskStore.getTaskConfig(task).profileId == null) {
-        taskStore.setTaskConfig(task, ngo.xnet.aiope.core.network.TaskModelConfig(task.id, gw.id, model))
-      }
-    }
-    seed(ngo.xnet.aiope.core.network.ModelTask.SUMMARY, "pollinations-pollen/llama-scout")
-    seed(ngo.xnet.aiope.core.network.ModelTask.TITLE, "pollinations-pollen/nova-fast")
-    seed(ngo.xnet.aiope.core.network.ModelTask.TRANSLATION, "pollinations-pollen/nova-fast")
-    seed(ngo.xnet.aiope.core.network.ModelTask.IMAGE_RECOGNITION, "google-ai-studio/models-gemma-4-26b-a4b-it")
-    seed(ngo.xnet.aiope.core.network.ModelTask.SUBAGENT, "google-ai-studio/models-gemma-4-26b-a4b-it")
-    seed(ngo.xnet.aiope.core.network.ModelTask.IMAGE_GENERATION, "pollinations-pollen/flux")
-    seed(ngo.xnet.aiope.core.network.ModelTask.REALTIME_SPEECH, "google-ai-studio/gemini-3.1-flash-live-preview")
+    // All tasks default to active profile (no hardcoded overrides)
+    // Users can assign specific models per task in Settings > Default Models per Task
   }
 
   private fun seedDefault() {
@@ -85,7 +73,7 @@ class ProviderStore @Inject constructor(
       label = "AIOPE Gateway",
       apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
       apiBase = "https://inf.xnet.ngo/v1",
-      selectedModelId = "google-ai-studio/models-gemma-4-31b-it",
+      selectedModelId = "openrouter/openrouter-free",
       isActive = true,
       modelConfigs = mapOf(
         mc("cline/minimax-minimax-m2.5", tools = true, ctx = 200_000),
@@ -147,7 +135,7 @@ class ProviderStore @Inject constructor(
   fun getActive(): ProviderProfile = runBlocking(Dispatchers.IO) {
     dao.getActiveProvider()?.let { runCatching { ProviderProfile.fromJson(JSONObject(it.json)) }.getOrNull() }
   } ?: getAll().firstOrNull()
-    ?: ProviderProfile(builtinId = "aiope_gateway", label = "AIOPE Gateway", apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY, selectedModelId = "google-ai-studio/models-gemma-4-31b-it")
+    ?: ProviderProfile(builtinId = "aiope_gateway", label = "AIOPE Gateway", apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY, selectedModelId = "openrouter/openrouter-free")
 
   fun getById(id: String): ProviderProfile? = getAll().firstOrNull { it.id == id }
 
