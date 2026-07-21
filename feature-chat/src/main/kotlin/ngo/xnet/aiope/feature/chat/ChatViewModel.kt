@@ -414,6 +414,10 @@ class ChatViewModel @Inject constructor(
     conversationId = UUID.randomUUID().toString()
     _messages.value = emptyList()
     toolExecutor.lastLocationData = null
+    // Reset local LLM conversation context for new chat
+    if (localLlmEngine.hasConversation()) {
+      localLlmEngine.createConversation()
+    }
     viewModelScope.launch {
       chatDao.insertConversation(ConversationEntity(id = conversationId))
       refreshConversations()
@@ -646,14 +650,16 @@ class ChatViewModel @Inject constructor(
           return@launch
         }
         try {
-          // Set up conversation with user's agent persona
-          val agentPrompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
-          localLlmEngine.createConversation(
-            systemPrompt = agentPrompt.takeIf { it.isNotBlank() },
-            temperature = p.activeModelConfig().temperature?.toDouble() ?: 0.7,
-            topK = 40,
-            topP = p.activeModelConfig().topP?.toDouble() ?: 0.9
-          )
+          // Only create conversation if not already active (preserves multi-turn context)
+          if (!localLlmEngine.hasConversation()) {
+            val agentPrompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
+            localLlmEngine.createConversation(
+              systemPrompt = agentPrompt.takeIf { it.isNotBlank() },
+              temperature = p.activeModelConfig().temperature?.toDouble() ?: 0.7,
+              topK = 40,
+              topP = p.activeModelConfig().topP?.toDouble() ?: 0.9
+            )
+          }
           val rawSb = StringBuilder()
 
           localLlmEngine.generateStream(text).collect { chunk ->
@@ -1117,8 +1123,10 @@ class ChatViewModel @Inject constructor(
             _isStreaming.value = false
             return@launch
           }
-          val agentPrompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
-          localLlmEngine.createConversation(systemPrompt = agentPrompt.takeIf { it.isNotBlank() })
+          if (!localLlmEngine.hasConversation()) {
+            val agentPrompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
+            localLlmEngine.createConversation(systemPrompt = agentPrompt.takeIf { it.isNotBlank() })
+          }
           val rawSb = StringBuilder()
           localLlmEngine.generateStream(text).collect { chunk ->
             rawSb.append(chunk)

@@ -21,6 +21,7 @@ class LocalLlmEngine(private val context: Context) {
     private var conversation: Conversation? = null
 
     val isLoaded: Boolean get() = engine != null
+    fun hasConversation(): Boolean = conversation != null
 
     /**
      * Load a .litertlm model with automatic backend fallback: NPU → GPU → CPU.
