@@ -15,8 +15,8 @@ final class JNI {
     static {
         try {
             Class<?> c = Class.forName("com.termux.terminal.JNI");
-            sCreateSubprocess = c.getDeclaredMethod("createSubprocess", String.class, String.class, String[].class, String[].class, int[].class, int.class, int.class);
-            sSetPtyWindowSize = c.getDeclaredMethod("setPtyWindowSize", int.class, int.class, int.class);
+            sCreateSubprocess = c.getDeclaredMethod("createSubprocess", String.class, String.class, String[].class, String[].class, int[].class, int.class, int.class, int.class, int.class);
+            sSetPtyWindowSize = c.getDeclaredMethod("setPtyWindowSize", int.class, int.class, int.class, int.class, int.class);
             sWaitFor = c.getDeclaredMethod("waitFor", int.class);
             sClose = c.getDeclaredMethod("close", int.class);
             sCreateSubprocess.setAccessible(true);
@@ -29,12 +29,12 @@ final class JNI {
     }
 
     static int createSubprocess(String cmd, String cwd, String[] args, String[] envVars, int[] processId, int rows, int columns) {
-        try { return (int) sCreateSubprocess.invoke(null, cmd, cwd, args, envVars, processId, rows, columns); }
+        try { return (int) sCreateSubprocess.invoke(null, cmd, cwd, args, envVars, processId, rows, columns, 0, 0); }
         catch (Exception e) { throw new RuntimeException(e); }
     }
 
     static void setPtyWindowSize(int fd, int rows, int cols) {
-        try { sSetPtyWindowSize.invoke(null, fd, rows, cols); }
+        try { sSetPtyWindowSize.invoke(null, fd, rows, cols, 0, 0); }
         catch (Exception e) { throw new RuntimeException(e); }
     }
 
