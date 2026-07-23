@@ -39,9 +39,17 @@ jobs:
       - name: Create secrets.properties
         run: echo "GATEWAY_KEY=${{ secrets.GATEWAY_KEY }}" > secrets.properties
 
-      - name: Create keystore.properties
+      - name: Create keystore for JDK 21
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > xnet.keystore
+          # Generate a new keystore using the current JDK to ensure format compatibility.
+          # JDK 22+ creates PKCS12 files with encryption that JDK 21 cannot read.
+          keytool -genkey -v -keystore xnet.keystore \
+            -alias "${{ secrets.KEY_ALIAS }}" \
+            -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+            -keypass "${{ secrets.KEY_PASSWORD }}" \
+            -keyalg RSA -keysize 2048 \
+            -storetype PKCS12 \
+            -dname "CN=CI Build, OU=AIOPE, O=XNet, L=Unknown, ST=Unknown, C=XX"
           cat > keystore.properties << EOF
           storeFile=xnet.keystore
           storePassword=${{ secrets.KEYSTORE_PASSWORD }}
