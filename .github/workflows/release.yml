@@ -41,21 +41,37 @@ jobs:
 
       - name: Create keystore for JDK 21
         run: |
-          # Generate a new keystore using the current JDK to ensure format compatibility.
-          # JDK 22+ creates PKCS12 files with encryption that JDK 21 cannot read.
-          keytool -genkey -v -keystore xnet.keystore \
-            -alias "${{ secrets.KEY_ALIAS }}" \
-            -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
-            -keypass "${{ secrets.KEY_PASSWORD }}" \
-            -keyalg RSA -keysize 2048 \
-            -storetype PKCS12 \
-            -dname "CN=CI Build, OU=AIOPE, O=XNet, L=Unknown, ST=Unknown, C=XX"
-          cat > keystore.properties << EOF
-          storeFile=xnet.keystore
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          EOF
+          if [ -z "${{ secrets.KEY_ALIAS }}" ]; then
+            echo "No signing secrets configured — using debug keystore"
+            keytool -genkey -v -keystore xnet.keystore \
+              -alias release \
+              -storepass android \
+              -keypass android \
+              -keyalg RSA -keysize 2048 \
+              -storetype PKCS12 \
+              -dname "CN=CI Build, OU=AIOPE, O=XNet, L=Unknown, ST=Unknown, C=XX"
+            cat > keystore.properties << EOF
+            storeFile=xnet.keystore
+            storePassword=android
+            keyAlias=release
+            keyPassword=android
+            EOF
+          else
+            # Generate keystore with real secrets from GitHub
+            keytool -genkey -v -keystore xnet.keystore \
+              -alias "${{ secrets.KEY_ALIAS }}" \
+              -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+              -keypass "${{ secrets.KEY_PASSWORD }}" \
+              -keyalg RSA -keysize 2048 \
+              -storetype PKCS12 \
+              -dname "CN=CI Build, OU=AIOPE, O=XNet, L=Unknown, ST=Unknown, C=XX"
+            cat > keystore.properties << EOF
+            storeFile=xnet.keystore
+            storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+            keyAlias=${{ secrets.KEY_ALIAS }}
+            keyPassword=${{ secrets.KEY_PASSWORD }}
+            EOF
+          fi
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
