@@ -42,6 +42,9 @@ android {
   packaging {
     resources {
       excludes.add("/META-INF/{AL2.0,LGPL2.1}")
+      excludes.add("META-INF/LICENSE.md")
+      excludes.add("META-INF/LICENSE")
+      excludes.add("META-INF/NOTICE.md")
     }
     jniLibs.useLegacyPackaging = true
   }
