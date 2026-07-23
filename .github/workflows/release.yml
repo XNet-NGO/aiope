@@ -50,14 +50,11 @@ jobs:
               -keyalg RSA -keysize 2048 \
               -storetype PKCS12 \
               -dname "CN=CI Build, OU=AIOPE, O=XNet, L=Unknown, ST=Unknown, C=XX"
-            cat > keystore.properties << EOF
-            storeFile=xnet.keystore
-            storePassword=android
-            keyAlias=release
-            keyPassword=android
-            EOF
+            echo "storeFile=xnet.keystore"  > keystore.properties
+            echo "storePassword=android"   >> keystore.properties
+            echo "keyAlias=release"        >> keystore.properties
+            echo "keyPassword=android"     >> keystore.properties
           else
-            # Generate keystore with real secrets from GitHub
             keytool -genkey -v -keystore xnet.keystore \
               -alias "${{ secrets.KEY_ALIAS }}" \
               -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
@@ -65,12 +62,10 @@ jobs:
               -keyalg RSA -keysize 2048 \
               -storetype PKCS12 \
               -dname "CN=CI Build, OU=AIOPE, O=XNet, L=Unknown, ST=Unknown, C=XX"
-            cat > keystore.properties << EOF
-            storeFile=xnet.keystore
-            storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-            keyAlias=${{ secrets.KEY_ALIAS }}
-            keyPassword=${{ secrets.KEY_PASSWORD }}
-            EOF
+            echo "storeFile=xnet.keystore"          > keystore.properties
+            echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> keystore.properties
+            echo "keyAlias=${{ secrets.KEY_ALIAS }}"              >> keystore.properties
+            echo "keyPassword=${{ secrets.KEY_PASSWORD }}"        >> keystore.properties
           fi
 
       - name: Setup Gradle
