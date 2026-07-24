@@ -392,7 +392,7 @@ private fun LocalProviderEditor(
 ) {
   val ctx = androidx.compose.ui.platform.LocalContext.current
   val modelsDir = remember { java.io.File(ctx.filesDir, "models/local").apply { mkdirs() } }
-  var localModels by remember { mutableStateOf(modelsDir.listFiles()?.filter { it.extension == "litertlm" }?.sortedByDescending { it.length() } ?: emptyList()) }
+  var localModels by remember { mutableStateOf(modelsDir.listFiles()?.filter { it.extension == "litertlm" || it.extension == "tflite" }?.sortedByDescending { it.length() } ?: emptyList()) }
   var selectedModel by remember { mutableStateOf(profile.selectedModelId) }
   var modelExpanded by remember { mutableStateOf(false) }
   var importing by remember { mutableStateOf(false) }
@@ -416,7 +416,7 @@ private fun LocalProviderEditor(
           dest.outputStream().use { output -> input.copyTo(output, 8192) }
         }
         withContext(Dispatchers.Main) {
-          localModels = modelsDir.listFiles()?.filter { it.extension == "litertlm" }?.sortedByDescending { it.length() } ?: emptyList()
+          localModels = modelsDir.listFiles()?.filter { it.extension == "litertlm" || it.extension == "tflite" }?.sortedByDescending { it.length() } ?: emptyList()
           selectedModel = name
           importing = false
         }
@@ -431,7 +431,7 @@ private fun LocalProviderEditor(
     // Model selector
     Section("On-Device Model")
     if (localModels.isEmpty()) {
-      Text("No models imported yet. Use the button below to add a .litertlm model.", style = MaterialTheme.typography.bodyMedium)
+      Text("No models imported yet. Use the button below to add a .litertlm or .tflite model.", style = MaterialTheme.typography.bodyMedium)
     } else {
       ExposedDropdownMenuBox(expanded = modelExpanded, onExpandedChange = { modelExpanded = it }) {
         OutlinedTextField(
@@ -445,8 +445,9 @@ private fun LocalProviderEditor(
         ExposedDropdownMenu(expanded = modelExpanded, onDismissRequest = { modelExpanded = false }) {
           localModels.forEach { file ->
             val sizeMB = file.length() / (1024 * 1024)
+            val typeLabel = if (file.extension == "tflite") "Embedding" else "LLM"
             DropdownMenuItem(
-              text = { Text("${file.name}  (${sizeMB}MB)") },
+              text = { Text("${file.name}  (${sizeMB}MB · $typeLabel)") },
               onClick = {
                 selectedModel = file.name
                 modelExpanded = false
@@ -465,7 +466,7 @@ private fun LocalProviderEditor(
       enabled = !importing,
       modifier = Modifier.fillMaxWidth(),
     ) {
-      Text(if (importing) "Importing…" else "Import Model (.litertlm)")
+      Text(if (importing) "Importing…" else "Import Model (.litertlm / .tflite)")
     }
 
     // Delete model
@@ -474,7 +475,7 @@ private fun LocalProviderEditor(
       OutlinedButton(
         onClick = {
           java.io.File(modelsDir, selectedModel).delete()
-          localModels = modelsDir.listFiles()?.filter { it.extension == "litertlm" }?.sortedByDescending { it.length() } ?: emptyList()
+          localModels = modelsDir.listFiles()?.filter { it.extension == "litertlm" || it.extension == "tflite" }?.sortedByDescending { it.length() } ?: emptyList()
           selectedModel = localModels.firstOrNull()?.name ?: ""
         },
         modifier = Modifier.fillMaxWidth(),
@@ -532,7 +533,8 @@ private fun LocalProviderEditor(
         Text("Local inference runs entirely on-device using LiteRT.", style = MaterialTheme.typography.bodySmall)
         Text("• No internet required", style = MaterialTheme.typography.bodySmall)
         Text("• GPU accelerated (OpenCL)", style = MaterialTheme.typography.bodySmall)
-        Text("• Models: .litertlm format", style = MaterialTheme.typography.bodySmall)
+        Text("• LLM models: .litertlm format", style = MaterialTheme.typography.bodySmall)
+        Text("• Embedding models: .tflite format (for RAG)", style = MaterialTheme.typography.bodySmall)
       }
     }
 
