@@ -21,6 +21,7 @@ android {
     versionCode = Configurations.versionCode
     versionName = Configurations.versionName
     buildConfigField("String", "GATEWAY_KEY", "\"${rootProject.file("secrets.properties").let { f -> if (f.exists()) Properties().apply { f.inputStream().use { load(it) } }.getProperty("GATEWAY_KEY", "") else "" }}\"")
+    ndk { abiFilters += listOf("arm64-v8a") }
   }
 
   buildFeatures { buildConfig = true }
