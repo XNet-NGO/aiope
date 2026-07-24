@@ -513,7 +513,7 @@ class ToolExecutor(
         try {
           val results = getRagEngine().search(query, topK)
           if (results.isEmpty()) "No results found in knowledge base."
-          else results.joinToString("\n\n") { "[${String.format("%.2f", it.score)}] ${it.title}\n${it.text.take(300)}" }
+          else results.joinToString("\n\n") { "[${String.format("%.2f", it.score)}] ${it.title}\n${it.text}" }
         } catch (e: Exception) { "RAG error: ${e.message}" }
       }
 

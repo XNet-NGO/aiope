@@ -36,6 +36,6 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
-    implementation("com.google.ai.edge.litert:litert:2.1.0")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.14.0")
+    implementation("com.google.ai.edge.litert:litert:2.1.5")
 }
