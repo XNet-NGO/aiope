@@ -20,7 +20,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.xnet.aiope.inference.LlamaEngine
 import org.xnet.aiope.inference.RagEngine
 import java.io.File
 
@@ -43,16 +42,9 @@ internal fun RagScreen(onBack: () -> Unit) {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             try {
-                val engine = LlamaEngine()
-                val modelFile = File(context.filesDir, "models/all-MiniLM-L6-v2-Q4_K_M.gguf")
-                if (!modelFile.exists()) {
-                    modelFile.parentFile?.mkdirs()
-                    context.assets.open("models/all-MiniLM-L6-v2-Q4_K_M.gguf").use { input ->
-                        modelFile.outputStream().use { output -> input.copyTo(output) }
-                    }
-                }
-                engine.loadModel(modelFile.absolutePath, contextSize = 256, nThreads = 4, embedding = true)
-                val rag = RagEngine(context, engine)
+                val embeddingEngine = org.xnet.aiope.inference.EmbeddingEngine(context)
+                embeddingEngine.load()
+                val rag = RagEngine(context, embeddingEngine)
                 ragEngine = rag
                 documents = rag.listDocuments()
             } catch (e: Exception) {

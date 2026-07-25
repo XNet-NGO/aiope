@@ -46,14 +46,6 @@ class ChatViewModel @Inject constructor(
   private fun isOnline(): Boolean =
     connectivityManager?.activeNetwork?.let { connectivityManager.getNetworkCapabilities(it)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) } ?: false
 
-  private var localChatEngine: org.xnet.aiope.inference.LocalChatEngine? = null
-  private fun getLocalChatEngine(): org.xnet.aiope.inference.LocalChatEngine {
-    if (localChatEngine == null) {
-      localChatEngine = org.xnet.aiope.inference.LocalChatEngine(getApplication())
-    }
-    return localChatEngine!!
-  }
-
   // LiteRT-LM local engine — always active alongside cloud
   private val localLlmEngine = org.xnet.aiope.inference.LocalLlmEngine(application)
   private var localLlmModelPath: String? = null

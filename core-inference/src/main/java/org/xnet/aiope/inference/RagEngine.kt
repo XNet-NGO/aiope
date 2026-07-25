@@ -9,9 +9,9 @@ import java.nio.ByteOrder
 import kotlin.math.sqrt
 
 /**
- * On-device RAG engine using llama.cpp for embeddings and SQLite for vector storage.
+ * On-device RAG engine using LiteRT for embeddings and SQLite for vector storage.
  */
-class RagEngine(context: Context, private val engine: LlamaEngine) {
+class RagEngine(context: Context, private val embeddingEngine: EmbeddingEngine) {
 
     private val db = RagDatabase(context).writableDatabase
 
@@ -37,7 +37,7 @@ class RagEngine(context: Context, private val engine: LlamaEngine) {
                 put("text", text)
             })
 
-            val embedding = engine.embed(text)
+            val embedding = embeddingEngine.embed(text)
             if (embedding != null) {
                 db.insert("embeddings", null, ContentValues().apply {
                     put("chunk_id", chunkId)
@@ -103,7 +103,7 @@ class RagEngine(context: Context, private val engine: LlamaEngine) {
     )
 
     fun search(query: String, topK: Int = 5): List<SearchResult> {
-        val queryEmbedding = engine.embed(query) ?: return emptyList()
+        val queryEmbedding = embeddingEngine.embed(query) ?: return emptyList()
 
         val results = mutableListOf<SearchResult>()
 
