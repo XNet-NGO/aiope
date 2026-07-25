@@ -105,6 +105,21 @@ class RagEngine(context: Context, private val embedFn: (String) -> FloatArray?) 
     fun search(query: String, topK: Int = 5): List<SearchResult> {
         val queryEmbedding = embedFn(query) ?: return emptyList()
 
+        // Check if stored embeddings match current model dimensions
+        val dimsCursor = db.rawQuery("SELECT dims FROM embeddings LIMIT 1", null)
+        if (dimsCursor.moveToFirst()) {
+            val storedDims = dimsCursor.getInt(0)
+            dimsCursor.close()
+            if (storedDims != queryEmbedding.size) {
+                // Dimensions mismatch — old embeddings are incompatible
+                android.util.Log.w("RagEngine", "Embedding dimension mismatch: stored=$storedDims current=${queryEmbedding.size}. Re-index required.")
+                db.delete("embeddings", null, null)
+                return emptyList()
+            }
+        } else {
+            dimsCursor.close()
+        }
+
         val results = mutableListOf<SearchResult>()
 
         val cursor = db.rawQuery("""
