@@ -12,6 +12,7 @@ enum class ModelTask(val id: String, val label: String, val description: String)
   SUMMARY("summary", "Summary", "Conversation summarization and compaction"),
   TITLE("title", "Title Generation", "Auto-generate conversation titles"),
   TRANSLATION("translation", "Translation", "Text translation between languages"),
+  RAG("rag", "RAG Embedding", "Embedding model used for document indexing and semantic search"),
   IMAGE_RECOGNITION("image", "Image Recognition", "Describe and analyze images"),
   AUDIO_RECOGNITION("audio", "Audio Recognition", "Transcribe and understand audio"),
   VIDEO_RECOGNITION("video", "Video Recognition", "Analyze video content"),
