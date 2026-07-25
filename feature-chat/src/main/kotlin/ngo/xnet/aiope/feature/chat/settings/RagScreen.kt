@@ -50,7 +50,7 @@ internal fun RagScreen(onBack: () -> Unit) {
                 val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
                     baseUrl = "https://inf.xnet.ngo/v1",
                     apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
-                    model = tc.modelId ?: "google-ai-studio/models-gemini-embedding-2"
+                    model = (tc.modelId ?: "").let { if (it.endsWith(".tflite") || it.endsWith(".litertlm") || it.isBlank()) "google-ai-studio/models-gemini-embedding-2" else it }
                 )
                 val rag = RagEngine(context) { text -> cloudEmbed.embed(text) }
                 ragEngine = rag

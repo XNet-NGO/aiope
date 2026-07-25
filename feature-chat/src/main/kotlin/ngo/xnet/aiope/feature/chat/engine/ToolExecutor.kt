@@ -47,10 +47,14 @@ class ToolExecutor(
     if (ragEngine == null) {
       // Use cloud embeddings via AIOPE Gateway (Gemini Embedding 2)
       val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.RAG)
+      // If model looks like a local file (e.g. stale config), use cloud default
+      val effectiveModel = if (modelId.endsWith(".tflite") || modelId.endsWith(".litertlm") || modelId.isBlank()) {
+        "google-ai-studio/models-gemini-embedding-2"
+      } else modelId
       val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
         baseUrl = profile.effectiveApiBase(),
         apiKey = profile.apiKey,
-        model = modelId.ifBlank { "google-ai-studio/models-gemini-embedding-2" }
+        model = effectiveModel
       )
       ragEngine = org.xnet.aiope.inference.RagEngine(app) { text -> cloudEmbed.embed(text) }
     }
