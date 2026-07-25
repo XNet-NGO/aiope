@@ -80,6 +80,7 @@ private fun TaskCard(
   providerStore: ProviderStore,
   profiles: List<ProviderProfile>,
 ) {
+  val ctx = androidx.compose.ui.platform.LocalContext.current
   var tc by remember { mutableStateOf(taskStore.getTaskConfig(task)) }
   var expanded by remember { mutableStateOf(false) }
   val assignedProfile = tc.profileId?.let { pid -> profiles.firstOrNull { it.id == pid } }
@@ -168,9 +169,17 @@ private fun TaskCard(
           // Each profile with its models
           profiles.forEach { profile ->
             var profileExpanded by remember { mutableStateOf(false) }
-            val models = providerStore.getModelCache(profile.builtinId)
-              ?: providerStore.getModelCacheStale(profile.builtinId)
-              ?: ngo.xnet.aiope.core.network.ProviderTemplates.byId[profile.builtinId]?.defaultModels ?: emptyList()
+            val models = if (profile.builtinId == "local") {
+              // List local models from filesystem
+              val modelsDir = java.io.File(ctx.filesDir, "models/local")
+              modelsDir.listFiles()?.filter { it.extension == "litertlm" || it.extension == "tflite" }
+                ?.map { ngo.xnet.aiope.core.network.ModelDef(it.name, "${it.name} (${it.length() / (1024*1024)}MB)") }
+                ?: emptyList()
+            } else {
+              providerStore.getModelCache(profile.builtinId)
+                ?: providerStore.getModelCacheStale(profile.builtinId)
+                ?: ngo.xnet.aiope.core.network.ProviderTemplates.byId[profile.builtinId]?.defaultModels ?: emptyList()
+            }
             val isProfileSelected = tc.profileId == profile.id
 
             Surface(
