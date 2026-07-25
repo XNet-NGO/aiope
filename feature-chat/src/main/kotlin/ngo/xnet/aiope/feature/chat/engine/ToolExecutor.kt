@@ -45,9 +45,14 @@ class ToolExecutor(
   private var ragEngine: org.xnet.aiope.inference.RagEngine? = null
   private fun getRagEngine(): org.xnet.aiope.inference.RagEngine {
     if (ragEngine == null) {
-      val embeddingEngine = org.xnet.aiope.inference.EmbeddingEngine(app)
-      embeddingEngine.load()
-      ragEngine = org.xnet.aiope.inference.RagEngine(app, embeddingEngine)
+      // Use cloud embeddings via AIOPE Gateway (Gemini Embedding 2)
+      val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.RAG)
+      val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
+        baseUrl = profile.effectiveApiBase(),
+        apiKey = profile.apiKey,
+        model = modelId.ifBlank { "google-ai-studio/models-gemini-embedding-2" }
+      )
+      ragEngine = org.xnet.aiope.inference.RagEngine(app) { text -> cloudEmbed.embed(text) }
     }
     return ragEngine!!
   }

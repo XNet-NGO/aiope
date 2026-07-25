@@ -70,10 +70,8 @@ class ProviderStore @Inject constructor(
         taskStore.setTaskConfig(task, ngo.xnet.aiope.core.network.TaskModelConfig(task.id, profileId, model))
       }
     }
-    // RAG uses bundled local embedding model
-    if (local != null) {
-      seed(ngo.xnet.aiope.core.network.ModelTask.RAG, local.id, "minilm_l6_v2.tflite")
-    }
+    // RAG uses cloud Gemini Embedding 2
+    seed(ngo.xnet.aiope.core.network.ModelTask.RAG, gw.id, "google-ai-studio/models-gemini-embedding-2")
     // Realtime speech
     seed(ngo.xnet.aiope.core.network.ModelTask.REALTIME_SPEECH, gw.id, "google-ai-studio/gemini-3.1-flash-live-preview")
     // Lightweight tasks use Gemma 4
