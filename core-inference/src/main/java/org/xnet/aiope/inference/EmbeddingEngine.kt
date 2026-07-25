@@ -88,16 +88,17 @@ class EmbeddingEngine(private val context: Context) {
         }
     }
 
-    /** Simple wordpiece-like tokenization (CLS + words + SEP + padding) */
+    /** Simple hash-based tokenization (CLS + words + SEP + padding) */
     private fun tokenize(text: String, maxLength: Int): IntArray {
+        val vocabSize = 30522 // BERT/MiniLM vocab size
         val tokens = IntArray(maxLength) // 0 = padding
         tokens[0] = 101 // [CLS]
         val words = text.lowercase().split(Regex("\\s+")).take(maxLength - 2)
         var pos = 1
         for (word in words) {
             if (pos >= maxLength - 1) break
-            // Simple hash-based token ID (not real wordpiece, but produces consistent embeddings for similarity)
-            tokens[pos] = (word.hashCode() and 0x7FFF) + 1000
+            // Hash to valid vocab range (avoid special tokens 0-999)
+            tokens[pos] = (word.hashCode().and(0x7FFFFFFF) % (vocabSize - 1000)) + 1000
             pos++
         }
         tokens[pos] = 102 // [SEP]
