@@ -44,15 +44,29 @@ internal fun RagScreen(onBack: () -> Unit) {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             try {
-                // Use cloud embeddings via gateway
+                // Resolve RAG embedding model from task config
                 val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(context)
                 val tc = taskStore.getTaskConfig(ngo.xnet.aiope.core.network.ModelTask.RAG)
-                val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
-                    baseUrl = "https://inf.xnet.ngo/v1",
-                    apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
-                    model = (tc.modelId ?: "").let { if (it.endsWith(".tflite") || it.endsWith(".litertlm") || it.isBlank()) "google-ai-studio/models-gemini-embedding-2" else it }
-                )
-                val rag = RagEngine(context) { text -> cloudEmbed.embed(text) }
+                val modelId = tc.modelId ?: "google-ai-studio/models-gemini-embedding-2"
+
+                val embedFn: (String) -> FloatArray? = if (modelId.endsWith(".tflite")) {
+                    // Local embedding
+                    val embeddingEngine = org.xnet.aiope.inference.EmbeddingEngine(context)
+                    embeddingEngine.load()
+                    val fn: (String) -> FloatArray? = { text -> embeddingEngine.embed(text) }
+                    fn
+                } else {
+                    // Cloud embedding
+                    val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
+                        baseUrl = "https://inf.xnet.ngo/v1",
+                        apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
+                        model = modelId
+                    )
+                    val fn: (String) -> FloatArray? = { text -> cloudEmbed.embed(text) }
+                    fn
+                }
+
+                val rag = RagEngine(context, embedFn)
                 ragEngine = rag
                 documents = rag.listDocuments()
             } catch (e: Exception) {
