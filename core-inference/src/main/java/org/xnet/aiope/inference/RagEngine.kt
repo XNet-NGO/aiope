@@ -62,6 +62,28 @@ class RagEngine(context: Context, private val embedFn: (String) -> FloatArray?) 
         db.delete("documents", null, null)
     }
 
+    /** Re-generate embeddings for all chunks using the current embedding model */
+    fun reindexAll() {
+        // Clear old embeddings
+        db.delete("embeddings", null, null)
+        // Re-embed all chunks
+        val cursor = db.rawQuery("SELECT id, text FROM chunks", null)
+        cursor.use {
+            while (it.moveToNext()) {
+                val chunkId = it.getString(0)
+                val text = it.getString(1)
+                val embedding = embedFn(text)
+                if (embedding != null) {
+                    db.insert("embeddings", null, ContentValues().apply {
+                        put("chunk_id", chunkId)
+                        put("embedding", encodeFloats(embedding))
+                        put("dims", embedding.size)
+                    })
+                }
+            }
+        }
+    }
+
     data class DocumentInfo(
         val id: String,
         val title: String,

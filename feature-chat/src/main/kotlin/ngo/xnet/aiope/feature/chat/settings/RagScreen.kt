@@ -11,6 +11,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -152,6 +154,27 @@ internal fun RagScreen(onBack: () -> Unit) {
                         Icon(Icons.Default.Add, "Upload document")
                     }
                     if (documents.isNotEmpty()) {
+                        IconButton(onClick = {
+                            // Reindex all documents with current embedding model
+                            indexing = true
+                            status = "Re-indexing all documents..."
+                            scope.launch(Dispatchers.IO) {
+                                try {
+                                    ragEngine?.reindexAll()
+                                    withContext(Dispatchers.Main) {
+                                        status = "Re-indexed ${documents.size} documents"
+                                        indexing = false
+                                    }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        status = "Re-index error: ${e.message?.take(40)}"
+                                        indexing = false
+                                    }
+                                }
+                            }
+                        }, enabled = !indexing) {
+                            Icon(Icons.Default.Refresh, "Re-index all")
+                        }
                         IconButton(onClick = { showDeleteAllDialog = true }) {
                             Icon(Icons.Default.Delete, "Delete all")
                         }
@@ -165,6 +188,69 @@ internal fun RagScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .padding(pad)
         ) {
+            // Search bar
+            var searchQuery by remember { mutableStateOf("") }
+            var searchResults by remember { mutableStateOf<List<org.xnet.aiope.inference.RagEngine.SearchResult>>(emptyList()) }
+            var searching by remember { mutableStateOf(false) }
+
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Search knowledge base") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                )
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = {
+                        if (searchQuery.isNotBlank() && ragEngine != null) {
+                            searching = true
+                            scope.launch(Dispatchers.IO) {
+                                val results = ragEngine!!.search(searchQuery, topK = 5)
+                                withContext(Dispatchers.Main) {
+                                    searchResults = results
+                                    searching = false
+                                    status = if (results.isEmpty()) "No results" else "${results.size} results"
+                                }
+                            }
+                        }
+                    },
+                    enabled = !searching && searchQuery.isNotBlank()
+                ) {
+                    Icon(Icons.Default.Search, "Search")
+                }
+            }
+
+            // Search results
+            if (searchResults.isNotEmpty()) {
+                LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                    item {
+                        Text("Search Results", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                    }
+                    items(searchResults.size) { i ->
+                        val r = searchResults[i]
+                        Card(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text("[${String.format("%.2f", r.score)}] ${r.title}", style = MaterialTheme.typography.labelMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                Spacer(Modifier.height(4.dp))
+                                Text(r.text.take(300), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    item {
+                        TextButton(onClick = { searchResults = emptyList() }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                            Text("Clear results")
+                        }
+                    }
+                }
+            } else {
             // Status bar
             if (status.isNotBlank()) {
                 Surface(
@@ -241,6 +327,7 @@ internal fun RagScreen(onBack: () -> Unit) {
                     }
                 }
             }
+            } // end else (no search results)
         }
     }
 }
