@@ -1308,9 +1308,14 @@ $remoteCtx"""
     val modePrefix = _agentMode.value.systemPrefix
     val prompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
     val remoteCtx = remoteToolBridge.buildSystemContext()
+    val ragInstruction = """
+## Knowledge Base (RAG)
+You have access to a local knowledge base via the `rag_search` tool. ALWAYS search the knowledge base FIRST before using other tools (search_web, fetch_url, etc.) when the user asks a question that might be answered by indexed documents. Only use web search if RAG returns no relevant results.
+When RAG returns results, cite them naturally in your response.""".trimIndent()
     val parts = listOfNotNull(
       modePrefix.takeIf { it.isNotBlank() },
       prompt.takeIf { it.isNotBlank() },
+      ragInstruction,
       remoteCtx.takeIf { it.isNotBlank() },
     )
     val full = parts.joinToString("\n\n")
