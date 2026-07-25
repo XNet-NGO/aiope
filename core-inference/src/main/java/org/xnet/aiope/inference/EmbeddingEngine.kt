@@ -33,6 +33,18 @@ class EmbeddingEngine(private val context: Context) {
             if (interpreter != null) return true
             val options = Interpreter.Options().setNumThreads(4)
             interpreter = Interpreter(modelFile, options)
+            val interp = interpreter!!
+            val inputCount = interp.inputTensorCount
+            val outputCount = interp.outputTensorCount
+            android.util.Log.i("EmbeddingEngine", "Model loaded: inputs=$inputCount outputs=$outputCount")
+            for (i in 0 until inputCount) {
+                val t = interp.getInputTensor(i)
+                android.util.Log.i("EmbeddingEngine", "  input[$i]: ${t.name()} shape=${t.shape().contentToString()} type=${t.dataType()}")
+            }
+            for (i in 0 until outputCount) {
+                val t = interp.getOutputTensor(i)
+                android.util.Log.i("EmbeddingEngine", "  output[$i]: ${t.name()} shape=${t.shape().contentToString()} type=${t.dataType()}")
+            }
             true
         } catch (e: Exception) {
             android.util.Log.e("EmbeddingEngine", "Load failed: ${e.message}", e)
@@ -46,15 +58,22 @@ class EmbeddingEngine(private val context: Context) {
         interp ?: return null
 
         return try {
-            // Tokenize: simple whitespace tokenization with padding/truncation to 128 tokens
-            val tokens = tokenize(text, maxLength = 128)
-            val inputIds = Array(1) { IntArray(128) { tokens[it] } }
-            val attentionMask = Array(1) { IntArray(128) { if (tokens[it] != 0) 1 else 0 } }
-            val tokenTypeIds = Array(1) { IntArray(128) }
+            val maxLength = 128
+            val tokens = tokenize(text, maxLength)
+            val seqLen = tokens.indexOfFirst { it == 0 }.let { if (it == -1) maxLength else it }
+
+            // Resize inputs to actual sequence length
+            interp.resizeInput(0, intArrayOf(1, seqLen))
+            interp.resizeInput(1, intArrayOf(1, seqLen))
+            interp.allocateTensors()
+
+            // input[0] = input_ids, input[1] = attention_mask
+            val inputIds = Array(1) { IntArray(seqLen) { tokens[it] } }
+            val attentionMask = Array(1) { IntArray(seqLen) { 1 } }
 
             // Run inference — output shape is [1, 384]
             val output = Array(1) { FloatArray(384) }
-            val inputs = arrayOf<Any>(inputIds, attentionMask, tokenTypeIds)
+            val inputs = arrayOf<Any>(inputIds, attentionMask)
             val outputs = mutableMapOf<Int, Any>(0 to output)
             interp.runForMultipleInputsOutputs(inputs, outputs)
 
