@@ -89,7 +89,7 @@ class ProviderStore @Inject constructor(
       label = "AIOPE Gateway",
       apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
       apiBase = "https://inf.xnet.ngo/v1",
-      selectedModelId = "openrouter/openrouter-free",
+      selectedModelId = "google-ai-studio/models-gemma-4-31b-it",
       isActive = true,
       modelConfigs = mapOf(
         mc("cline/minimax-minimax-m2.5", tools = true, ctx = 200_000),
@@ -151,7 +151,7 @@ class ProviderStore @Inject constructor(
   fun getActive(): ProviderProfile = runBlocking(Dispatchers.IO) {
     dao.getActiveProvider()?.let { runCatching { ProviderProfile.fromJson(JSONObject(it.json)) }.getOrNull() }
   } ?: getAll().firstOrNull()
-    ?: ProviderProfile(builtinId = "aiope_gateway", label = "AIOPE Gateway", apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY, selectedModelId = "openrouter/openrouter-free")
+    ?: ProviderProfile(builtinId = "aiope_gateway", label = "AIOPE Gateway", apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY, selectedModelId = "google-ai-studio/models-gemma-4-31b-it")
 
   fun getById(id: String): ProviderProfile? = getAll().firstOrNull { it.id == id }
 
