@@ -61,8 +61,26 @@ class ProviderStore @Inject constructor(
   }
 
   private fun seedTaskDefaults() {
-    // All tasks default to active profile (no hardcoded overrides)
-    // Users can assign specific models per task in Settings > Default Models per Task
+    // Seed specific task assignments only on fresh install
+    val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(ctx)
+    val gw = getAll().firstOrNull { it.builtinId == "aiope_gateway" } ?: return
+    val local = getAll().firstOrNull { it.builtinId == "local" }
+    fun seed(task: ngo.xnet.aiope.core.network.ModelTask, profileId: String, model: String) {
+      if (taskStore.getTaskConfig(task).profileId == null) {
+        taskStore.setTaskConfig(task, ngo.xnet.aiope.core.network.TaskModelConfig(task.id, profileId, model))
+      }
+    }
+    // RAG uses bundled local embedding model
+    if (local != null) {
+      seed(ngo.xnet.aiope.core.network.ModelTask.RAG, local.id, "minilm_l6_v2.tflite")
+    }
+    // Realtime speech
+    seed(ngo.xnet.aiope.core.network.ModelTask.REALTIME_SPEECH, gw.id, "google-ai-studio/gemini-3.1-flash-live-preview")
+    // Lightweight tasks use Gemma 4
+    seed(ngo.xnet.aiope.core.network.ModelTask.SUMMARY, gw.id, "google-ai-studio/models-gemma-4-26b-a4b-it")
+    seed(ngo.xnet.aiope.core.network.ModelTask.TRANSLATION, gw.id, "google-ai-studio/models-gemma-4-26b-a4b-it")
+    seed(ngo.xnet.aiope.core.network.ModelTask.TITLE, gw.id, "google-ai-studio/models-gemma-4-26b-a4b-it")
+    // All others default to active profile (no override)
   }
 
   private fun seedDefault() {
