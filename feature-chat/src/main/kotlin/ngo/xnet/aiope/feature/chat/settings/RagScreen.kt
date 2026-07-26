@@ -244,7 +244,9 @@ internal fun RagScreen(onBack: () -> Unit) {
                             Column(Modifier.padding(12.dp)) {
                                 Text("[${String.format("%.2f", r.score)}] ${r.title}", style = MaterialTheme.typography.labelMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                                 Spacer(Modifier.height(4.dp))
-                                Text(r.text.take(300), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                androidx.compose.foundation.text.selection.SelectionContainer {
+                                    Text(r.text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                         }
                     }
