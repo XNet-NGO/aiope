@@ -48,13 +48,11 @@ class ProviderStore @Inject constructor(
         taskStore.setTaskConfig(task, ngo.xnet.aiope.core.network.TaskModelConfig(task.id, gw.id, model))
       }
     }
-    seed(ngo.xnet.aiope.core.network.ModelTask.SUMMARY, "pollinations-pollen/llama-scout")
-    seed(ngo.xnet.aiope.core.network.ModelTask.TITLE, "pollinations-pollen/nova-fast")
-    seed(ngo.xnet.aiope.core.network.ModelTask.TRANSLATION, "pollinations-pollen/nova-fast")
-    seed(ngo.xnet.aiope.core.network.ModelTask.IMAGE_RECOGNITION, "google-ai-studio/models-gemma-4-26b-a4b-it")
-    seed(ngo.xnet.aiope.core.network.ModelTask.SUBAGENT, "google-ai-studio/models-gemma-4-26b-a4b-it")
-    seed(ngo.xnet.aiope.core.network.ModelTask.IMAGE_GENERATION, "pollinations-pollen/flux")
+    seed(ngo.xnet.aiope.core.network.ModelTask.RAG, "google-ai-studio/models-gemini-embedding-2")
     seed(ngo.xnet.aiope.core.network.ModelTask.REALTIME_SPEECH, "google-ai-studio/gemini-3.1-flash-live-preview")
+    seed(ngo.xnet.aiope.core.network.ModelTask.SUMMARY, "google-ai-studio/models-gemma-4-26b-a4b-it")
+    seed(ngo.xnet.aiope.core.network.ModelTask.TRANSLATION, "google-ai-studio/models-gemma-4-26b-a4b-it")
+    seed(ngo.xnet.aiope.core.network.ModelTask.TITLE, "google-ai-studio/models-gemma-4-26b-a4b-it")
   }
 
   private fun seedDefault() {
