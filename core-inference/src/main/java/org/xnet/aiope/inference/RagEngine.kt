@@ -9,9 +9,9 @@ import java.nio.ByteOrder
 import kotlin.math.sqrt
 
 /**
- * On-device RAG engine using llama.cpp for embeddings and SQLite for vector storage.
+ * On-device RAG engine using LiteRT or cloud API for embeddings and SQLite for vector storage.
  */
-class RagEngine(context: Context, private val engine: LlamaEngine) {
+class RagEngine(context: Context, private val embedFn: (String) -> FloatArray?) {
 
     private val db = RagDatabase(context).writableDatabase
 
@@ -37,7 +37,7 @@ class RagEngine(context: Context, private val engine: LlamaEngine) {
                 put("text", text)
             })
 
-            val embedding = engine.embed(text)
+            val embedding = embedFn(text)
             if (embedding != null) {
                 db.insert("embeddings", null, ContentValues().apply {
                     put("chunk_id", chunkId)
@@ -60,6 +60,28 @@ class RagEngine(context: Context, private val engine: LlamaEngine) {
         db.delete("embeddings", null, null)
         db.delete("chunks", null, null)
         db.delete("documents", null, null)
+    }
+
+    /** Re-generate embeddings for all chunks using the current embedding model */
+    fun reindexAll() {
+        // Clear old embeddings
+        db.delete("embeddings", null, null)
+        // Re-embed all chunks
+        val cursor = db.rawQuery("SELECT id, text FROM chunks", null)
+        cursor.use {
+            while (it.moveToNext()) {
+                val chunkId = it.getString(0)
+                val text = it.getString(1)
+                val embedding = embedFn(text)
+                if (embedding != null) {
+                    db.insert("embeddings", null, ContentValues().apply {
+                        put("chunk_id", chunkId)
+                        put("embedding", encodeFloats(embedding))
+                        put("dims", embedding.size)
+                    })
+                }
+            }
+        }
     }
 
     data class DocumentInfo(
@@ -103,7 +125,22 @@ class RagEngine(context: Context, private val engine: LlamaEngine) {
     )
 
     fun search(query: String, topK: Int = 5): List<SearchResult> {
-        val queryEmbedding = engine.embed(query) ?: return emptyList()
+        val queryEmbedding = embedFn(query) ?: return emptyList()
+
+        // Check if stored embeddings match current model dimensions
+        val dimsCursor = db.rawQuery("SELECT dims FROM embeddings LIMIT 1", null)
+        if (dimsCursor.moveToFirst()) {
+            val storedDims = dimsCursor.getInt(0)
+            dimsCursor.close()
+            if (storedDims != queryEmbedding.size) {
+                // Dimensions mismatch — old embeddings are incompatible
+                android.util.Log.w("RagEngine", "Embedding dimension mismatch: stored=$storedDims current=${queryEmbedding.size}. Re-index required.")
+                db.delete("embeddings", null, null)
+                return emptyList()
+            }
+        } else {
+            dimsCursor.close()
+        }
 
         val results = mutableListOf<SearchResult>()
 

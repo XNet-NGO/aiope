@@ -46,13 +46,6 @@ class ChatViewModel @Inject constructor(
   private fun isOnline(): Boolean =
     connectivityManager?.activeNetwork?.let { connectivityManager.getNetworkCapabilities(it)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) } ?: false
 
-  private var localChatEngine: org.xnet.aiope.inference.LocalChatEngine? = null
-  private fun getLocalChatEngine(): org.xnet.aiope.inference.LocalChatEngine {
-    if (localChatEngine == null) {
-      localChatEngine = org.xnet.aiope.inference.LocalChatEngine(getApplication())
-    }
-    return localChatEngine!!
-  }
 
   private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
   val messages = _messages.asStateFlow()
@@ -452,7 +445,7 @@ class ChatViewModel @Inject constructor(
 
         // Try local model first
         val localResult = try {
-          getLocalChatEngine().translate(msg.content, language)
+          null
         } catch (_: Exception) { null }
 
         if (localResult != null) {
@@ -502,7 +495,7 @@ class ChatViewModel @Inject constructor(
       try {
         // Try local model first
         val localTitle = try {
-          getLocalChatEngine().generateTitle(firstMessage)
+          null
         } catch (_: Exception) { null }
 
         if (localTitle != null) {

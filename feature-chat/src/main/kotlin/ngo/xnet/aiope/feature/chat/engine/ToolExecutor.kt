@@ -45,17 +45,15 @@ class ToolExecutor(
   private var ragEngine: org.xnet.aiope.inference.RagEngine? = null
   private fun getRagEngine(): org.xnet.aiope.inference.RagEngine {
     if (ragEngine == null) {
-      val engine = org.xnet.aiope.inference.LlamaEngine()
-      // Copy model from assets to internal storage if not already there
-      val modelFile = java.io.File(app.filesDir, "models/all-MiniLM-L6-v2-Q4_K_M.gguf")
-      if (!modelFile.exists()) {
-        modelFile.parentFile?.mkdirs()
-        app.assets.open("models/all-MiniLM-L6-v2-Q4_K_M.gguf").use { input ->
-          modelFile.outputStream().use { output -> input.copyTo(output) }
-        }
-      }
-      engine.loadModel(modelFile.absolutePath, contextSize = 256, nThreads = 4, embedding = true)
-      ragEngine = org.xnet.aiope.inference.RagEngine(app, engine)
+      val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.RAG)
+      val effectiveModel = modelId.ifBlank { "google-ai-studio/models-gemini-embedding-2" }
+      val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
+        baseUrl = profile.effectiveApiBase(),
+        apiKey = profile.apiKey,
+        model = effectiveModel
+      )
+      val embedFn: (String) -> FloatArray? = { text -> cloudEmbed.embed(text) }
+      ragEngine = org.xnet.aiope.inference.RagEngine(app, embedFn)
     }
     return ragEngine!!
   }
@@ -513,7 +511,7 @@ class ToolExecutor(
         try {
           val results = getRagEngine().search(query, topK)
           if (results.isEmpty()) "No results found in knowledge base."
-          else results.joinToString("\n\n") { "[${String.format("%.2f", it.score)}] ${it.title}\n${it.text.take(300)}" }
+          else results.joinToString("\n\n") { "[${String.format("%.2f", it.score)}] ${it.title}\n${it.text}" }
         } catch (e: Exception) { "RAG error: ${e.message}" }
       }
 
