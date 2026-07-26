@@ -91,7 +91,7 @@ class StreamingOrchestrator(
     }
 
     var firstRequest = true
-    var maxRounds = 140
+    var maxRounds = 40
 
     while (maxRounds-- > 0) {
       if (!firstRequest) {
