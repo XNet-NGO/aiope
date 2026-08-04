@@ -117,13 +117,24 @@ class AgentExecutor(
         // Capture tool results as fallback if agent never produces final text
         if (!chunk.toolResults.isNullOrEmpty()) {
           chunk.toolResults.forEach { tr ->
-            toolLog.append("[${tr.name}]: ${tr.result.take(500)}\n")
+            toolLog.append("[${tr.name}]: ${tr.result.take(2000)}\n")
           }
         }
         if (sb.length > 200) updateStage(task.id, Stage.SUMMARIZING)
       }
 
-      val result = sb.toString().ifEmpty { toolLog.toString().ifEmpty { "(agent completed with no output)" } }
+      val result = sb.toString().ifEmpty {
+        val log = toolLog.toString()
+        if (log.isBlank()) "(agent completed with no output)"
+        else {
+          // Extract markdown images from tool results so they render properly
+          val images = Regex("""!\[[^\]]*]\([^)]+\)""").findAll(log).map { it.value }.distinct().take(20).toList()
+          val textContent = log.replace(Regex("""\[(search_web|search_images|fetch_url|read_file|list_directory|query_data|ssh_exec|ssh_start)]:"""), "•")
+          val imageBlock = if (images.isNotEmpty()) images.joinToString("\n") + "\n\n" else ""
+          val cleanText = textContent.replace(Regex("""!\[[^\]]*]\([^)]+\)"""), "").replace(Regex("\n{3,}"), "\n\n").trim()
+          imageBlock + cleanText.take(3000)
+        }
+      }
       updateTask(task.id) { it.copy(stage = Stage.FINISHED, result = result) }
       dao?.updateAgentTask(task.id, "finished", result, System.currentTimeMillis())
       "<task_result>\n$result\n</task_result>"
