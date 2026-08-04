@@ -1079,7 +1079,7 @@ class ChatViewModel @Inject constructor(
           val envContext = """
 
 ## Environment
-- Date/Time: ${java.time.LocalDateTime.now()}
+- Date/Time: ${java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z"))}
 - Platform: Android (AIOPE agent system)
 - Agent: ${agent?.name ?: "default"}
 
@@ -1116,10 +1116,12 @@ $remoteCtx"""
     val modePrefix = _agentMode.value.systemPrefix
     val prompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
     val remoteCtx = remoteToolBridge.buildSystemContext()
+    val dateTime = "## Current Date & Time\n${java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z"))}"
     val ragInstruction = "## Knowledge Base\nYou have a local knowledge base via `rag_search`. ALWAYS search it FIRST before using search_web or fetch_url when the user asks a question that might be answered by indexed documents. Only use web search if RAG returns no relevant results."
     val parts = listOfNotNull(
       modePrefix.takeIf { it.isNotBlank() },
       prompt.takeIf { it.isNotBlank() },
+      dateTime,
       ragInstruction,
       remoteCtx.takeIf { it.isNotBlank() },
     )
