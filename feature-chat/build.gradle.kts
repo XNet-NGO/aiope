@@ -51,7 +51,7 @@ dependencies {
   implementation("com.google.android.gms:play-services-location:21.4.0")
 
   // maps
-  implementation("org.ramani-maps:ramani-maplibre:0.10.0")
+  implementation("org.ramani-maps:ramani-maplibre:0.13.0")
   implementation("com.caverock:androidsvg-aar:1.4")
 
   // room

@@ -14,9 +14,14 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import org.ramani.compose.CameraPosition
+import org.ramani.compose.CameraPositionState
+import org.ramani.compose.LatLng
 import org.ramani.compose.MapLibre
+import org.ramani.compose.MapStyle
 import org.ramani.compose.Symbol
 import org.ramani.compose.UiSettings
+import org.ramani.compose.rememberCameraPositionState
+import org.ramani.compose.rememberCenterState
 
 @Composable
 fun LocationCard(latitude: Double, longitude: Double, altitude: Double? = null, speed: Double? = null, bearing: Double? = null, accuracy: Double? = null) {
@@ -51,11 +56,14 @@ fun LocationCard(latitude: Double, longitude: Double, altitude: Double? = null, 
 
 @Composable
 private fun MapContent(latitude: Double, longitude: Double) {
-  val initialPos = remember(latitude, longitude) {
-    CameraPosition(target = org.maplibre.android.geometry.LatLng(latitude, longitude), zoom = 15.5)
-  }
+  val cameraPositionState = rememberCameraPositionState(
+    init = CameraPosition(
+      target = LatLng(latitude, longitude),
+      zoom = 15.5,
+    ),
+  )
   val style = remember {
-    org.maplibre.android.maps.Style.Builder().fromUri("https://tiles.openfreemap.org/styles/liberty")
+    MapStyle.Uri("https://tiles.openfreemap.org/styles/liberty")
   }
   val ui = remember {
     UiSettings(
@@ -71,10 +79,10 @@ private fun MapContent(latitude: Double, longitude: Double) {
   }
   MapLibre(
     modifier = Modifier.fillMaxSize(),
-    styleBuilder = style,
-    cameraPosition = initialPos,
+    style = style,
+    cameraPositionState = cameraPositionState,
     uiSettings = ui,
   ) {
-    Symbol(center = org.maplibre.android.geometry.LatLng(latitude, longitude), color = "Red", size = 1.4f)
+    Symbol(centerState = rememberCenterState(center = LatLng(latitude, longitude)), color = "Red", size = 1.4f)
   }
 }
