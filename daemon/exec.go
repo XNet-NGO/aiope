@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"syscall"
 
 	"github.com/charmbracelet/log"
@@ -18,15 +17,13 @@ import (
 func ExecMiddleware(tracker *ProcessTracker) wish.Middleware {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(sess ssh.Session) {
-			cmd := sess.Command()
+			cmdStr := sess.RawCommand()
 
 			// No command — interactive PTY shell
-			if len(cmd) == 0 {
+			if cmdStr == "" {
 				handlePTY(sess, tracker)
 				return
 			}
-
-			cmdStr := strings.Join(cmd, " ")
 
 			// Health check command
 			if cmdStr == "__aiope_health__" {
