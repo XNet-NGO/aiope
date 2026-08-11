@@ -42,12 +42,13 @@ Different tasks route to different models automatically:
 |---|---|
 | Chat (primary) | Gemma 4 31B IT (256K context) |
 | Realtime Voice | Gemini 3.1 Flash Live Preview |
-| Subagent | Gemma 4 26B A4B (MoE, 4B active) |
-| Summary | Llama 4 Scout (Pollinations) |
-| Title generation | Nova Fast (Pollinations) |
-| Translation | Nova Fast (Pollinations) |
-| Image recognition | Gemma 4 26B A4B |
-| Image generation | Flux (Pollinations) |
+| Subagent | Gemma 4 31B IT |
+| Summary | Gemma 4 31B IT |
+| Title generation | Gemma 4 26B A4B (MoE) |
+| Translation | Gemma 4 26B A4B (MoE) |
+| Image recognition | Gemma 4 26B A4B (MoE) |
+| Image generation | Flux 1 Schnell (Cloudflare) |
+| RAG Embedding | Gemini Embedding 2 |
 
 All configurable. Any model on any provider for any task.
 
