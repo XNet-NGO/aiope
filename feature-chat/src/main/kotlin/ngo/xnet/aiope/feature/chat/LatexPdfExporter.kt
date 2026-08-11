@@ -100,6 +100,7 @@ object LatexPdfExporter {
       Handler(Looper.getMainLooper()).postDelayed(doPrint, 12_000)
     } catch (t: Throwable) {
       cleanup(webView, host)
+      printed.set(true) // Prevent delayed callbacks from firing print
       Toast.makeText(activity, "PDF export failed: ${t.message}", Toast.LENGTH_LONG).show()
     }
   }
