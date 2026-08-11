@@ -146,7 +146,7 @@ class ToolExecutor(
   suspend fun execute(name: String, args: Map<String, Any?>): String {
     if (!toolStore.isToolEnabled(name)) return "Tool '$name' is disabled."
     if (name in destructiveTools && getAgentMode() == AgentMode.CHAT) {
-      return "⚠️ Tool '$name' is destructive and blocked in Chat mode. The user must switch to Build mode or enable Auto-Run to allow this action."
+      return "⚠️ Tool '$name' is destructive and blocked in Chat mode. The user must switch to Build mode to allow this action."
     }
     return when (name) {
       "run_sh" -> {
