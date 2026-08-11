@@ -113,7 +113,7 @@ object LatexPdfExporter {
 
         override fun onWrite(
           attributes: PrintAttributes?,
-          pages: Array<PageRange>?,
+          pages: List<PageRange>?,
           dest: ParcelFileDescriptor?,
           callback: PrintDocumentAdapter.WriteResultCallback?,
         ) = delegate.onWrite(attributes, pages, dest, callback)
