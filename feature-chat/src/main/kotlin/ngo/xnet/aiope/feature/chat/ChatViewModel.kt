@@ -855,25 +855,47 @@ class ChatViewModel @Inject constructor(
     val msgs = _messages.value
     val totalTokens = msgs.sumOf { TokenCounter.count(it.content, mc.modelId) }
     val threshold = mc.contextTokens * 95 / 100 // 95% of token limit
-    if (totalTokens > threshold && msgs.size > 2) {
-      // Compact first half of conversation
-      compact(msgs.size / 2)
+    if (totalTokens > threshold && msgs.size > 4) {
+      // Compact everything except the last 3 messages (preserves live conversational tail)
+      compact(msgs.size - 4)
     }
   }
 
   fun compact(atIndex: Int) {
     val msgs = _messages.value
-    if (atIndex < 1) return
-    val toCompact = msgs.take(atIndex + 1)
+    if (atIndex < 1 || msgs.size < 4) return
+    // Keep the last 3 messages intact - only compact up to that point
+    val idx = minOf(atIndex, msgs.size - 4)
+    val toCompact = msgs.take(idx + 1)
     val transcript = toCompact.joinToString("\n") { "[${it.role.value}] ${it.content.take(2000)}" }
-    val remaining = msgs.drop(atIndex + 1)
+    val remaining = msgs.drop(idx + 1)
 
     cancelStreaming()
     streamingJob = viewModelScope.launch(Dispatchers.IO) {
       _isStreaming.value = true
       try {
         val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.SUMMARY)
-        val prompt = "Summarize this conversation concisely, preserving all key context needed to continue. Start with [Summary].\n\n$transcript"
+        val prompt = """
+You are compressing a conversation so an AI assistant can continue it seamlessly.
+The transcript below is the EARLIER part of the conversation. The conversation continues
+in the most recent messages, which you must NOT summarize.
+
+Produce a compact summary with these sections (omit empty ones):
+- CONTEXT: project, goal, and current situation
+- DECISIONS: every decision made, with brief rationale
+- FACTS: exact paths, versions, URLs, model names, commands, IDs, and numbers - preserve these verbatim, never paraphrase them
+- TASKS: what is done, what is in progress, what is next
+- PREFERENCES: user rules, constraints, and style requirements
+- OPEN: unresolved questions or threads
+
+Rules:
+- Preserve exact strings for paths, commands, URLs, model names, and numbers
+- Keep the summary under 800 words
+- Output only the summary sections, no preamble
+
+TRANSCRIPT:
+$transcript
+""".trimIndent()
         val orchestrator = StreamingOrchestrator(
           baseUrl = profile.effectiveApiBase(),
           apiKey = profile.apiKey,
