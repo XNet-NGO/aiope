@@ -21,6 +21,8 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.rememberAsyncImagePainter
 
+private const val MAX_VIDEO_BACKGROUND_FPS = 25f
+
 @Composable
 fun ChatBackground(theme: ThemeState, modifier: Modifier = Modifier) {
   if (!theme.useBackground || theme.backgroundUri.isNullOrBlank()) return
@@ -60,6 +62,7 @@ private fun VideoBackground(uri: String, opacity: Float, muted: Boolean, loop: B
   val ctx = LocalContext.current
   val player = remember {
     ExoPlayer.Builder(ctx)
+      .setRenderersFactory(FpsCappedRenderersFactory(ctx, MAX_VIDEO_BACKGROUND_FPS))
       .setLoadControl(
         DefaultLoadControl.Builder()
           .setBufferDurationsMs(5000, 10000, 500, 1000)
