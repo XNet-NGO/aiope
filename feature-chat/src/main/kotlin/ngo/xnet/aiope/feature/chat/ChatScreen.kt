@@ -56,7 +56,9 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
   val isLandscape = config.screenWidthDp > config.screenHeightDp
   var showModelPicker by remember { mutableStateOf(false) }
   var showConversations by remember { mutableStateOf(false) }
+  var showShareSheet by remember { mutableStateOf(false) }
   var editText by remember { mutableStateOf("") }
+  val context = androidx.compose.ui.platform.LocalContext.current
 
   @OptIn(ExperimentalLayoutApi::class)
   val imeVisible = WindowInsets.isImeVisible
@@ -82,7 +84,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
           onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
           onSwitchModel = { viewModel.switchModel(it) },
           onChats = { showConversations = true },
-          onShareChat = { viewModel.shareConversation() },
+          onShareChat = { showShareSheet = true },
           onEditMessage = { text, idx ->
             viewModel.truncateAt(idx)
             editText = text
@@ -144,7 +146,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
           onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
           onSwitchModel = { viewModel.switchModel(it) },
           onChats = { showConversations = true },
-          onShareChat = { viewModel.shareConversation() },
+          onShareChat = { showShareSheet = true },
           onEditMessage = { text, idx ->
             viewModel.truncateAt(idx)
             editText = text
@@ -189,6 +191,16 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
   }
 
   if (showConversations) ConversationSheet(viewModel, onDismiss = { showConversations = false })
+
+  if (showShareSheet) {
+    ShareFormatSheet(
+      onDismissRequest = { showShareSheet = false },
+      onFormatSelected = { format ->
+        showShareSheet = false
+        viewModel.shareConversation(format, context)
+      }
+    )
+  }
 }
 
 // ── Main chat content ──
