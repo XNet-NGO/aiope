@@ -120,7 +120,11 @@ object LatexPdfExporter {
         ) = delegate.onWrite(attributes, pages, dest, callback)
 
         override fun onFinish() {
-          try { delegate.onFinish() } catch (_: Throwable) {}
+          try { 
+            delegate.onFinish() 
+          } catch (t: Throwable) {
+            Toast.makeText(activity, "Print may have failed: ${t.message}", Toast.LENGTH_SHORT).show()
+          }
           cleanup(webView, host)
         }
 
