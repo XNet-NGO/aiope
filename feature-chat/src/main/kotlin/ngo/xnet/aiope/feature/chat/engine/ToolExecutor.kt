@@ -66,13 +66,13 @@ class ToolExecutor(
     td("list_directory", "List directory", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
     td("get_location", "Get the device's current GPS location. Call this FIRST when the user asks about nearby places or 'closest' anything, then use the coordinates with search_location.", """{"type":"object","properties":{}}"""),
     td("open_intent", "Open a URL, app, or navigation intent from the device. Use for opening maps, web pages, dialing, etc. Examples: 'https://google.com', 'geo:43.6,-116.3', 'google.navigation:q=123+Main+St', 'tel:5551234567'", """{"type":"object","properties":{"uri":{"type":"string","description":"URI to open. Supports https://, geo:, google.navigation:q=, tel:, mailto:, etc."}},"required":["uri"]}"""),
-    td("fetch_url", "Fetch a URL. Returns extracted text and any images found as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them to the user.", """{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text+images from HTML"}},"required":["url"]}"""),
+    td("fetch_url", "Fetch a URL. Returns extracted text and any images found as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them to the user.", """{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text+images from HTML"},"offset":{"type":"integer","description":"Character offset to start reading from for pagination"},"limit":{"type":"integer","description":"Maximum number of characters to return"}},"required":["url"]}"""),
     td("query_data", "Query live real-time data. Returns JSON and any images as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them. Automatically uses device GPS for location-based queries. Pass 'extra' for searches (nasa_media, nasa_tech) or station IDs (tides, ocean_temp) or breed IDs (cat_breed). Available categories: ${fetchDataCategories()}", """{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query, station ID, or breed ID depending on category"}},"required":["category"]}"""),
     td("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", """{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}"""),
     td("search_web", "Search the web for current information, news, answers, or any topic. Returns results with titles, URLs, and snippets. Use when the user asks about recent events, facts you're unsure of, or anything requiring up-to-date information.", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}"""),
     td("search_images", "Search for images on the web. Returns image URLs with titles. Use when the user asks to find photos, pictures, or images of something.", """{"type":"object","properties":{"query":{"type":"string","description":"Image search query"}},"required":["query"]}"""),
     td("browser_navigate", "Navigate the in-app browser to a URL. Opens a real WebView you can then interact with via browser_click, browser_fill, browser_eval, browser_content, browser_elements.", """{"type":"object","properties":{"url":{"type":"string","description":"URL to navigate to"}},"required":["url"]}"""),
-    td("browser_content", "Get the current page text content, URL, and title from the in-app browser.", """{"type":"object","properties":{}}"""),
+    td("browser_content", "Get the current page text content, URL, and title from the in-app browser.", """{"type":"object","properties":{"offset":{"type":"integer","description":"Character offset to start reading from for pagination"},"limit":{"type":"integer","description":"Maximum number of characters to return"}},"required":[]}"""),
     td("browser_elements", "List all interactive elements (links, buttons, inputs) on the current browser page with their selectors.", """{"type":"object","properties":{}}"""),
     td("browser_click", "Click an element in the browser by CSS selector. IMPORTANT: Call browser_elements first to discover available selectors before clicking.", """{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of element to click"}},"required":["selector"]}"""),
     td("browser_fill", "Fill an input field in the browser by CSS selector. IMPORTANT: Call browser_elements first to discover available selectors before filling.", """{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of input element"},"value":{"type":"string","description":"Text to fill"}},"required":["selector","value"]}"""),
@@ -212,7 +212,7 @@ class ToolExecutor(
 
       "browser_navigate" -> getBrowser().navigate(args["url"]?.toString() ?: "")
 
-      "browser_content" -> getBrowser().getPageContent()
+      "browser_content" -> getBrowser().getPageContent((args["offset"] as? Number)?.toInt() ?: 0, (args["limit"] as? Number)?.toInt())
 
       "browser_elements" -> getBrowser().getElements()
 
@@ -576,7 +576,18 @@ class ToolExecutor(
       val text = android.text.Html.fromHtml(cleaned, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
       (if (imgs.isNotEmpty()) imgs.distinct().take(20).joinToString("\n") + "\n\n" else "") + text
     }
-    if (result.length > fetchLimit) result.take(fetchLimit) + "\n...(truncated)" else result
+    val offset = (args["offset"] as? Number)?.toInt() ?: 0
+    val limit = (args["limit"] as? Number)?.toInt()
+
+    val safeOffset = offset.coerceIn(0, result.length)
+    val actualLimit = limit ?: result.length
+    val end = (safeOffset + actualLimit).coerceAtMost(result.length)
+
+    var trimmed = result.substring(safeOffset, end)
+    if (end < result.length) {
+       trimmed += "\n...(truncated. Use offset=${end} to read more)"
+    }
+    "Content Length: ${result.length}\nShowing: $safeOffset to $end\n\n$trimmed"
   } catch (e: Exception) {
     "Error: ${e.message}"
   }
