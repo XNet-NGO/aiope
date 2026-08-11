@@ -427,8 +427,13 @@ class ChatViewModel @Inject constructor(
     if (content.isEmpty()) return
 
     if (format == "pdf") {
-       LatexPdfExporter.export(context, content)
-       return
+      try {
+        LatexPdfExporter.export(context, content)
+      } catch (e: Exception) {
+        e.printStackTrace()
+        android.widget.Toast.makeText(context, "PDF export failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+      }
+      return
     }
 
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
