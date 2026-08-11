@@ -354,6 +354,35 @@ AIOPE builds on the following open-source projects, each under their original li
 |---|---|---|
 | Dynamic UI | Inspired by [nicholasgasior/kai](https://github.com/nicholasgasior/kai) | Apache 2.0 |
 | App scaffold | [skydoves/chatgpt-android](https://github.com/skydoves/chatgpt-android) | Apache 2.0 |
+| Jetpack Compose | [androidx/androidx](https://github.com/androidx/androidx) (Compose BOM 2026.06.01) | Apache 2.0 |
+| AndroidX core libs | activity, appcompat, core-ktx, lifecycle, navigation, startup, worker, profileinstaller, recyclerview, datastore | Apache 2.0 |
+| Room | [androidx/room](https://developer.android.com/jetpack/androidx/releases/room) | Apache 2.0 |
+| Hilt | [google/dagger](https://github.com/google/dagger) | Apache 2.0 |
+| Markdown | [XNet-NGO/UniversalMarkdown](https://github.com/XNet-NGO/UniversalMarkdown) | BSL 1.1 |
+| Markdown base | [antgroup/FluidMarkdown](https://github.com/antgroup/FluidMarkdown) | Apache 2.0 |
+| Markdown renderer | [noties/markwon](https://github.com/noties/markwon) | Apache 2.0 |
+| Syntax highlighting | [noties/Prism4j](https://github.com/noties/Prism4j) (via markwon-syntax-highlight) | Apache 2.0 |
+| LaTeX rendering | [noties/jlatexmath-android](https://github.com/noties/jlatexmath-android) (fork of opencollab/jlatexmath) | GPL 2.0+ |
+| CommonMark | [commonmark/commonmark-java](https://github.com/commonmark/commonmark-java) | BSD 2-Clause |
+| Terminal emulator | [termux/termux-app](https://github.com/termux/termux-app) | GPL 3.0 |
+| PDF generation | [TomRoush/PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) | Apache 2.0 |
+| Maps | [ramani-maps/ramani-maps](https://github.com/ramani-maps/ramani-maps) | MPL-2.0 |
+| Media playback | [androidx/media](https://github.com/androidx/media) (media3 1.11.0) | Apache 2.0 |
+| SSH | [hierynomus/sshj](https://github.com/hierynomus/sshj) | Apache 2.0 |
+| Cryptography | [bcgit/bc-java](https://github.com/bcgit/bc-java) | MIT |
+| Networking | [square/okhttp](https://github.com/square/okhttp) | Apache 2.0 |
+| Image loading | [coil-kt/coil](https://github.com/coil-kt/coil) | Apache 2.0 |
+| SVG rendering | [Caverock/androidsvg](https://github.com/Caverock/androidsvg) | Apache 2.0 |
+| Tokenizer | [knuddels/jtokkit](https://github.com/knuddels/jtokkit) | Apache 2.0 |
+| Emoji | [vdurmont/emoji-java](https://github.com/vdurmont/emoji-java) | Apache 2.0 |
+| Location | [google/play-services-location](https://developers.google.com/android/reference/com/google/android/gms/location/package-summary) | Apache 2.0 |
+| Coroutines | [Kotlin/kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) | Apache 2.0 |
+
+The BSL 1.1 applies only to XNet's original code. All third-party components retain their original licenses.
+
+---|---|
+| Dynamic UI | Inspired by [nicholasgasior/kai](https://github.com/nicholasgasior/kai) | Apache 2.0 |
+| App scaffold | [skydoves/chatgpt-android](https://github.com/skydoves/chatgpt-android) | Apache 2.0 |
 | Markdown | [XNet-NGO/UniversalMarkdown](https://github.com/XNet-NGO/UniversalMarkdown) | BSL 1.1 |
 | Markdown base | [antgroup/FluidMarkdown](https://github.com/antgroup/FluidMarkdown) | Apache 2.0 |
 | Markwon | [noties/markwon](https://github.com/noties/markwon) | Apache 2.0 |
