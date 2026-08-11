@@ -11,9 +11,11 @@
 
 **An AI that doesn't just talk. It acts.**
 
-AIOPE is an Android AI assistant with 48 tools, realtime voice with full tool access, on-device RAG with local embeddings, a full Linux terminal, browser automation, location awareness, live data feeds, remote server management, and the ability to build native interactive UI on the fly. It connects to any OpenAI-compatible API and runs the entire tool loop on-device.
+AIOPE is a fully autonomous AI agent that lives on your Android device -- 48 tools, realtime voice with full tool access, a complete Linux terminal in your pocket, browser automation, an on-device RAG knowledge base, remote server management with its own Go daemon, live location and data feeds, and the ability to build native interactive UI on the fly. It is the most feature-complete agent app on Android.
 
-It ships with the [AIOPE Gateway](https://github.com/XNet-NGO/aiope-gateway) -- a self-hosted inference proxy that routes to Google AI Studio, Pollinations, and other providers with a single API key. The gateway handles model routing, rate limiting, and API key management so the client stays clean. Due to costs we might not provide free models. We will always support those that BYOK.
+The agent loop runs entirely on-device: reason, call a tool, read the result, decide, repeat -- up to 140 rounds per turn. AIOPE can research a topic, write code, save it, run it in the terminal, fix the errors, and report back, all in a single turn. It spawns background agents, runs multi-agent DAG pipelines, schedules recurring tasks, and can execute every one of its tools by voice.
+
+Underneath is a serious stack, built over ~1000 commits across 26 repositories: a self-hosted [AIOPE Gateway](https://github.com/XNet-NGO/aiope-gateway) that routes to Google AI Studio, Pollinations, and other providers through a single API key; a custom Compose markdown renderer; a terminal emulator with a proot Alpine Linux environment; a Go remote-agent daemon; and an agent framework with 8 builtin agents and a full custom-agent builder. AIOPE connects to any OpenAI-compatible API and works with your own keys -- BYOK, always.
 
 ---
 
@@ -189,24 +191,23 @@ A shared WebView that both the user and AI can control simultaneously. The AI na
 
 ---
 
-## On-Device RAG
+## RAG Knowledge Base
 
-A fully local Retrieval-Augmented Generation system running entirely on-device with no network required.
+A Retrieval-Augmented Generation system with on-device storage and retrieval. Documents are chunked and indexed into a local SQLite vector store; the AI retrieves relevant context with `rag_search` and stores new knowledge with `rag_index`.
 
-- **Embedding model**: MiniLM-L6-v2 Q4 (21MB) bundled as an APK asset
-- **Inference**: llama.cpp compiled for ARM64 via NDK/CMake (JNI bridge)
-- **Vector store**: SQLite with cosine similarity search
+- **Embeddings**: Cloud, via any OpenAI-compatible API -- default `google-ai-studio/models-gemini-embedding-2`, routed through the same provider/task configuration as the rest of the app (Settings > Model Per Task > RAG)
+- **Vector store**: SQLite with cosine similarity search (on-device)
 - **Chunking**: Sentence-aware with configurable overlap
 - **PDF support**: Text extraction via PDFBox for uploaded documents
 
 ### How it works
 
 1. Upload documents through **Settings > RAG Documents** (text files, PDFs)
-2. Documents are chunked, embedded with MiniLM, and stored locally
+2. Documents are chunked and stored locally in the SQLite vector store
 3. The AI uses `rag_search` to find relevant chunks by semantic similarity
 4. The AI uses `rag_index` to store new knowledge from conversations
 
-All processing happens on the device CPU -- no data leaves the phone. The embedding model loads on first use and stays in memory for the session.
+Only the embedding requests themselves leave the device -- storage, retrieval, and search all run locally.
 
 ---
 
@@ -285,11 +286,10 @@ Or download the latest APK from [Releases](https://github.com/XNet-NGO/AIOPE/rel
 ### Requirements
 
 - Android 8.0+ (API 26)
-- ARM64 device (for on-device RAG inference)
+- ARM64 device (required for the proot Alpine Linux environment)
 - Internet connection for API calls
 - GPS for location features (optional)
 - ~100MB for proot Linux environment (optional)
-- ~21MB additional for MiniLM embedding model (bundled in APK)
 
 ---
 
@@ -303,7 +303,7 @@ core-model/                   Shared interfaces (RemoteToolBridge)
 core-preferences/             DataStore preferences
 core-data/                    Data layer
 core-terminal/                Terminal emulator, proot bootstrap
-core-inference/               On-device llama.cpp (NDK/JNI), LlamaEngine, RagEngine
+core-inference/               RagEngine (SQLite vector store, cosine similarity), CloudEmbeddingEngine (OpenAI-compatible)
 daemon/                       Go daemon for remote servers (aiope-remote)
 feature-chat/
   engine/                     StreamingOrchestrator, ToolExecutor, AgentExecutor, PipelineExecutor, AgentSchedulerWorker, AgentMode, RealtimeStreaming
@@ -326,11 +326,11 @@ feature-remote/
 
 AIOPE was built by one developer and an AI pair in under a month. No team. No funding. No office. Just a server in a house and a terminal.
 
-~1000 commits. 46 tools. 10 languages across 26 repositories. The entire XNet software stack -- from low-level ZeroTier networking forks and TCP/IP stacks to MCP servers, a self-hosted LLM gateway, a custom markdown renderer, and the most feature-complete AI agent app on Android -- is maintained by the same person.
+~1000 commits. 48 tools. 10 languages across 26 repositories. The entire XNet software stack -- from low-level ZeroTier networking forks and TCP/IP stacks to MCP servers, a self-hosted LLM gateway, a custom markdown renderer, and the most feature-complete AI agent app on Android -- is maintained by the same person.
 
 The developer is disabled. AI-assisted development is the accessibility tool that closed the gap between vision and execution. AIOPE exists because the same paradigm it demonstrates -- a human directing an AI to build at a pace that shouldn't be possible -- is the paradigm that built it.
 
-No other Android app ships a Linux terminal, browser automation, SSH remote management, 48 tools with a 140-round autonomous loop, on-device RAG with local embeddings, dynamic native UI generation, provider-agnostic model routing, and MCP support in a single package. The apps that come closest are backed by teams of hundreds.
+No other Android app ships a Linux terminal, browser automation, SSH remote management, 48 tools with a 140-round autonomous loop, on-device RAG knowledge base, dynamic native UI generation, provider-agnostic model routing, and MCP support in a single package. The apps that come closest are backed by teams of hundreds.
 
 This one was built by two.
 
