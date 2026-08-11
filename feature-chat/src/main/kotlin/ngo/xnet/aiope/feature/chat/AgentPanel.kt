@@ -24,11 +24,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fluid.compose.UniversalMarkdown
 import ngo.xnet.aiope.feature.chat.db.AgentEntity
 import ngo.xnet.aiope.feature.chat.db.AgentTaskEntity
 import ngo.xnet.aiope.feature.chat.db.ScheduledTaskEntity
 import ngo.xnet.aiope.feature.chat.engine.AgentExecutor
-import com.fluid.compose.UniversalMarkdown
 
 @Composable
 fun AgentPanel(
@@ -104,9 +104,15 @@ private fun SpawnTab(agents: List<AgentEntity>, onSpawn: (String, String) -> Uni
         Text(selectedAgent.ifEmpty { "Select Agent" }, fontSize = 12.sp)
       }
       DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-        DropdownMenuItem(text = { Text("default", fontSize = 12.sp) }, onClick = { selectedAgent = "default"; expanded = false })
+        DropdownMenuItem(text = { Text("default", fontSize = 12.sp) }, onClick = {
+          selectedAgent = "default"
+          expanded = false
+        })
         agents.forEach { agent ->
-          DropdownMenuItem(text = { Text(agent.name, fontSize = 12.sp) }, onClick = { selectedAgent = agent.name; expanded = false })
+          DropdownMenuItem(text = { Text(agent.name, fontSize = 12.sp) }, onClick = {
+            selectedAgent = agent.name
+            expanded = false
+          })
         }
       }
     }
@@ -193,8 +199,14 @@ private fun MonitorTab(
       task = selectedRunning!!,
       onDismiss = { selectedRunning = null },
       onSteer = onSteer,
-      onCancel = { onCancel(selectedRunning!!.id); selectedRunning = null },
-      onRerun = { onRerun(selectedRunning!!.id); selectedRunning = null },
+      onCancel = {
+        onCancel(selectedRunning!!.id)
+        selectedRunning = null
+      },
+      onRerun = {
+        onRerun(selectedRunning!!.id)
+        selectedRunning = null
+      },
     )
   }
 
@@ -203,7 +215,10 @@ private fun MonitorTab(
     PersistedTaskDialog(
       task = selectedPersisted!!,
       onDismiss = { selectedPersisted = null },
-      onRerun = { onRerun(selectedPersisted!!.id); selectedPersisted = null },
+      onRerun = {
+        onRerun(selectedPersisted!!.id)
+        selectedPersisted = null
+      },
       onSteer = onSteer,
     )
   }
@@ -428,11 +443,17 @@ private fun TimersTab(
   }
 
   if (showAdd) {
-    AddTimerDialog(agents = agents, onDismiss = { showAdd = false }, onSave = { onSave(it); showAdd = false })
+    AddTimerDialog(agents = agents, onDismiss = { showAdd = false }, onSave = {
+      onSave(it)
+      showAdd = false
+    })
   }
 
   if (editingTimer != null) {
-    AddTimerDialog(agents = agents, editing = editingTimer, onDismiss = { editingTimer = null }, onSave = { onSave(it); editingTimer = null })
+    AddTimerDialog(agents = agents, editing = editingTimer, onDismiss = { editingTimer = null }, onSave = {
+      onSave(it)
+      editingTimer = null
+    })
   }
 }
 
@@ -451,9 +472,13 @@ private fun TimerRow(timer: ScheduledTaskEntity, onEdit: () -> Unit, onDelete: (
       Text(timer.agentName, fontSize = 10.sp, color = Color(0xFFBBBBBB), fontWeight = FontWeight.Medium)
       Text(timer.prompt.take(50), fontSize = 9.sp, color = Color(0xFF777777), maxLines = 1)
       val schedule = buildString {
-        if (timer.oneShot) append("Once")
-        else if (timer.cronHour == -1) append("Every hour")
-        else append("${timer.cronHour}:${timer.cronMinute.toString().padStart(2, '0')}")
+        if (timer.oneShot) {
+          append("Once")
+        } else if (timer.cronHour == -1) {
+          append("Every hour")
+        } else {
+          append("${timer.cronHour}:${timer.cronMinute.toString().padStart(2, '0')}")
+        }
         if (timer.cronDaysOfWeek.isNotEmpty()) append(" (${timer.cronDaysOfWeek})")
       }
       Text(schedule, fontSize = 9.sp, color = Color(0xFF555555), fontFamily = FontFamily.Monospace)
@@ -468,7 +493,19 @@ private fun TimerRow(timer: ScheduledTaskEntity, onEdit: () -> Unit, onDelete: (
 private fun AddTimerDialog(agents: List<AgentEntity> = emptyList(), editing: ScheduledTaskEntity? = null, onDismiss: () -> Unit, onSave: (ScheduledTaskEntity) -> Unit) {
   var prompt by remember { mutableStateOf(editing?.prompt ?: "") }
   var selectedTools by remember { mutableStateOf(editing?.tools?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList<String>()) }
-  var preset by remember { mutableStateOf(if (editing?.oneShot == true) "once" else if (editing?.cronHour == -1) "hourly" else if (editing?.cronDaysOfWeek?.isNotEmpty() == true) "weekly" else "daily") }
+  var preset by remember {
+    mutableStateOf(
+      if (editing?.oneShot == true) {
+        "once"
+      } else if (editing?.cronHour == -1) {
+        "hourly"
+      } else if (editing?.cronDaysOfWeek?.isNotEmpty() == true) {
+        "weekly"
+      } else {
+        "daily"
+      },
+    )
+  }
   var hour by remember { mutableIntStateOf(editing?.cronHour?.takeIf { it >= 0 } ?: 9) }
   var minute by remember { mutableIntStateOf(editing?.cronMinute ?: 0) }
   var second by remember { mutableIntStateOf(0) }
@@ -560,7 +597,10 @@ private fun AddTimerDialog(agents: List<AgentEntity> = emptyList(), editing: Sch
               }
               DropdownMenu(expanded = monthExpanded, onDismissRequest = { monthExpanded = false }) {
                 monthNames.forEachIndexed { idx, name ->
-                  DropdownMenuItem(text = { Text(name, fontSize = 11.sp) }, onClick = { selectedMonth = idx - 1; monthExpanded = false })
+                  DropdownMenuItem(text = { Text(name, fontSize = 11.sp) }, onClick = {
+                    selectedMonth = idx - 1
+                    monthExpanded = false
+                  })
                 }
               }
             }
@@ -586,7 +626,7 @@ private fun AddTimerDialog(agents: List<AgentEntity> = emptyList(), editing: Sch
               cronDaysOfWeek = if (preset == "weekly") selectedDays else "",
               oneShot = preset == "once",
               nextRun = if (preset == "once") System.currentTimeMillis() + 60_000L else null,
-            )
+            ),
           )
         }
       }) { Text("Save") }
@@ -673,7 +713,10 @@ private fun BuilderTab(
     AgentEditorDialog(
       agent = editingAgent!!,
       models = models,
-      onSave = { onSave(it); editingAgent = null },
+      onSave = {
+        onSave(it)
+        editingAgent = null
+      },
       onDismiss = { editingAgent = null },
     )
   }
@@ -738,7 +781,8 @@ private fun AgentEditorDialog(
       ) {
         // Name
         OutlinedTextField(
-          value = name, onValueChange = { name = it },
+          value = name,
+          onValueChange = { name = it },
           label = { Text("Name", fontSize = 10.sp) },
           modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp),
           textStyle = LocalTextStyle.current.copy(fontSize = 11.sp),
@@ -747,7 +791,8 @@ private fun AgentEditorDialog(
 
         // System Prompt
         OutlinedTextField(
-          value = prompt, onValueChange = { prompt = it },
+          value = prompt,
+          onValueChange = { prompt = it },
           label = { Text("System Prompt", fontSize = 10.sp) },
           modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 80.dp),
           textStyle = LocalTextStyle.current.copy(fontSize = 10.sp),
@@ -761,9 +806,15 @@ private fun AgentEditorDialog(
             Text(model.ifEmpty { "(use active)" }, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
           }
           DropdownMenu(expanded = modelExpanded, onDismissRequest = { modelExpanded = false }) {
-            DropdownMenuItem(text = { Text("(use active)", fontSize = 11.sp) }, onClick = { model = ""; modelExpanded = false })
+            DropdownMenuItem(text = { Text("(use active)", fontSize = 11.sp) }, onClick = {
+              model = ""
+              modelExpanded = false
+            })
             models.forEach { m ->
-              DropdownMenuItem(text = { Text(m, fontSize = 11.sp) }, onClick = { model = m; modelExpanded = false })
+              DropdownMenuItem(text = { Text(m, fontSize = 11.sp) }, onClick = {
+                model = m
+                modelExpanded = false
+              })
             }
           }
         }
@@ -798,7 +849,8 @@ private fun AgentEditorDialog(
         Row(verticalAlignment = Alignment.CenterVertically) {
           Text("Top K: $topK", fontSize = 10.sp, color = Color(0xFF888888), modifier = Modifier.width(70.dp))
           Slider(
-            value = topK.toFloat(), onValueChange = { topK = it.toInt() },
+            value = topK.toFloat(),
+            onValueChange = { topK = it.toInt() },
             valueRange = 0f..100f,
             modifier = Modifier.weight(1f),
           )
@@ -808,7 +860,8 @@ private fun AgentEditorDialog(
         Row(verticalAlignment = Alignment.CenterVertically) {
           Text("Max Context: ${maxContext / 1000}k", fontSize = 10.sp, color = Color(0xFF888888), modifier = Modifier.width(100.dp))
           Slider(
-            value = maxContext.toFloat(), onValueChange = { maxContext = it.toInt() },
+            value = maxContext.toFloat(),
+            onValueChange = { maxContext = it.toInt() },
             valueRange = 4000f..128000f,
             steps = 30,
             modifier = Modifier.weight(1f),
@@ -832,7 +885,8 @@ private fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRan
   Row(verticalAlignment = Alignment.CenterVertically) {
     Text("$label: ${format.format(value)}", fontSize = 10.sp, color = Color(0xFF888888), modifier = Modifier.width(100.dp))
     Slider(
-      value = value, onValueChange = onValueChange,
+      value = value,
+      onValueChange = onValueChange,
       valueRange = range,
       modifier = Modifier.weight(1f),
     )

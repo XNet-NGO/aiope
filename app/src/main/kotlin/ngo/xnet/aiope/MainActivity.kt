@@ -12,11 +12,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import dagger.hilt.android.AndroidEntryPoint
 import ngo.xnet.aiope.core.navigation.AppComposeNavigator
 import ngo.xnet.aiope.feature.chat.settings.ProviderStore
 import ngo.xnet.aiope.feature.chat.settings.ToolStore
 import ngo.xnet.aiope.ui.AiopeMain
-import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 @AndroidEntryPoint

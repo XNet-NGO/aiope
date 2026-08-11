@@ -441,28 +441,40 @@ class StreamingOrchestrator(
             coroutineScope {
               callInfos.map { call ->
                 async(Dispatchers.IO) {
-                  val result = try { onToolCall(call.name, call.arguments) } catch (e: Exception) { "Error: ${e.message}" }
+                  val result = try {
+                    onToolCall(call.name, call.arguments)
+                  } catch (e: Exception) {
+                    "Error: ${e.message}"
+                  }
                   ToolResultInfo(id = call.id, name = call.name, arguments = call.arguments, result = result)
                 }
               }.map { it.await() }
             }
           } else {
             callInfos.map { call ->
-              val result = try { onToolCall(call.name, call.arguments) } catch (e: Exception) { "Error: ${e.message}" }
+              val result = try {
+                onToolCall(call.name, call.arguments)
+              } catch (e: Exception) {
+                "Error: ${e.message}"
+              }
               ToolResultInfo(id = call.id, name = call.name, arguments = call.arguments, result = result)
             }
           }
           send(ChatStreamChunk(toolResults = results))
-          rawMessages.add(JSONObject().apply {
-            put("role", "assistant")
-            put("content", text)
-          })
+          rawMessages.add(
+            JSONObject().apply {
+              put("role", "assistant")
+              put("content", text)
+            },
+          )
           for (r in results) {
-            rawMessages.add(JSONObject().apply {
-              put("role", "tool")
-              put("tool_call_id", r.id)
-              put("content", r.result.take(16000))
-            })
+            rawMessages.add(
+              JSONObject().apply {
+                put("role", "tool")
+                put("tool_call_id", r.id)
+                put("content", r.result.take(16000))
+              },
+            )
           }
           contentSoFar.clear()
           continue
@@ -524,7 +536,11 @@ class StreamingOrchestrator(
               val key = param.groupValues[1].trim()
               val value = param.groupValues[2].trim()
               // Try to parse as JSON (arrays, objects, numbers, booleans)
-              args[key] = try { JSONObject("{\"v\":$value}").opt("v") } catch (_: Exception) { value }
+              args[key] = try {
+                JSONObject("{\"v\":$value}").opt("v")
+              } catch (_: Exception) {
+                value
+              }
             }
             results.add(name to args)
           }

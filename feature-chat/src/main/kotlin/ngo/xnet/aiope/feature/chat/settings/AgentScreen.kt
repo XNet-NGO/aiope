@@ -12,9 +12,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import ngo.xnet.aiope.feature.chat.db.ChatDao
 import ngo.xnet.aiope.feature.chat.db.SettingsKvEntity
-import kotlinx.coroutines.launch
 
 internal const val AGENT_PROMPT_KEY = "agent_prompt" // kept for migration
 

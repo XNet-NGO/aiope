@@ -18,37 +18,37 @@ import androidx.media3.exoplayer.video.VideoRendererEventListener
  * substantially without stalling the pipeline or dropping audio sync.
  */
 internal class FpsCappedRenderersFactory(
-    context: Context,
-    private val maxFps: Float,
+  context: Context,
+  private val maxFps: Float,
 ) : DefaultRenderersFactory(context) {
 
-    override fun buildVideoRenderers(
-        context: Context,
-        extensionRendererMode: Int,
-        mediaCodecSelector: MediaCodecSelector,
-        enableDecoderFallback: Boolean,
-        eventHandler: Handler,
-        eventListener: VideoRendererEventListener,
-        allowedVideoJoiningTimeMs: Long,
-        out: ArrayList<Renderer>,
-    ) {
-        // We intentionally add only the capped renderer (no extension renderers):
-        // the background video always uses a hardware codec via MediaCodecSelector.
-        out.add(
-            FpsCappedVideoRenderer(
-                builder = MediaCodecVideoRenderer.Builder(context)
-                    .setMediaCodecSelector(mediaCodecSelector)
-                    .setAllowedJoiningTimeMs(allowedVideoJoiningTimeMs)
-                    .setEnableDecoderFallback(enableDecoderFallback)
-                    .setEventHandler(eventHandler)
-                    .setEventListener(eventListener)
-                    .setMaxDroppedFramesToNotify(
-                        DefaultRenderersFactory.MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY,
-                    ),
-                maxFps = maxFps,
-            ),
-        )
-    }
+  override fun buildVideoRenderers(
+    context: Context,
+    extensionRendererMode: Int,
+    mediaCodecSelector: MediaCodecSelector,
+    enableDecoderFallback: Boolean,
+    eventHandler: Handler,
+    eventListener: VideoRendererEventListener,
+    allowedVideoJoiningTimeMs: Long,
+    out: ArrayList<Renderer>,
+  ) {
+    // We intentionally add only the capped renderer (no extension renderers):
+    // the background video always uses a hardware codec via MediaCodecSelector.
+    out.add(
+      FpsCappedVideoRenderer(
+        builder = MediaCodecVideoRenderer.Builder(context)
+          .setMediaCodecSelector(mediaCodecSelector)
+          .setAllowedJoiningTimeMs(allowedVideoJoiningTimeMs)
+          .setEnableDecoderFallback(enableDecoderFallback)
+          .setEventHandler(eventHandler)
+          .setEventListener(eventListener)
+          .setMaxDroppedFramesToNotify(
+            DefaultRenderersFactory.MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY,
+          ),
+        maxFps = maxFps,
+      ),
+    )
+  }
 }
 
 /**
@@ -62,24 +62,24 @@ internal class FpsCappedRenderersFactory(
  * codec never starves.
  */
 internal class FpsCappedVideoRenderer(
-    builder: MediaCodecVideoRenderer.Builder,
-    private val maxFps: Float,
+  builder: MediaCodecVideoRenderer.Builder,
+  private val maxFps: Float,
 ) : MediaCodecVideoRenderer(builder) {
 
-    /** Minimum interval between presented frames, in microseconds. */
-    private val minFrameIntervalUs: Long = (1_000_000L / maxFps).toLong()
+  /** Minimum interval between presented frames, in microseconds. */
+  private val minFrameIntervalUs: Long = (1_000_000L / maxFps).toLong()
 
-    /** Elapsed time of the last presented frame; `Long.MIN_VALUE` = never. */
-    private var lastPresentedElapsedUs: Long = Long.MIN_VALUE
+  /** Elapsed time of the last presented frame; `Long.MIN_VALUE` = never. */
+  private var lastPresentedElapsedUs: Long = Long.MIN_VALUE
 
-    override fun render(positionUs: Long, elapsedRealtimeUs: Long) {
-        if (lastPresentedElapsedUs == Long.MIN_VALUE ||
-            elapsedRealtimeUs - lastPresentedElapsedUs >= minFrameIntervalUs
-        ) {
-            lastPresentedElapsedUs = elapsedRealtimeUs
-            super.render(positionUs, elapsedRealtimeUs)
-        }
-        // else: inside the frame-interval window — skip this pass. The next
-        // pass presents the latest frame and refills the input queue.
+  override fun render(positionUs: Long, elapsedRealtimeUs: Long) {
+    if (lastPresentedElapsedUs == Long.MIN_VALUE ||
+      elapsedRealtimeUs - lastPresentedElapsedUs >= minFrameIntervalUs
+    ) {
+      lastPresentedElapsedUs = elapsedRealtimeUs
+      super.render(positionUs, elapsedRealtimeUs)
     }
+    // else: inside the frame-interval window — skip this pass. The next
+    // pass presents the latest frame and refills the input queue.
+  }
 }

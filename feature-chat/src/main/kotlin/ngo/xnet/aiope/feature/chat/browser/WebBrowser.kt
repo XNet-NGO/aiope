@@ -91,7 +91,7 @@ class WebBrowser(context: Context) {
 
     var trimmed = text.substring(safeOffset, end)
     if (end < text.length) {
-       trimmed += "\n...(truncated. Use offset=${end} to read more)"
+      trimmed += "\n...(truncated. Use offset=$end to read more)"
     }
 
     return "URL: $url\nTitle: $title\nContent Length: ${text.length}\nShowing: $safeOffset to $end\n\n$trimmed"

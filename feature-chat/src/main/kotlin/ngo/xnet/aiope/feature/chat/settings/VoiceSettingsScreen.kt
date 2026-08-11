@@ -43,10 +43,8 @@ private val DISPLAY_NAMES = mapOf(
   "Sulafat" to "Sophie",
 )
 
-fun getVoiceName(context: Context): String {
-  return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    .getString(KEY_VOICE, DEFAULT_VOICE) ?: DEFAULT_VOICE
-}
+fun getVoiceName(context: Context): String = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+  .getString(KEY_VOICE, DEFAULT_VOICE) ?: DEFAULT_VOICE
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,7 +64,7 @@ fun VoiceSettingsScreen(onBack: () -> Unit) {
         colors = TopAppBarDefaults.topAppBarColors(containerColor = if (theme.useBackground) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surface),
         navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
       )
-    }
+    },
   ) { pad ->
     LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 16.dp)) {
       item {

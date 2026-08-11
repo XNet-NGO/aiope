@@ -54,8 +54,7 @@ class McpManager(private val toolStore: ToolStore) {
     }
   }
 
-  private fun sanitizePrefix(name: String): String =
-    name.lowercase().replace(Regex("[^a-z0-9]"), "_").take(16).trimEnd('_')
+  private fun sanitizePrefix(name: String): String = name.lowercase().replace(Regex("[^a-z0-9]"), "_").take(16).trimEnd('_')
 
   fun getCachedTools(serverId: String): List<McpToolMeta> = toolCache[serverId] ?: emptyList()
 

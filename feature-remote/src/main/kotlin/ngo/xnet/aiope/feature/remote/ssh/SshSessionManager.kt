@@ -1,11 +1,11 @@
 package ngo.xnet.aiope.feature.remote.ssh
 
-import ngo.xnet.aiope.feature.remote.db.RemoteServerEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.common.IOUtils
 import net.schmizz.sshj.xfer.FileSystemFile
+import ngo.xnet.aiope.feature.remote.db.RemoteServerEntity
 import java.security.Security // kept for potential future use
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -92,7 +92,9 @@ class SshSessionManager @Inject constructor() {
       if (existing.isConnected) return@withContext server.id
       // Stale session — disconnect and remove before reconnecting
       sessions.remove(server.id)
-      try { existing.disconnect() } catch (_: Exception) {}
+      try {
+        existing.disconnect()
+      } catch (_: Exception) {}
     }
     val client = SSHClient()
     client.connectTimeout = 15_000
@@ -157,7 +159,11 @@ class SshSessionManager @Inject constructor() {
   fun disconnect(serverId: String) {
     val client = sessions.remove(serverId)
     if (client != null) {
-      Thread { try { client.disconnect() } catch (_: Exception) {} }.start()
+      Thread {
+        try {
+          client.disconnect()
+        } catch (_: Exception) {}
+      }.start()
     }
   }
 
