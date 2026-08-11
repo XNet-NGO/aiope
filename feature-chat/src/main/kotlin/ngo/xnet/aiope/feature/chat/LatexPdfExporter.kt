@@ -42,7 +42,7 @@ object LatexPdfExporter {
   }
 
   fun shareFile(context: Context, file: File) {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     val intent = Intent(Intent.ACTION_SEND).apply {
       type = "application/pdf"
       putExtra(Intent.EXTRA_STREAM, uri)
@@ -171,8 +171,8 @@ $body
     s = s.replace(Regex("\\\\centering"), "")
 
     // Strip remaining unknown environments and commands
-    s = s.replace(Regex("\\\\begin\\{[^}]*}(\\[[^]]*])?"), "")
-    s = s.replace(Regex("\\\\end\\{[^}]*}"), "")
+    s = s.replace(Regex("\\\\begin\\{[^}]*\\}(\\[[^]]*])?"), "")
+    s = s.replace(Regex("\\\\end\\{[^}]*\\}"), "")
     s = s.replace(Regex("\\\\[a-zA-Z]+\\{([^}]*)\\}"), "$1")
     s = s.replace(Regex("\\\\[a-zA-Z]+\\b"), "")
 
