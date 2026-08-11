@@ -372,47 +372,92 @@ class ChatViewModel @Inject constructor(
     }
   }
 
-  fun shareConversation(asJson: Boolean = false) {
+  fun getConversationContent(format: String): String {
     val msgs = _messages.value
-    if (msgs.isEmpty()) return
-    val ctx = getApplication<android.app.Application>()
-    val (text, mime) = if (asJson) {
-      val arr = org.json.JSONArray()
-      msgs.forEach { m ->
-        arr.put(
-          org.json.JSONObject().put("role", m.role.value).put("content", m.content)
-            .apply { if (m.toolCalls.isNotEmpty()) put("tool_calls", org.json.JSONArray(m.toolCalls)) },
-        )
-      }
-      org.json.JSONObject().put("title", conversationId).put("exported", System.currentTimeMillis()).put("messages", arr).toString(2) to "application/json"
-    } else {
-      val md = buildString {
-        append("# AIOPE Conversation\n\n")
+    if (msgs.isEmpty()) return ""
+    return when (format) {
+      "json" -> {
+        val arr = org.json.JSONArray()
         msgs.forEach { m ->
-          when (m.role) {
-            Role.USER -> append("## User\n\n${m.content}\n\n")
-            Role.ASSISTANT -> append("## Assistant\n\n${m.content}\n\n")
-            Role.SYSTEM -> append("> _System: ${m.content.take(200)}_\n\n")
-            else -> append("## ${m.role.value}\n\n${m.content}\n\n")
-          }
-          if (m.toolCalls.isNotEmpty()) {
-            append("<details><summary>Tools used</summary>\n\n")
-            m.toolCalls.forEachIndexed { i, call ->
-              val result = m.toolResults.getOrNull(i)?.take(300) ?: ""
-              append("- `$call`\n  → $result\n")
+          arr.put(
+            org.json.JSONObject().put("role", m.role.value).put("content", m.content)
+              .apply { if (m.toolCalls.isNotEmpty()) put("tool_calls", org.json.JSONArray(m.toolCalls)) }
+          )
+        }
+        org.json.JSONObject().put("title", conversationId).put("exported", System.currentTimeMillis()).put("messages", arr).toString(2)
+      }
+      "txt" -> {
+        buildString {
+          msgs.forEach { m ->
+            when (m.role) {
+              Role.USER -> append("User: ${m.content}\n\n")
+              Role.ASSISTANT -> append("Assistant: ${m.content}\n\n")
+              Role.SYSTEM -> append("System: ${m.content.take(200)}\n\n")
+              else -> append("${m.role.value}: ${m.content}\n\n")
             }
-            append("\n</details>\n\n")
           }
         }
       }
-      md to "text/markdown"
+      else -> { // markdown and pdf use the same base content
+        buildString {
+          append("# AIOPE Conversation\n\n")
+          msgs.forEach { m ->
+            when (m.role) {
+              Role.USER -> append("## User\n\n${m.content}\n\n")
+              Role.ASSISTANT -> append("## Assistant\n\n${m.content}\n\n")
+              Role.SYSTEM -> append("> _System: ${m.content.take(200)}_\n\n")
+              else -> append("## ${m.role.value}\n\n${m.content}\n\n")
+            }
+            if (m.toolCalls.isNotEmpty()) {
+              append("<details><summary>Tools used</summary>\n\n")
+              m.toolCalls.forEachIndexed { i, call ->
+                val result = m.toolResults.getOrNull(i)?.take(300) ?: ""
+                append("- `$call`\n  → $result\n")
+              }
+              append("\n</details>\n\n")
+            }
+          }
+        }
+      }
     }
-    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-      type = "text/plain"
-      putExtra(android.content.Intent.EXTRA_TEXT, text)
-      putExtra(android.content.Intent.EXTRA_SUBJECT, "AIOPE Conversation")
+  }
+
+  fun shareConversation(format: String, context: android.content.Context) {
+    val content = getConversationContent(format)
+    if (content.isEmpty()) return
+
+    if (format == "pdf") {
+       LatexPdfExporter.export(context, content)
+       return
     }
-    ctx.startActivity(android.content.Intent.createChooser(intent, "Share conversation").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      try {
+        val shareDir = java.io.File(context.cacheDir, "share")
+        if (!shareDir.exists()) shareDir.mkdirs()
+        val file = java.io.File(shareDir, "aiope_export_${System.currentTimeMillis()}.$format")
+        file.writeText(content)
+
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val mimeType = when (format) {
+           "json" -> "application/json"
+           "md" -> "text/markdown"
+           else -> "text/plain"
+        }
+
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+          type = mimeType
+          putExtra(android.content.Intent.EXTRA_STREAM, uri)
+          addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+          context.startActivity(android.content.Intent.createChooser(intent, "Share conversation"))
+        }
+      } catch (e: Exception) {
+        e.printStackTrace()
+      }
+    }
   }
   fun deleteConversation(id: String) {
     viewModelScope.launch {
