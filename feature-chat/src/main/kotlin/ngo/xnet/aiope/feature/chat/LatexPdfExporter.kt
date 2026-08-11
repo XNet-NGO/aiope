@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
@@ -48,6 +50,7 @@ object LatexPdfExporter {
   private fun doExport(activity: Activity, latexContent: String) {
     var webView: WebView? = null
     var host: FrameLayout? = null
+    val printed = AtomicBoolean(false)
     try {
       val html = buildHtml(latexContent)
       val web = WebView(activity)
@@ -72,7 +75,6 @@ object LatexPdfExporter {
       )
       web.layout(0, 0, w, h)
 
-      val printed = AtomicBoolean(false)
       val doPrint = Runnable {
         if (printed.compareAndSet(false, true)) {
           print(activity, web, hostLocal)
@@ -112,24 +114,27 @@ object LatexPdfExporter {
       val adapter = object : PrintDocumentAdapter() {
         override fun onStart() = delegate.onStart()
 
+        override fun onLayout(
+          oldAttributes: PrintAttributes?,
+          newAttributes: PrintAttributes?,
+          cancellationSignal: CancellationSignal?,
+          callback: PrintDocumentAdapter.LayoutResultCallback?,
+          extras: Bundle?,
+        ) = delegate.onLayout(oldAttributes, newAttributes, cancellationSignal, callback, extras)
+
         override fun onWrite(
-          attributes: PrintAttributes?,
-          pages: List<PageRange>?,
-          dest: ParcelFileDescriptor?,
+          pages: Array<PageRange>?,
+          destination: ParcelFileDescriptor?,
+          cancellationSignal: CancellationSignal?,
           callback: PrintDocumentAdapter.WriteResultCallback?,
-        ) = delegate.onWrite(attributes, pages, dest, callback)
+        ) = delegate.onWrite(pages, destination, cancellationSignal, callback)
 
         override fun onFinish() {
-          try { 
-            delegate.onFinish() 
+          try {
+            delegate.onFinish()
           } catch (t: Throwable) {
             Toast.makeText(activity, "Print may have failed: ${t.message}", Toast.LENGTH_SHORT).show()
           }
-          cleanup(webView, host)
-        }
-
-        override fun onCancel() {
-          try { delegate.onCancel() } catch (_: Throwable) {}
           cleanup(webView, host)
         }
       }
