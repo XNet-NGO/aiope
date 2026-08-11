@@ -340,7 +340,7 @@ class ToolExecutor(
           }
           if (cal.timeInMillis <= System.currentTimeMillis()) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
           val am = app.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
-          val pi = android.app.PendingIntent.getBroadcast(app, h * 100 + m, android.content.Intent("ngo.xnet.aiope.ALARM"), android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+          val pi = android.app.PendingIntent.getBroadcast(app, h * 100 + m, android.content.Intent("ngo.xnet.aiope.ALARM").setPackage(app.packageName), android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
           am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
         }
         val h = (args["hour"] as? Number)?.toInt()
