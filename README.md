@@ -350,6 +350,8 @@ Contact: joshuadoucette@xnet.ngo | pr@xnet.ngo
 
 AIOPE builds on the following open-source projects, each under their original licenses:
 
+### Android app (Kotlin/JVM)
+
 | Component | Source | License |
 |---|---|---|
 | Dynamic UI | Inspired by [nicholasgasior/kai](https://github.com/nicholasgasior/kai) | Apache 2.0 |
@@ -366,7 +368,8 @@ AIOPE builds on the following open-source projects, each under their original li
 | CommonMark | [commonmark/commonmark-java](https://github.com/commonmark/commonmark-java) | BSD 2-Clause |
 | Terminal emulator | [termux/termux-app](https://github.com/termux/termux-app) | GPL 3.0 |
 | PDF generation | [TomRoush/PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) | Apache 2.0 |
-| Maps | [ramani-maps/ramani-maps](https://github.com/ramani-maps/ramani-maps) | MPL-2.0 |
+| Maps (Compose) | [ramani-maps/ramani-maps](https://github.com/ramani-maps/ramani-maps) | MPL-2.0 |
+| Maps (native core) | [maplibre/maplibre-native](https://github.com/maplibre/maplibre-native) (libmaplibre.so) | BSD 2-Clause |
 | Media playback | [androidx/media](https://github.com/androidx/media) (media3 1.11.0) | Apache 2.0 |
 | SSH | [hierynomus/sshj](https://github.com/hierynomus/sshj) | Apache 2.0 |
 | Cryptography | [bcgit/bc-java](https://github.com/bcgit/bc-java) | MIT |
@@ -378,21 +381,25 @@ AIOPE builds on the following open-source projects, each under their original li
 | Location | [google/play-services-location](https://developers.google.com/android/reference/com/google/android/gms/location/package-summary) | Apache 2.0 |
 | Coroutines | [Kotlin/kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) | Apache 2.0 |
 
-The BSL 1.1 applies only to XNet's original code. All third-party components retain their original licenses.
+### Native runtime (shipped .so libs)
 
----|---|
-| Dynamic UI | Inspired by [nicholasgasior/kai](https://github.com/nicholasgasior/kai) | Apache 2.0 |
-| App scaffold | [skydoves/chatgpt-android](https://github.com/skydoves/chatgpt-android) | Apache 2.0 |
-| Markdown | [XNet-NGO/UniversalMarkdown](https://github.com/XNet-NGO/UniversalMarkdown) | BSL 1.1 |
-| Markdown base | [antgroup/FluidMarkdown](https://github.com/antgroup/FluidMarkdown) | Apache 2.0 |
-| Markwon | [noties/markwon](https://github.com/noties/markwon) | Apache 2.0 |
-| Terminal | [termux/termux-app](https://github.com/termux/termux-app) | GPL 3.0 |
-| llama.cpp | [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) | MIT |
-| PDFBox Android | [TomRoush/PdfBox-Android](https://github.com/TomRoush/PdfBox-Android) | Apache 2.0 |
-| MapLibre | [maplibre/maplibre-native](https://github.com/maplibre/maplibre-native) | BSD 2-Clause |
-| CommonMark | [commonmark/commonmark-java](https://github.com/commonmark/commonmark-java) | BSD 2-Clause |
-| Prism4j | [noties/Prism4j](https://github.com/noties/Prism4j) | Apache 2.0 |
-| JLatexMath | [opencollab/jlatexmath](https://github.com/opencollab/jlatexmath) | GPL 2.0+ |
+| Component | Source | License |
+|---|---|---|
+| PRoot | [termux/proot](https://github.com/termux/proot) (libproot*.so) | GPL 2.0+ |
+| talloc | [samba-team/talloc](https://github.com/samba-team/talloc) (libtalloc.so) | LGPL 3.0+ |
+| libarchive (bsdtar) | [libarchive/libarchive](https://github.com/libarchive/libarchive) (libbsdtar.so) | BSD 2-Clause |
+
+### aiope-remote daemon (Go)
+
+| Component | Source | License |
+|---|---|---|
+| SSH app framework | [charmbracelet/wish](https://github.com/charmbracelet/wish) | MIT |
+| SSH server | [charmbracelet/ssh](https://github.com/charmbracelet/ssh) | MIT |
+| Logging | [charmbracelet/log](https://github.com/charmbracelet/log) | MIT |
+| PTY handling | [creack/pty](https://github.com/creack/pty) | MIT |
+| SFTP | [pkg/sftp](https://github.com/pkg/sftp) | BSD 2-Clause |
+| Crypto primitives | [golang.org/x/crypto](https://pkg.go.dev/golang.org/x/crypto) | BSD 3-Clause |
+| Indirect deps | Charm ecosystem (bubbletea, lipgloss, ultraviolet, x/ansi, termenv, muesli/*, mattn/*, go-shlex, go-colorful, uniseg, terminfo, displaywidth, uax29, logfmt, kr/fs) and golang.org/x/{exp,sync,sys} | MIT / BSD / Apache 2.0 |
 
 The BSL 1.1 applies only to XNet's original code. All third-party components retain their original licenses.
 
