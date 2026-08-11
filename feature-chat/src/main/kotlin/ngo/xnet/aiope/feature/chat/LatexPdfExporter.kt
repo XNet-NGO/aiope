@@ -60,17 +60,17 @@ object LatexPdfExporter {
       // user never sees it flash up.
       val w = (8.5f * 160).toInt() // ~US Letter width @ 160dpi
       val h = (11f * 160).toInt()
-      web.measure(
-        View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
-        View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY),
-      )
-      web.layout(0, 0, w, h)
-
       val hostLocal = FrameLayout(activity)
       host = hostLocal
       hostLocal.addView(web, FrameLayout.LayoutParams(w, h))
       hostLocal.translationY = 100000f
       (activity.window?.decorView as? ViewGroup)?.addView(hostLocal, FrameLayout.LayoutParams(w, h))
+      
+      web.measure(
+        View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY),
+      )
+      web.layout(0, 0, w, h)
 
       val printed = AtomicBoolean(false)
       val doPrint = Runnable {
