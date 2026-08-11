@@ -115,6 +115,7 @@ class PipelineExecutor(
               else -> emptyList()
             }
           }
+
           is org.json.JSONObject -> {
             name = raw.optString("name", null)
             agent = raw.optString("agent", "default")
@@ -122,6 +123,7 @@ class PipelineExecutor(
             val deps = raw.optJSONArray("depends_on")
             dependsOn = if (deps != null) (0 until deps.length()).mapNotNull { deps.optString(it) } else emptyList()
           }
+
           else -> return@mapNotNull null
         }
 

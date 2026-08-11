@@ -4,18 +4,18 @@ import android.content.Context
 import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
-import ngo.xnet.aiope.feature.chat.db.AgentSeeder
-import ngo.xnet.aiope.feature.chat.db.ChatDao
-import ngo.xnet.aiope.feature.chat.db.ChatDatabase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import ngo.xnet.aiope.feature.chat.db.AgentSeeder
+import ngo.xnet.aiope.feature.chat.db.ChatDao
+import ngo.xnet.aiope.feature.chat.db.ChatDatabase
+import javax.inject.Singleton
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
   override fun migrate(db: SupportSQLiteDatabase) {

@@ -1,6 +1,9 @@
 package ngo.xnet.aiope.feature.chat.settings
 
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import ngo.xnet.aiope.core.network.ModelConfig
 import ngo.xnet.aiope.core.network.ModelDef
 import ngo.xnet.aiope.core.network.ProviderProfile
@@ -9,9 +12,6 @@ import ngo.xnet.aiope.feature.chat.db.ChatDao
 import ngo.xnet.aiope.feature.chat.db.ModelCacheEntity
 import ngo.xnet.aiope.feature.chat.db.ProviderEntity
 import ngo.xnet.aiope.feature.chat.db.SettingsKvEntity
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import javax.inject.Inject
@@ -115,7 +115,9 @@ class ProviderStore @Inject constructor(
         runBlocking(Dispatchers.IO) { dao.upsertSetting(SettingsKvEntity("geoapify_key", geoKey)) }
       }
       prefs.edit().clear().apply()
-    } catch (e: Exception) { android.util.Log.w("ProviderStore", "op failed: ${e.message}") }
+    } catch (e: Exception) {
+      android.util.Log.w("ProviderStore", "op failed: ${e.message}")
+    }
   }
 
   fun getAll(): List<ProviderProfile> = runBlocking(Dispatchers.IO) {
@@ -211,7 +213,9 @@ class ProviderStore @Inject constructor(
           )
         }.sortedBy { it.id }
         if (models.isNotEmpty()) saveModelCache(profile.builtinId, models)
-      } catch (e: Exception) { android.util.Log.w("ProviderStore", "op failed: ${e.message}") }
+      } catch (e: Exception) {
+        android.util.Log.w("ProviderStore", "op failed: ${e.message}")
+      }
     }.start()
   }
 }

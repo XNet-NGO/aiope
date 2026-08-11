@@ -27,10 +27,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ngo.xnet.aiope.core.network.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ngo.xnet.aiope.core.network.*
 
 internal val TOKEN_STEPS = listOf(0, 256, 512, 1024, 2048, 4096, 8192, 16000, 32000, 64000, 128000, 200000, 500000, 1000000)
 internal val HISTORY_STEPS = listOf(1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 200000, 256000, 384000, 500000, 750000, 1000000, 2000000, 5000000, 10000000)
