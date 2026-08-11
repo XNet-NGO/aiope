@@ -25,11 +25,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ngo.xnet.aiope.core.network.*
-import ngo.xnet.aiope.feature.chat.db.ChatDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ngo.xnet.aiope.core.network.*
+import ngo.xnet.aiope.feature.chat.db.ChatDao
 
 @Composable
 internal fun ProfileList(

@@ -68,7 +68,7 @@ object LatexPdfExporter {
       hostLocal.addView(web, FrameLayout.LayoutParams(w, h))
       hostLocal.translationY = 100000f
       (activity.window?.decorView as? ViewGroup)?.addView(hostLocal, FrameLayout.LayoutParams(w, h))
-      
+
       web.measure(
         View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
         View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY),
@@ -151,8 +151,12 @@ object LatexPdfExporter {
   }
 
   private fun cleanup(webView: WebView?, host: FrameLayout?) {
-    try { (host?.parent as? ViewGroup)?.removeView(host) } catch (_: Throwable) {}
-    try { webView?.destroy() } catch (_: Throwable) {}
+    try {
+      (host?.parent as? ViewGroup)?.removeView(host)
+    } catch (_: Throwable) {}
+    try {
+      webView?.destroy()
+    } catch (_: Throwable) {}
   }
 
   /** Unwrap ContextWrapper chains (e.g. ContextThemeWrapper) to find the Activity. */
