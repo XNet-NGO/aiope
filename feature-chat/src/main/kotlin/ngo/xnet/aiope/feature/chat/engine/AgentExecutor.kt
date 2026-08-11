@@ -1,11 +1,11 @@
 package ngo.xnet.aiope.feature.chat.engine
 
-import ngo.xnet.aiope.feature.chat.db.AgentEntity
-import ngo.xnet.aiope.feature.chat.db.AgentTaskEntity
-import ngo.xnet.aiope.feature.chat.db.ChatDao
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import ngo.xnet.aiope.feature.chat.db.AgentEntity
+import ngo.xnet.aiope.feature.chat.db.AgentTaskEntity
+import ngo.xnet.aiope.feature.chat.db.ChatDao
 import java.util.UUID
 
 /**
@@ -51,8 +51,14 @@ class AgentExecutor(
   )
 
   private val readOnlyTools = setOf(
-    "search_web", "search_images", "search_location", "fetch_url",
-    "read_file", "list_directory", "query_data", "memory_recall",
+    "search_web",
+    "search_images",
+    "search_location",
+    "fetch_url",
+    "read_file",
+    "list_directory",
+    "query_data",
+    "memory_recall",
   )
 
   /**
@@ -83,7 +89,7 @@ class AgentExecutor(
         prompt = prompt,
         status = "running",
         conversationId = conversationId,
-      )
+      ),
     )
 
     return try {
@@ -125,8 +131,9 @@ class AgentExecutor(
 
       val result = sb.toString().ifEmpty {
         val log = toolLog.toString()
-        if (log.isBlank()) "(agent completed with no output)"
-        else {
+        if (log.isBlank()) {
+          "(agent completed with no output)"
+        } else {
           // Extract markdown images from tool results so they render properly
           val images = Regex("""!\[[^\]]*]\([^)]+\)""").findAll(log).map { it.value }.distinct().take(20).toList()
           val textContent = log.replace(Regex("""\[(search_web|search_images|fetch_url|read_file|list_directory|query_data|ssh_exec|ssh_start)]:"""), "•")
@@ -147,9 +154,7 @@ class AgentExecutor(
   }
 
   /** Legacy compat — run with no agent name (uses read-only tools) */
-  suspend fun runBlocking(description: String, prompt: String): String {
-    return runAgent("default", prompt)
-  }
+  suspend fun runBlocking(description: String, prompt: String): String = runAgent("default", prompt)
 
   fun clear() {
     _tasks.value = emptyList()

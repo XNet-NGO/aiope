@@ -1,9 +1,9 @@
 package ngo.xnet.aiope.feature.remote.ssh
 
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import ngo.xnet.aiope.feature.remote.db.RemoteServerDao
 import ngo.xnet.aiope.feature.remote.db.RemoteServerEntity
-import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID

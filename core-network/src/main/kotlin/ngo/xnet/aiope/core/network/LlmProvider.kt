@@ -94,7 +94,6 @@ data class ModelDef(
   val sampleRate: Int = 16000,
 )
 
-
 /** Provider profile — only connection info + selected model + per-model configs */
 data class ProviderProfile(
   val id: String = java.util.UUID.randomUUID().toString(),
