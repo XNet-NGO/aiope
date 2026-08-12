@@ -261,10 +261,31 @@ internal suspend fun fetchModels(baseUrl: String, apiKey: String): List<ModelDef
       else -> "$base/v1/models"
     }
     val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    conn.instanceFollowRedirects = false // Handle redirects manually to preserve auth header
     if (apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
     conn.connectTimeout = 15_000
     conn.readTimeout = 15_000
-    val body = conn.inputStream.bufferedReader().readText()
+
+    // Follow redirects manually (Android strips Authorization on cross-domain redirects)
+    var resp = conn
+    var redirects = 0
+    while (resp.responseCode in 301..308 && redirects < 5) {
+      val loc = resp.getHeaderField("Location") ?: break
+      val redirectUrl = if (loc.startsWith("http")) loc else "${java.net.URL(url).protocol}://${java.net.URL(url).host}$loc"
+      resp = java.net.URL(redirectUrl).openConnection() as java.net.HttpURLConnection
+      resp.instanceFollowRedirects = false
+      if (apiKey.isNotBlank()) resp.setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
+      resp.connectTimeout = 15_000
+      resp.readTimeout = 15_000
+      redirects++
+    }
+
+    if (resp.responseCode !in 200..299) {
+      val err = try { resp.errorStream?.bufferedReader()?.readText()?.take(200) } catch (_: Exception) { null }
+      android.util.Log.e("FetchModels", "HTTP ${resp.responseCode}: $err (url=$url)")
+      return@withContext emptyList()
+    }
+    val body = resp.inputStream.bufferedReader().readText()
     val data = org.json.JSONObject(body).optJSONArray("data") ?: return@withContext emptyList()
     (0 until data.length()).map {
       val o = data.getJSONObject(it)
