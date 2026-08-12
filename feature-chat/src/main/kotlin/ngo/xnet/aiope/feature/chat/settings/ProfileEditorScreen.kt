@@ -48,7 +48,7 @@ internal fun ProfileEditor(
   val builtin = ProviderTemplates.byId[p.builtinId]
   val scope = rememberCoroutineScope()
   var loading by remember { mutableStateOf(false) }
-  var models by remember { mutableStateOf(store.getModelCache(p.id) ?: store.getModelCacheStale(p.id) ?: builtin?.defaultModels ?: emptyList()) }
+  var models by remember { mutableStateOf(store.getModelCache(p.id) ?: store.getModelCacheStale(p.id) ?: store.getAll().firstOrNull { it.builtinId == p.builtinId && it.id != p.id }?.let { store.getModelCacheStale(it.id) } ?: builtin?.defaultModels ?: emptyList()) }
   var modelExpanded by remember { mutableStateOf(false) }
   var customModelText by remember { mutableStateOf("") }
 
