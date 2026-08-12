@@ -209,14 +209,17 @@ class AgentRunWorker(
     }
   }
 
-  private suspend fun executeWorkerTool(dao: ChatDao, name: String, args: Map<String, Any?>): String {
-    return try {
-      when (name) {
         "run_sh" -> {
           val cmd = args["command"]?.toString() ?: return "Error: no command"
           val timeout = ((args["timeout"] as? Number)?.toLong() ?: 30L).coerceIn(1L, 120L)
-          val proc = ProcessBuilder("sh", "-c", cmd).redirectErrorStream(true).start()
-          runProcess(proc, timeout)
+          val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd))
+          val output = proc.inputStream.bufferedReader().readText()
+          val err = proc.errorStream.bufferedReader().readText()
+          if (!proc.waitFor(timeout, java.util.concurrent.TimeUnit.SECONDS)) {
+            proc.destroyForcibly()
+            return "Error: command timeout after ${timeout}s"
+          }
+          (output + err).take(4000)
         }
 
         "send_notification" -> {
