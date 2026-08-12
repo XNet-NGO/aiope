@@ -153,12 +153,51 @@ Listens on port 2222. Config at `~/.aiope/`. Host key at `~/.aiope/host_key`.
 
 ---
 
-## Workflow
+## Dev Loop
+
+Every change follows this cycle:
 
 ```
-Edit code → ./gradlew assembleRelease → adb install → test on device
-                                                          ↓
-                                                   git add -A && git commit && git push
+1. Branch    → git checkout -b fix/description
+2. Change    → make code changes
+3. PR        → git push -u origin fix/description && gh pr create
+4. Review    → review diff, verify logic
+5. Build APK → ./gradlew assembleRelease
+6. Serve     → APK served at http://192.168.1.2:3333/app-release.apk
+7. Test      → install on device, verify fix works
+8. Merge     → gh pr merge --merge --delete-branch
+9. Release   → patch version bump, commit, tag, build final APK
+10. Publish  → gh release create vX.Y.Z --target main app-release.apk
 ```
 
-No Docker, no containers for builds. Direct Gradle on the build server.
+**Rules:**
+- Never commit directly to main
+- Every change gets a PR, even single-line fixes
+- APK must be tested on device before merge
+- After merge: bump `buildSrc/.../Configurations.kt` (patchVersion + versionCode), commit, push, build, release
+- Release notes describe what changed in user-facing terms
+
+### Version bumps
+
+```bash
+# In Configurations.kt:
+# patchVersion = N+1, versionCode = M+1
+
+cd ~/projects/aiope
+git add buildSrc/src/main/kotlin/Configurations.kt
+git commit -m "chore: bump version to X.Y.Z (versionCode N)"
+git push origin main
+./gradlew assembleRelease
+gh release create vX.Y.Z --title "vX.Y.Z" --notes "changelog" --target main app/build/outputs/apk/release/app-release.apk
+```
+
+### Serving APKs for testing
+
+A Python HTTP server runs on port 3333 from the APK output directory:
+
+```bash
+cd ~/projects/aiope/app/build/outputs/apk/release
+python3 -m http.server 3333
+```
+
+Download from device: `http://192.168.1.2:3333/app-release.apk`
