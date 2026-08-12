@@ -830,13 +830,15 @@ class ChatViewModel @Inject constructor(
 
   fun saveScheduledTask(task: ngo.xnet.aiope.feature.chat.db.ScheduledTaskEntity) {
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-      chatDao.insertScheduledTask(task)
+      val updated = ngo.xnet.aiope.feature.chat.engine.AgentScheduler.schedule(getApplication(), task)
+      chatDao.insertScheduledTask(updated)
       _scheduledTasks.value = chatDao.getScheduledTasks()
     }
   }
 
   fun deleteScheduledTask(id: String) {
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      ngo.xnet.aiope.feature.chat.engine.AgentScheduler.cancel(getApplication(), id)
       chatDao.deleteScheduledTask(id)
       _scheduledTasks.value = chatDao.getScheduledTasks()
     }
