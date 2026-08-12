@@ -72,9 +72,10 @@ fun ColorPickerDialog(
   fun applyHex(raw: String) {
     val cleaned = raw.trim().removePrefix("#").uppercase()
     if (cleaned.length != 6 || !cleaned.all { it.isDigit() || it in 'A'..'F' }) return
-    val rgb = cleaned.toLong(16).toInt()
+    // Build a full ARGB int (alpha = FF) so colorToHSV always sees valid channels
+    val argb = (0xFF000000L or cleaned.toLong(16)).toInt()
     val hsv = FloatArray(3)
-    AndroidColor.colorToHSV(rgb, hsv)
+    AndroidColor.colorToHSV(argb, hsv)
     hue = hsv[0]
     sat = hsv[1]
     value = hsv[2]
@@ -127,12 +128,7 @@ fun ColorPickerDialog(
             modifier = Modifier.width(140.dp),
           )
           Text(
-            "RGB: ${current.red * 255f}, ${current.green * 255f}, ${current.blue * 255f}".let {
-              val r = (current.red * 255f).toInt()
-              val g = (current.green * 255f).toInt()
-              val b = (current.blue * 255f).toInt()
-              "RGB: $r, $g, $b"
-            },
+            "RGB: ${(current.red * 255f).toInt()}, ${(current.green * 255f).toInt()}, ${(current.blue * 255f).toInt()}",
             style = MaterialTheme.typography.bodySmall,
           )
         }
