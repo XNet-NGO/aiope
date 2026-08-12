@@ -40,6 +40,9 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
   val prefs = remember { ThemePrefs(ctx) }
   val scope = rememberCoroutineScope()
 
+  // Which color picker dialog is open: (key, initialColor)
+  var pickerState by remember { mutableStateOf<Pair<String, Int>?>(null) }
+
   // Collect all state
   val themeMode by prefs.themeMode.collectAsState(initial = "dark")
   val useCustomColors by prefs.useCustomColors.collectAsState(initial = false)
@@ -118,20 +121,28 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
         // ── Accent Colors ──
         SectionHeader("Accent Colors")
         Text("Primary", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ColorRow(selected = primaryColor) {
-          scope.launch {
-            prefs.set(ThemePrefs.USE_CUSTOM_COLORS, true)
-            prefs.set(ThemePrefs.PRIMARY_COLOR, it)
-          }
-        }
+        ColorRow(
+          selected = primaryColor,
+          onPick = {
+            scope.launch {
+              prefs.set(ThemePrefs.USE_CUSTOM_COLORS, true)
+              prefs.set(ThemePrefs.PRIMARY_COLOR, it)
+            }
+          },
+          onCustom = { pickerState = "primary" to (primaryColor ?: 0xFF2979FF.toInt()) },
+        )
         Spacer(Modifier.height(4.dp))
         Text("Secondary", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ColorRow(selected = secondaryColor) {
-          scope.launch {
-            prefs.set(ThemePrefs.USE_CUSTOM_COLORS, true)
-            prefs.set(ThemePrefs.SECONDARY_COLOR, it)
-          }
-        }
+        ColorRow(
+          selected = secondaryColor,
+          onPick = {
+            scope.launch {
+              prefs.set(ThemePrefs.USE_CUSTOM_COLORS, true)
+              prefs.set(ThemePrefs.SECONDARY_COLOR, it)
+            }
+          },
+          onCustom = { pickerState = "secondary" to (secondaryColor ?: 0xFF651FFF.toInt()) },
+        )
 
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
@@ -139,15 +150,27 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
         SectionHeader("UI Color")
         ToggleRow("Custom UI color", useUiColor) { scope.launch { prefs.set(ThemePrefs.USE_UI_COLOR, it) } }
         if (useUiColor) {
-          ColorRow(selected = uiColor) { scope.launch { prefs.set(ThemePrefs.UI_COLOR, it) } }
+          ColorRow(
+            selected = uiColor,
+            onPick = { scope.launch { prefs.set(ThemePrefs.UI_COLOR, it) } },
+            onCustom = { pickerState = "ui" to (uiColor ?: 0xFF2979FF.toInt()) },
+          )
         }
         Spacer(Modifier.height(4.dp))
         ToggleRow("Custom text colors", useCustomText) { scope.launch { prefs.set(ThemePrefs.USE_CUSTOM_TEXT, it) } }
         if (useCustomText) {
           Text("Primary text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          ColorRow(selected = primaryTextColor) { scope.launch { prefs.set(ThemePrefs.PRIMARY_TEXT_COLOR, it) } }
+          ColorRow(
+            selected = primaryTextColor,
+            onPick = { scope.launch { prefs.set(ThemePrefs.PRIMARY_TEXT_COLOR, it) } },
+            onCustom = { pickerState = "primaryText" to (primaryTextColor ?: 0xFFFFFFFF.toInt()) },
+          )
           Text("Secondary text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          ColorRow(selected = secondaryTextColor) { scope.launch { prefs.set(ThemePrefs.SECONDARY_TEXT_COLOR, it) } }
+          ColorRow(
+            selected = secondaryTextColor,
+            onPick = { scope.launch { prefs.set(ThemePrefs.SECONDARY_TEXT_COLOR, it) } },
+            onCustom = { pickerState = "secondaryText" to (secondaryTextColor ?: 0xFFFFFFFF.toInt()) },
+          )
         }
 
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -157,17 +180,37 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
         ToggleRow("Custom bubble colors", useCustomBubbles) { scope.launch { prefs.set(ThemePrefs.USE_CUSTOM_BUBBLES, it) } }
         if (useCustomBubbles) {
           Text("User bubble", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          ColorRow(selected = userBubbleColor) { scope.launch { prefs.set(ThemePrefs.USER_BUBBLE_COLOR, it) } }
+          ColorRow(
+            selected = userBubbleColor,
+            onPick = { scope.launch { prefs.set(ThemePrefs.USER_BUBBLE_COLOR, it) } },
+            onCustom = { pickerState = "userBubble" to (userBubbleColor ?: 0xFF2979FF.toInt()) },
+          )
           Text("User text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          ColorRow(selected = userTextColor) { scope.launch { prefs.set(ThemePrefs.USER_TEXT_COLOR, it) } }
+          ColorRow(
+            selected = userTextColor,
+            onPick = { scope.launch { prefs.set(ThemePrefs.USER_TEXT_COLOR, it) } },
+            onCustom = { pickerState = "userText" to (userTextColor ?: 0xFFFFFFFF.toInt()) },
+          )
           Spacer(Modifier.height(4.dp))
           Text("AI bubble", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          ColorRow(selected = aiBubbleColor) { scope.launch { prefs.set(ThemePrefs.AI_BUBBLE_COLOR, it) } }
+          ColorRow(
+            selected = aiBubbleColor,
+            onPick = { scope.launch { prefs.set(ThemePrefs.AI_BUBBLE_COLOR, it) } },
+            onCustom = { pickerState = "aiBubble" to (aiBubbleColor ?: 0xFF37474F.toInt()) },
+          )
           Spacer(Modifier.height(4.dp))
           Text("Agent report bubble", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          ColorRow(selected = agentReportBubbleColor) { scope.launch { prefs.set(ThemePrefs.AGENT_REPORT_BUBBLE_COLOR, it) } }
+          ColorRow(
+            selected = agentReportBubbleColor,
+            onPick = { scope.launch { prefs.set(ThemePrefs.AGENT_REPORT_BUBBLE_COLOR, it) } },
+            onCustom = { pickerState = "agentReport" to (agentReportBubbleColor ?: 0xFF1A237E.toInt()) },
+          )
           Text("AI text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          ColorRow(selected = aiTextColor) { scope.launch { prefs.set(ThemePrefs.AI_TEXT_COLOR, it) } }
+          ColorRow(
+            selected = aiTextColor,
+            onPick = { scope.launch { prefs.set(ThemePrefs.AI_TEXT_COLOR, it) } },
+            onCustom = { pickerState = "aiText" to (aiTextColor ?: 0xFFFFFFFF.toInt()) },
+          )
           Spacer(Modifier.height(4.dp))
           Text("User bubble opacity: ${(userBubbleOpacity * 100).toInt()}%", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
           Slider(value = userBubbleOpacity, onValueChange = { scope.launch { prefs.set(ThemePrefs.USER_BUBBLE_OPACITY, it) } }, valueRange = 0.05f..1f)
@@ -224,6 +267,35 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
       Spacer(Modifier.height(24.dp))
     }
   }
+
+  // ── Custom color picker dialog (any color row) ──
+  pickerState?.let { (key, initial) ->
+    ColorPickerDialog(
+      initialColor = initial,
+      onPick = { color ->
+        when (key) {
+          "primary" -> scope.launch {
+            prefs.set(ThemePrefs.USE_CUSTOM_COLORS, true)
+            prefs.set(ThemePrefs.PRIMARY_COLOR, color)
+          }
+          "secondary" -> scope.launch {
+            prefs.set(ThemePrefs.USE_CUSTOM_COLORS, true)
+            prefs.set(ThemePrefs.SECONDARY_COLOR, color)
+          }
+          "ui" -> scope.launch { prefs.set(ThemePrefs.UI_COLOR, color) }
+          "primaryText" -> scope.launch { prefs.set(ThemePrefs.PRIMARY_TEXT_COLOR, color) }
+          "secondaryText" -> scope.launch { prefs.set(ThemePrefs.SECONDARY_TEXT_COLOR, color) }
+          "userBubble" -> scope.launch { prefs.set(ThemePrefs.USER_BUBBLE_COLOR, color) }
+          "userText" -> scope.launch { prefs.set(ThemePrefs.USER_TEXT_COLOR, color) }
+          "aiBubble" -> scope.launch { prefs.set(ThemePrefs.AI_BUBBLE_COLOR, color) }
+          "agentReport" -> scope.launch { prefs.set(ThemePrefs.AGENT_REPORT_BUBBLE_COLOR, color) }
+          "aiText" -> scope.launch { prefs.set(ThemePrefs.AI_TEXT_COLOR, color) }
+        }
+        pickerState = null
+      },
+      onDismiss = { pickerState = null },
+    )
+  }
 }
 
 @Composable
@@ -240,8 +312,8 @@ private fun ToggleRow(label: String, checked: Boolean, onToggle: (Boolean) -> Un
 }
 
 @Composable
-private fun ColorRow(selected: Int?, onPick: (Int) -> Unit) {
-  Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+private fun ColorRow(selected: Int?, onPick: (Int) -> Unit, onCustom: () -> Unit) {
+  Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState())) {
     PRESET_COLORS.forEach { c ->
       val color = Color(c.toInt() or 0xFF000000.toInt())
       val isSelected = selected == color.toArgb()
@@ -250,6 +322,17 @@ private fun ColorRow(selected: Int?, onPick: (Int) -> Unit) {
           .border(if (isSelected) 2.dp else 0.5.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
           .clickable { onPick(color.toArgb()) },
       )
+    }
+    // Custom picker chip — highlighted when the current selection isn't one of the presets
+    val isCustom = selected != null && PRESET_COLORS.none { Color(it.toInt() or 0xFF000000.toInt()).toArgb() == selected }
+    Box(
+      Modifier.size(32.dp).clip(CircleShape)
+        .background(MaterialTheme.colorScheme.surfaceVariant)
+        .border(if (isCustom) 2.dp else 1.dp, if (isCustom) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
+        .clickable(onClick = onCustom),
+      contentAlignment = Alignment.Center,
+    ) {
+      Text("+", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 18.sp)
     }
   }
 }
