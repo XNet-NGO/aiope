@@ -192,11 +192,17 @@ class AgentRunWorker(
     )
 
     val sb = StringBuilder()
+    var streamError: String? = null
     orchestrator.stream(messages).collect { chunk ->
       if (chunk.content.isNotEmpty()) sb.append(chunk.content)
+      if (chunk.error != null) streamError = chunk.error
     }
 
-    sb.toString().ifEmpty { "(no output)" }
+    when {
+      sb.isNotEmpty() -> sb.toString()
+      streamError != null -> "Error: $streamError"
+      else -> "(no output)"
+    }
   } catch (e: Exception) {
     "Error: ${e.message ?: "unknown"}"
   }
