@@ -1,6 +1,5 @@
 package ngo.xnet.aiope.feature.chat.theme
 
-import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,8 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,8 +40,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.OutlinedTextField
+import android.graphics.Color as AndroidColor
 
 /**
  * Custom color picker.
@@ -101,28 +101,40 @@ fun ColorPickerDialog(
 
         // Saturation slider
         Text("Saturation: ${(sat * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
-        Slider(value = sat, onValueChange = { sat = it; syncFromHsv() })
+        Slider(value = sat, onValueChange = {
+          sat = it
+          syncFromHsv()
+        })
 
         // Brightness slider
         Text("Brightness: ${(value * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
-        Slider(value = value, onValueChange = { value = it; syncFromHsv() })
+        Slider(value = value, onValueChange = {
+          value = it
+          syncFromHsv()
+        })
 
         // Hex input
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           OutlinedTextField(
             value = hex,
-            onValueChange = { hex = it.uppercase(); applyHex(hex) },
+            onValueChange = {
+              hex = it.uppercase()
+              applyHex(hex)
+            },
             singleLine = true,
             label = { Text("Hex") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
             modifier = Modifier.width(140.dp),
           )
-          Text("RGB: ${current.red * 255f}, ${current.green * 255f}, ${current.blue * 255f}".let {
-            val r = (current.red * 255f).toInt()
-            val g = (current.green * 255f).toInt()
-            val b = (current.blue * 255f).toInt()
-            "RGB: $r, $g, $b"
-          }, style = MaterialTheme.typography.bodySmall)
+          Text(
+            "RGB: ${current.red * 255f}, ${current.green * 255f}, ${current.blue * 255f}".let {
+              val r = (current.red * 255f).toInt()
+              val g = (current.green * 255f).toInt()
+              val b = (current.blue * 255f).toInt()
+              "RGB: $r, $g, $b"
+            },
+            style = MaterialTheme.typography.bodySmall,
+          )
         }
       }
     },

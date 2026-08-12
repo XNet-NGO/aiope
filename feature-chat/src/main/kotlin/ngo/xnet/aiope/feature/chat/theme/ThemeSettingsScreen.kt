@@ -278,17 +278,26 @@ fun ThemeSettingsScreen(onBack: () -> Unit) {
             prefs.set(ThemePrefs.USE_CUSTOM_COLORS, true)
             prefs.set(ThemePrefs.PRIMARY_COLOR, color)
           }
+
           "secondary" -> scope.launch {
             prefs.set(ThemePrefs.USE_CUSTOM_COLORS, true)
             prefs.set(ThemePrefs.SECONDARY_COLOR, color)
           }
+
           "ui" -> scope.launch { prefs.set(ThemePrefs.UI_COLOR, color) }
+
           "primaryText" -> scope.launch { prefs.set(ThemePrefs.PRIMARY_TEXT_COLOR, color) }
+
           "secondaryText" -> scope.launch { prefs.set(ThemePrefs.SECONDARY_TEXT_COLOR, color) }
+
           "userBubble" -> scope.launch { prefs.set(ThemePrefs.USER_BUBBLE_COLOR, color) }
+
           "userText" -> scope.launch { prefs.set(ThemePrefs.USER_TEXT_COLOR, color) }
+
           "aiBubble" -> scope.launch { prefs.set(ThemePrefs.AI_BUBBLE_COLOR, color) }
+
           "agentReport" -> scope.launch { prefs.set(ThemePrefs.AGENT_REPORT_BUBBLE_COLOR, color) }
+
           "aiText" -> scope.launch { prefs.set(ThemePrefs.AI_TEXT_COLOR, color) }
         }
         pickerState = null
