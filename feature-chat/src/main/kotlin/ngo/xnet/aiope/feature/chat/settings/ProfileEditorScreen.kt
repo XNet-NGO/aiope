@@ -48,7 +48,7 @@ internal fun ProfileEditor(
   val builtin = ProviderTemplates.byId[p.builtinId]
   val scope = rememberCoroutineScope()
   var loading by remember { mutableStateOf(false) }
-  var models by remember { mutableStateOf(store.getModelCache(p.builtinId) ?: store.getModelCacheStale(p.builtinId) ?: builtin?.defaultModels ?: emptyList()) }
+  var models by remember { mutableStateOf(store.getModelCache(p.id) ?: store.getModelCacheStale(p.id) ?: builtin?.defaultModels ?: emptyList()) }
   var modelExpanded by remember { mutableStateOf(false) }
   var customModelText by remember { mutableStateOf("") }
 
@@ -94,7 +94,7 @@ internal fun ProfileEditor(
           scope.launch {
             val fetched = fetchModels(p.effectiveApiBase(), p.apiKey)
             if (fetched.isNotEmpty()) {
-              store.saveModelCache(p.builtinId, fetched)
+              store.saveModelCache(p.id, fetched)
               models = fetched
             }
             loading = false
@@ -290,7 +290,7 @@ internal fun ProfileEditor(
       Spacer(Modifier.height(8.dp))
       Button(onClick = {
         saveModelConfig()
-        store.saveModelCache(p.builtinId, models)
+        store.saveModelCache(p.id, models)
         onSave(p)
       }, modifier = Modifier.fillMaxWidth()) { Text("Save & Activate") }
       Spacer(Modifier.height(32.dp))

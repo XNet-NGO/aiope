@@ -105,11 +105,11 @@ class ProviderStore @Inject constructor(
         runBlocking(Dispatchers.IO) {
           dao.upsertProvider(ProviderEntity(p.id, p.toJson().toString(), p.id == activeId))
         }
-        // Migrate model cache
+        // Migrate model cache (old key was builtinId, new key is provider id)
         val cacheRaw = prefs.getString("mcache_${p.builtinId}", null)
         val cacheTs = prefs.getLong("mcache_ts_${p.builtinId}", 0)
         if (cacheRaw != null) {
-          runBlocking(Dispatchers.IO) { dao.upsertModelCache(ModelCacheEntity(p.builtinId, cacheRaw, cacheTs)) }
+          runBlocking(Dispatchers.IO) { dao.upsertModelCache(ModelCacheEntity(p.id, cacheRaw, cacheTs)) }
         }
       }
       // Migrate geoapify key
@@ -135,8 +135,8 @@ class ProviderStore @Inject constructor(
   fun getById(id: String): ProviderProfile? = getAll().firstOrNull { it.id == id }
 
   fun save(profile: ProviderProfile) = runBlocking(Dispatchers.IO) {
-    val existing = dao.getActiveProvider()
-    val isActive = existing?.id == profile.id && existing.isActive
+    val existing = dao.getProviderById(profile.id)
+    val isActive = existing?.isActive ?: false
     dao.upsertProvider(ProviderEntity(profile.id, profile.toJson().toString(), isActive))
   }
 
@@ -147,7 +147,7 @@ class ProviderStore @Inject constructor(
     dao.setActiveProvider(id)
   }
 
-  fun saveModelCache(builtinId: String, models: List<ModelDef>) {
+  fun saveModelCache(cacheKey: String, models: List<ModelDef>) {
     val arr = JSONArray()
     models.forEach { m ->
       arr.put(
@@ -164,17 +164,17 @@ class ProviderStore @Inject constructor(
         },
       )
     }
-    runBlocking(Dispatchers.IO) { dao.upsertModelCache(ModelCacheEntity(builtinId, arr.toString())) }
+    runBlocking(Dispatchers.IO) { dao.upsertModelCache(ModelCacheEntity(cacheKey, arr.toString())) }
   }
 
-  fun getModelCache(builtinId: String): List<ModelDef>? = runBlocking(Dispatchers.IO) {
-    val e = dao.getModelCache(builtinId) ?: return@runBlocking null
+  fun getModelCache(cacheKey: String): List<ModelDef>? = runBlocking(Dispatchers.IO) {
+    val e = dao.getModelCache(cacheKey) ?: return@runBlocking null
     if (System.currentTimeMillis() - e.cachedAt > 24 * 60 * 60 * 1000) return@runBlocking null
     parseModelCache(e.json)
   }
 
-  fun getModelCacheStale(builtinId: String): List<ModelDef>? = runBlocking(Dispatchers.IO) {
-    dao.getModelCache(builtinId)?.let { parseModelCache(it.json) }
+  fun getModelCacheStale(cacheKey: String): List<ModelDef>? = runBlocking(Dispatchers.IO) {
+    dao.getModelCache(cacheKey)?.let { parseModelCache(it.json) }
   }
 
   private fun parseModelCache(raw: String): List<ModelDef>? = runCatching {
@@ -215,7 +215,7 @@ class ProviderStore @Inject constructor(
             family = o.optString("family", ""),
           )
         }.sortedBy { it.id }
-        if (models.isNotEmpty()) saveModelCache(profile.builtinId, models)
+        if (models.isNotEmpty()) saveModelCache(profile.id, models)
       } catch (e: Exception) {
         android.util.Log.w("ProviderStore", "op failed: ${e.message}")
       }

@@ -171,6 +171,9 @@ interface ChatDao {
   @Query("SELECT * FROM providers ORDER BY updatedAt DESC")
   suspend fun getProviders(): List<ProviderEntity>
 
+  @Query("SELECT * FROM providers WHERE id = :id LIMIT 1")
+  suspend fun getProviderById(id: String): ProviderEntity?
+
   @Query("SELECT * FROM providers WHERE isActive = 1 LIMIT 1")
   suspend fun getActiveProvider(): ProviderEntity?
 

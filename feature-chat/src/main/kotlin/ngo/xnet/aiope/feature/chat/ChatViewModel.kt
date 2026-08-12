@@ -314,8 +314,8 @@ class ChatViewModel @Inject constructor(
 
   fun getModelList(): List<ModelDef> {
     val p = providerStore.getActive()
-    return providerStore.getModelCache(p.builtinId)
-      ?: providerStore.getModelCacheStale(p.builtinId)
+    return providerStore.getModelCache(p.id)
+      ?: providerStore.getModelCacheStale(p.id)
       ?: ProviderTemplates.byId[p.builtinId]?.defaultModels
       ?: emptyList()
   }
@@ -640,6 +640,19 @@ class ChatViewModel @Inject constructor(
 
       val p = providerStore.getActive()
       val mc = p.activeModelConfig()
+
+      // Validate provider is configured before attempting API call
+      if (p.effectiveApiBase().isBlank() || p.selectedModelId.isBlank()) {
+        val errorMsg = when {
+          p.effectiveApiBase().isBlank() -> "⚠️ Provider \"${p.label}\" has no API base URL configured. Go to Settings → Providers to configure it."
+          else -> "⚠️ No model selected for provider \"${p.label}\". Go to Settings → Providers to select a model."
+        }
+        val updated = _messages.value.toMutableList()
+        updated[updated.lastIndex] = updated.last().copy(content = errorMsg)
+        _messages.value = updated
+        return@launch
+      }
+
       toolExecutor.shellOutputLimit = mc.shellOutputLimit
       toolExecutor.fetchLimit = mc.fetchLimit
       toolExecutor.fileReadLimit = mc.fileReadLimit
