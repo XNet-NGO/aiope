@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.room.Room
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
@@ -18,13 +17,6 @@ import ngo.xnet.aiope.feature.chat.db.ChatDatabase
 import ngo.xnet.aiope.feature.chat.db.MemoryEntity
 import ngo.xnet.aiope.feature.chat.db.ScheduledTaskEntity
 import ngo.xnet.aiope.feature.chat.db.TaskRunEntity
-import ngo.xnet.aiope.feature.chat.di.MIGRATION_1_2
-import ngo.xnet.aiope.feature.chat.di.MIGRATION_2_3
-import ngo.xnet.aiope.feature.chat.di.MIGRATION_3_4
-import ngo.xnet.aiope.feature.chat.di.MIGRATION_4_5
-import ngo.xnet.aiope.feature.chat.di.MIGRATION_5_6
-import ngo.xnet.aiope.feature.chat.di.MIGRATION_6_7
-import ngo.xnet.aiope.feature.chat.di.MIGRATION_7_8
 import org.json.JSONObject
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -130,8 +122,6 @@ class AgentRunWorker(
       Result.success()
     } catch (e: Exception) {
       if (runAttemptCount >= MAX_RETRIES) Result.failure() else Result.retry()
-    } finally {
-      db.close()
     }
   }
 
@@ -256,8 +246,13 @@ class AgentRunWorker(
           val cmd = args["command"]?.toString() ?: return "Error: no command"
           val timeout = ((args["timeout"] as? Number)?.toLong() ?: 30L).coerceIn(1L, 120L)
           val proc = ProcessBuilder(
-            "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-            host, cmd,
+            "ssh",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "ConnectTimeout=10",
+            host,
+            cmd,
           ).redirectErrorStream(true).start()
           runProcess(proc, timeout)
         }
@@ -304,9 +299,7 @@ class AgentRunWorker(
     return output.toString().take(OUTPUT_TRUNCATE)
   }
 
-  private fun buildDb(): ChatDatabase = Room.databaseBuilder(appContext, ChatDatabase::class.java, "aiope-chat.db")
-    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
-    .build()
+  private fun buildDb(): ChatDatabase = AgentDb.get(appContext)
 
   private fun showNotification(title: String, body: String) {
     val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
