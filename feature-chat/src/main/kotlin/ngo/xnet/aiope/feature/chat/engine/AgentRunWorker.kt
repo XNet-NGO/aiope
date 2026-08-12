@@ -22,6 +22,15 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+// Tools actually implemented by the background worker. Keep in sync with executeWorkerTool().
+private val workerToolCatalog: Map<String, String> = mapOf(
+  "run_sh" to "Run a shell command on this device. Args: command: String, timeout: Number (optional)",
+  "ssh_exec" to "Run a command on a remote server over SSH. Args: host: String, command: String, timeout: Number (optional)",
+  "send_notification" to "Show a notification on this device. Args: title: String, body: String",
+  "set_alarm" to "Set an alarm on this device. Args: hour: Number, minute: Number, label: String (optional)",
+  "memory_store" to "Store a fact in persistent memory. Args: key: String, value: String",
+  "memory_recall" to "Recall stored memories. Args: query: String (optional)",
+)
 
 /**
  * Executes one scheduled agent task run.
@@ -133,11 +142,20 @@ class AgentRunWorker(
   ): String = try {
     val agent: AgentEntity? = dao.getAgentByName(task.agentName)
     val basePrompt = agent?.prompt ?: "You are a scheduled task agent. Complete the assigned task using your tools."
+    // Resolve tools from timer config
+    val timerTools = task.tools.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    val toolHelp = if (timerTools.isEmpty()) {
+      "- No tools enabled for this task. You can only reason and produce a text response.\n"
+    } else {
+      workerToolCatalog.filterKeys { it in timerTools }.entries.joinToString("\n") { (k, v) -> "- $k: ${v.substringBefore(". Args")}" } + "\n"
+    }
     val systemPrompt = basePrompt + "\n\n## Environment\n- Date/Time: " +
       ZonedDateTime.now().format(DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z")) +
       "\n- Platform: Android (AIOPE scheduled task)\n- Execution: Background\n" +
       "\n## Recurring Task\nThis is a RECURRING task. Compare with previous runs (see Run Context) and REPORT WHAT CHANGED since the last run. If nothing changed, say so explicitly." +
-      "\n\n## Tool Execution\nYou MUST use tools to complete your task.\n- search_web: search the web\n- fetch_url: fetch URL content\n- read_file/write_file/list_directory: filesystem\n- run_sh: shell commands\n- send_sms: send SMS\n- send_notification: show notification\n- set_alarm: set alarm\n- ssh_exec: remote command\n- memory_store/memory_recall: persistent memory\n\nDO NOT describe what you would do — actually DO it with tools.\nIf a tool fails, try an alternative. When finished, summarize what was accomplished."
+      "\n\n## Tool Execution\nYou MUST use tools to complete your task.\n" +
+      toolHelp +
+      "\n\nDO NOT describe what you would do \u2014 actually DO it with tools.\nIf a tool fails, try an alternative. When finished, summarize what was accomplished."
     val modelId = agent?.model?.ifEmpty { null } ?: provider.selectedModelId
     val temperature = agent?.temperature ?: 0.7f
 
@@ -160,7 +178,6 @@ class AgentRunWorker(
     val messages = listOf("system" to systemPrompt, "user" to userPrompt)
 
     // Resolve tools from timer config
-    val timerTools = task.tools.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     val toolDefs = if (timerTools.isNotEmpty()) buildWorkerToolDefs(timerTools) else emptyList()
 
     val orchestrator = StreamingOrchestrator(
@@ -183,22 +200,8 @@ class AgentRunWorker(
   }
 
   private fun buildWorkerToolDefs(tools: Set<String>): List<StreamingOrchestrator.ToolDef> {
-    val all = mapOf(
-      "search_web" to "Search the web. Args: query: String",
-      "fetch_url" to "Fetch a URL. Args: url: String",
-      "read_file" to "Read a file. Args: path: String",
-      "write_file" to "Write a file. Args: path: String, content: String",
-      "list_directory" to "List a directory. Args: path: String",
-      "run_sh" to "Run a shell command. Args: command: String, timeout: Int",
-      "send_sms" to "Send an SMS. Args: to: String, body: String",
-      "send_notification" to "Show a notification. Args: title: String, body: String",
-      "set_alarm" to "Set an alarm. Args: hour: Int, minute: Int, label: String",
-      "ssh_exec" to "Run a remote command. Args: host: String, command: String, timeout: Int",
-      "memory_store" to "Store a memory. Args: key: String, value: String",
-      "memory_recall" to "Recall memories. Args: query: String",
-    )
     return tools.mapNotNull { name ->
-      val desc = all[name] ?: return@mapNotNull null
+      val desc = workerToolCatalog[name] ?: return@mapNotNull null
       val params = JSONObject()
       desc.substringAfter("Args: ").split(", ").forEach { p ->
         val key = p.substringBefore(":")
