@@ -210,13 +210,25 @@ class AgentRunWorker(
   private fun buildWorkerToolDefs(tools: Set<String>): List<StreamingOrchestrator.ToolDef> {
     return tools.mapNotNull { name ->
       val desc = workerToolCatalog[name] ?: return@mapNotNull null
-      val params = JSONObject()
-      desc.substringAfter("Args: ").split(", ").forEach { p ->
-        val key = p.substringBefore(":")
-        val type = p.substringAfter(":").trim()
-        params.put(key, type)
+      val props = JSONObject()
+      val required = org.json.JSONArray()
+      desc.substringAfter("Args: ", "").split(", ").filter { it.isNotBlank() }.forEach { p ->
+        val key = p.substringBefore(":").trim()
+        val spec = p.substringAfter(":").trim()
+        val optional = spec.contains("optional")
+        val type = when {
+          spec.startsWith("Number") -> "number"
+          spec.startsWith("String") -> "string"
+          else -> "string"
+        }
+        props.put(key, JSONObject().put("type", type))
+        if (!optional) required.put(key)
       }
-      StreamingOrchestrator.ToolDef(name, desc, params)
+      val parameters = JSONObject()
+        .put("type", "object")
+        .put("properties", props)
+        .put("required", required)
+      StreamingOrchestrator.ToolDef(name, desc, parameters)
     }
   }
 
