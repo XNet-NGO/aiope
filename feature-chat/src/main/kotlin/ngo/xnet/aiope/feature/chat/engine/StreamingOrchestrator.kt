@@ -304,7 +304,7 @@ class StreamingOrchestrator(
               val msg = t?.message ?: response?.let { "HTTP ${it.code}" } ?: "Connection failed"
               if (isTransientReset(msg) && sseDoneRef.get()) {
                 android.util.Log.w("AIOPE2", "SSE reset after done (non-fatal): $msg")
-              } else {
+              } else if (sseErrorRef.get() == null) {
                 sseErrorRef.set(msg)
                 android.util.Log.e("AIOPE2", "SSE failure (attempt ${retries + 1}): $msg", t)
               }
