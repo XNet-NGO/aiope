@@ -316,6 +316,7 @@ class ChatViewModel @Inject constructor(
     val p = providerStore.getActive()
     return providerStore.getModelCache(p.id)
       ?: providerStore.getModelCacheStale(p.id)
+      ?: providerStore.getAll().firstOrNull { it.builtinId == p.builtinId && it.id != p.id }?.let { providerStore.getModelCacheStale(it.id) }
       ?: ProviderTemplates.byId[p.builtinId]?.defaultModels
       ?: emptyList()
   }

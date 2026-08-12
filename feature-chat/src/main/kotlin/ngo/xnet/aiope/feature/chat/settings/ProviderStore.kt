@@ -136,7 +136,7 @@ class ProviderStore @Inject constructor(
 
   fun save(profile: ProviderProfile) = runBlocking(Dispatchers.IO) {
     val existing = dao.getProviderById(profile.id)
-    val isActive = existing?.isActive ?: false
+    val isActive = existing?.isActive ?: profile.isActive
     dao.upsertProvider(ProviderEntity(profile.id, profile.toJson().toString(), isActive))
   }
 
