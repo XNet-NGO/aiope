@@ -406,6 +406,7 @@ private suspend fun testConnection(p: ProviderProfile, mc: ModelConfig): String 
       mc.temperature?.let { put("temperature", it.toDouble()) }
     }
     val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    conn.instanceFollowRedirects = false
     conn.requestMethod = "POST"
     conn.setRequestProperty("Content-Type", "application/json")
     if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey.trim()}")
@@ -413,15 +414,32 @@ private suspend fun testConnection(p: ProviderProfile, mc: ModelConfig): String 
     conn.readTimeout = 30_000
     conn.doOutput = true
     conn.outputStream.write(body.toString().toByteArray())
-    if (conn.responseCode !in 200..299) {
+    // Follow redirects manually to preserve Authorization header
+    var finalConn = conn
+    var redirects = 0
+    while (finalConn.responseCode in 301..308 && redirects < 5) {
+      val loc = finalConn.getHeaderField("Location") ?: break
+      val redirectUrl = if (loc.startsWith("http")) loc else "${java.net.URL(url).protocol}://${java.net.URL(url).host}$loc"
+      finalConn = java.net.URL(redirectUrl).openConnection() as java.net.HttpURLConnection
+      finalConn.instanceFollowRedirects = false
+      finalConn.requestMethod = "POST"
+      finalConn.setRequestProperty("Content-Type", "application/json")
+      if (p.apiKey.isNotBlank()) finalConn.setRequestProperty("Authorization", "Bearer ${p.apiKey.trim()}")
+      finalConn.connectTimeout = 15_000
+      finalConn.readTimeout = 30_000
+      finalConn.doOutput = true
+      finalConn.outputStream.write(body.toString().toByteArray())
+      redirects++
+    }
+    if (finalConn.responseCode !in 200..299) {
       val err = try {
-        conn.errorStream?.bufferedReader()?.readText()?.take(200)
+        finalConn.errorStream?.bufferedReader()?.readText()?.take(200)
       } catch (_: Exception) {
         null
       }
-      return@withContext "[FAIL] HTTP ${conn.responseCode}: ${err ?: "error"}"
+      return@withContext "[FAIL] HTTP ${finalConn.responseCode}: ${err ?: "error"}"
     }
-    val resp = org.json.JSONObject(conn.inputStream.bufferedReader().readText())
+    val resp = org.json.JSONObject(finalConn.inputStream.bufferedReader().readText())
     val tokens = resp.optJSONObject("usage")?.optInt("total_tokens", 0) ?: 0
     val results = mutableListOf("[OK] Chat: OK ($tokens tok)")
 
