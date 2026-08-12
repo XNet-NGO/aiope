@@ -443,11 +443,6 @@ private fun TimersTab(
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
           Text("No timers yet", fontSize = 13.sp, color = Color(0xFF888888))
           Text("Schedule an agent to run automatically.", fontSize = 11.sp, color = Color(0xFF666666))
-          TextButton(onClick = { showAdd = true }) {
-            Icon(Icons.Default.Add, null, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Create timer", fontSize = 12.sp)
-          }
         }
       }
     } else {
