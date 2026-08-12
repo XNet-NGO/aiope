@@ -559,6 +559,10 @@ private fun TimerRow(timer: ScheduledTaskEntity, onEdit: () -> Unit, onDelete: (
 }
 
 private val timerToolGroups = listOf(
+  "Web" to listOf(
+    "search_web" to "Search web",
+    "fetch_url" to "Fetch URL",
+  ),
   "Actions" to listOf(
     "run_sh" to "Shell",
     "ssh_exec" to "Remote SSH",
