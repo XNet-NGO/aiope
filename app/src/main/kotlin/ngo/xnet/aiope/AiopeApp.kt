@@ -12,7 +12,7 @@ class AiopeApp :
   ImageLoaderFactory {
   override fun onCreate() {
     super.onCreate()
-    ngo.xnet.aiope.feature.chat.engine.AgentSchedulerWorker.enqueue(this)
+    ngo.xnet.aiope.feature.chat.engine.AgentRescheduleWorker.enqueue(this)
   }
 
   override fun newImageLoader() = ImageLoader.Builder(this)

@@ -98,16 +98,34 @@ data class ScheduledTaskEntity(
   val agentName: String = "Timer Agent",
   val prompt: String,
   val tools: String = "", // comma-separated tool names
-  val cronHour: Int = -1, // -1 = every hour
-  val cronMinute: Int = 0,
-  val cronDaysOfWeek: String = "", // empty = every day, "1,2,3,4,5" = weekdays
-  val oneShot: Boolean = false, // true = run once then auto-disable
+  // Schedule model (v8): once | interval | daily | weekly | monthly
+  val scheduleType: String = "once",
+  val intervalValue: Int = 0, // interval: every N units
+  val intervalUnit: String = "min", // interval: min | hour | day
+  val timeHour: Int = 0, // daily/weekly/monthly: hour of day (0-23)
+  val timeMinute: Int = 0, // daily/weekly/monthly: minute of day (0-59)
+  val daysOfWeek: String = "", // weekly: "1,2,3,4,5,6,7" (Calendar.DAY_OF_WEEK, 1=Sun)
+  val dayOfMonth: Int = 1, // monthly: 1-28
+  val maxRuns: Int = 0, // 0 = unlimited
+  val runsCompleted: Int = 0,
+  val status: String = "scheduled", // scheduled | running | finished | failed | disabled
   val reportMode: String = "notification", // notification, conversation, both
   val conversationId: String? = null,
   val enabled: Boolean = true,
   val lastRun: Long? = null,
   val nextRun: Long? = null,
   val createdAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "task_runs")
+data class TaskRunEntity(
+  @PrimaryKey(autoGenerate = true) val id: Long = 0,
+  val scheduledTaskId: String,
+  val runNumber: Int,
+  val timestamp: Long = System.currentTimeMillis(),
+  val prompt: String = "",
+  val output: String = "",
+  val status: String = "finished",
 )
 
 @Dao
@@ -241,17 +259,49 @@ interface ChatDao {
   @Query("SELECT * FROM scheduled_tasks ORDER BY createdAt DESC")
   suspend fun getScheduledTasks(): List<ScheduledTaskEntity>
 
-  @Query("SELECT * FROM scheduled_tasks WHERE enabled = 1 AND (nextRun IS NULL OR nextRun <= :now)")
-  suspend fun getDueScheduledTasks(now: Long = System.currentTimeMillis()): List<ScheduledTaskEntity>
+  @Query("SELECT * FROM scheduled_tasks WHERE enabled = 1")
+  suspend fun getEnabledScheduledTasks(): List<ScheduledTaskEntity>
+
+  @Query("SELECT * FROM scheduled_tasks WHERE id = :id")
+  suspend fun getScheduledTaskById(id: String): ScheduledTaskEntity?
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertScheduledTask(task: ScheduledTaskEntity)
 
   @Query("UPDATE scheduled_tasks SET lastRun = :lastRun, nextRun = :nextRun WHERE id = :id")
-  suspend fun updateScheduledTaskRun(id: String, lastRun: Long, nextRun: Long?)
+  suspend fun updateScheduledTaskRun(id: String, lastRun: Long?, nextRun: Long?)
+
+  @Query(
+    "UPDATE scheduled_tasks SET runsCompleted = :runsCompleted, lastRun = :lastRun, " +
+      "nextRun = :nextRun, enabled = :enabled, status = :status WHERE id = :id",
+  )
+  suspend fun updateScheduledTaskProgress(
+    id: String,
+    runsCompleted: Int,
+    lastRun: Long,
+    nextRun: Long?,
+    enabled: Boolean,
+    status: String,
+  )
 
   @Query("DELETE FROM scheduled_tasks WHERE id = :id")
   suspend fun deleteScheduledTask(id: String)
+
+  // Task run history (context carry-over)
+  @Insert
+  suspend fun insertTaskRun(run: TaskRunEntity)
+
+  @Query("SELECT * FROM task_runs WHERE scheduledTaskId = :taskId ORDER BY runNumber DESC LIMIT :limit")
+  suspend fun getLastTaskRuns(taskId: String, limit: Int): List<TaskRunEntity>
+
+  @Query("SELECT * FROM task_runs WHERE scheduledTaskId = :taskId ORDER BY runNumber DESC")
+  suspend fun getTaskRuns(taskId: String): List<TaskRunEntity>
+
+  @Query("SELECT COUNT(*) FROM task_runs WHERE scheduledTaskId = :taskId")
+  suspend fun countTaskRuns(taskId: String): Int
+
+  @Query("DELETE FROM task_runs WHERE scheduledTaskId = :taskId")
+  suspend fun deleteTaskRuns(taskId: String)
 }
 
 @Database(
@@ -259,9 +309,9 @@ interface ChatDao {
     ConversationEntity::class, MessageEntity::class, MemoryEntity::class,
     ProviderEntity::class, ToolToggleEntity::class, McpServerEntity::class,
     ModelCacheEntity::class, SettingsKvEntity::class,
-    AgentEntity::class, AgentTaskEntity::class, ScheduledTaskEntity::class,
+    AgentEntity::class, AgentTaskEntity::class, ScheduledTaskEntity::class, TaskRunEntity::class,
   ],
-  version = 7,
+  version = 8,
 )
 abstract class ChatDatabase : RoomDatabase() {
   abstract fun chatDao(): ChatDao
