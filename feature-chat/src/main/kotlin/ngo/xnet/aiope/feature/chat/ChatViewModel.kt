@@ -708,21 +708,9 @@ class ChatViewModel @Inject constructor(
           }
         }
 
-        // Persist final message
         val finalMsg = _messages.value.lastOrNull() ?: return@launch
         toolExecutor.locationUsedThisTurn = false // Don't carry map to next response
         android.util.Log.d("AIOPE2", "Final content len=${finalMsg.content.length} last100=${finalMsg.content.takeLast(100)}")
-        val filesDirPath = getApplication<android.app.Application>().filesDir.absolutePath
-        val genImagePaths = generatedImages.joinToString(",") { it.removePrefix("file://").removePrefix("$filesDirPath/") }
-        chatDao.insertMessage(
-          MessageEntity(
-            id = finalMsg.id,
-            conversationId = conversationId,
-            role = Role.ASSISTANT.value,
-            content = finalMsg.content,
-            imagePaths = genImagePaths,
-          ),
-        )
         if (_messages.value.size <= 2) {
           chatDao.updateConversation(conversationId, text.take(50))
           // Auto-generate title using TITLE task model
@@ -738,11 +726,38 @@ class ChatViewModel @Inject constructor(
         } else {
           autoRunRounds = 0
         }
-      } catch (_: kotlinx.coroutines.CancellationException) { /* stopped */ } catch (e: Exception) {
+      } catch (_: kotlinx.coroutines.CancellationException) {
+        // Keep any response received before the stream was stopped.
+      } catch (e: Exception) {
         val updated = _messages.value.toMutableList()
-        updated[updated.lastIndex] = updated.last().copy(content = "Error: ${e.message}")
+        val partial = updated.last().content
+        val error = "Error: ${e.message ?: "Unknown streaming error"}"
+        updated[updated.lastIndex] = updated.last().copy(
+          content = if (partial.isBlank()) error else "$partial\n\n$error",
+        )
         _messages.value = updated
       } finally {
+        // A cancelled coroutine cannot call suspending Room APIs unless cleanup is made
+        // non-cancellable. Upsert the current assistant message for success, errors,
+        // and user cancellation so the last streamed response survives a reload.
+        withContext(kotlinx.coroutines.NonCancellable) {
+          val finalMsg = _messages.value.lastOrNull { it.id == assistantMsg.id }
+          if (finalMsg != null && finalMsg.content.isNotBlank()) {
+            val filesDirPath = getApplication<android.app.Application>().filesDir.absolutePath
+            val imagePaths = finalMsg.imageUris.joinToString(",") {
+              it.removePrefix("file://").removePrefix("$filesDirPath/")
+            }
+            chatDao.insertMessage(
+              MessageEntity(
+                id = finalMsg.id,
+                conversationId = conversationId,
+                role = Role.ASSISTANT.value,
+                content = finalMsg.content,
+                imagePaths = imagePaths,
+              ),
+            )
+          }
+        }
         _isStreaming.value = false
         maybeAutoCompact(mc)
       }
@@ -1006,64 +1021,87 @@ $transcript
     var lastUiLength = 0
     val charsPerLine = 55
 
-    orchestrator.stream(messages, imageBase64s).collect { chunk ->
-      chunk.reasoning?.let { r ->
-        if (!isReasoning) {
-          isReasoning = true
-          currentReasoning.clear()
-        }
-        currentReasoning.append(r)
-      }
-      // Handle content replacement (strips tool markup from display)
-      chunk.contentReplace?.let { replacement ->
-        sb.clear()
-        sb.append(replacement)
-      }
-      if (chunk.content.isNotEmpty()) {
-        if (isReasoning && currentReasoning.isNotEmpty()) {
-          reasoningBlocks.add(currentReasoning.toString())
-          currentReasoning.clear()
-          isReasoning = false
-        }
-        sb.append(chunk.content)
-      }
-      chunk.toolCalls?.let { calls ->
-        if (isReasoning && currentReasoning.isNotEmpty()) {
-          reasoningBlocks.add(currentReasoning.toString())
-          currentReasoning.clear()
-          isReasoning = false
-        }
-        for (c in calls) toolCallsList.add("${c.name}(${c.arguments.entries.joinToString(", ") { "${it.key}=${it.value}" }})")
-      }
-      chunk.toolResults?.let { results ->
-        for (r in results) {
-          toolResultsList.add(r.result.take(2000))
-          if (r.result.startsWith("Error:") || r.result.startsWith("FAILED")) toolErrorsList.add("${r.name}: ${r.result.take(200)}")
-        }
-      }
-      chunk.error?.let { sb.append("\nError: $it") }
-      if (chunk.isDone && isReasoning && currentReasoning.isNotEmpty()) {
-        reasoningBlocks.add(currentReasoning.toString())
-        isReasoning = false
-      }
-      val allReasoning = if (isReasoning && currentReasoning.isNotEmpty()) reasoningBlocks + currentReasoning.toString() else reasoningBlocks.toList()
-      val currentLen = sb.length
-      val hasNewLine = chunk.content.contains('\n')
-      val lineWorth = currentLen - lastUiLength >= charsPerLine
-      if (chunk.isDone || chunk.error != null || hasNewLine || lineWorth || chunk.toolCalls != null || chunk.toolResults != null || chunk.reasoning != null || chunk.contentReplace != null) {
-        lastUiLength = currentLen
-        withContext(Dispatchers.Main) {
-          _messages.value = _messages.value.toMutableList().also {
-            it[it.lastIndex] = it.last().copy(
-              content = sb.toString(),
-              reasoning = allReasoning,
-              isReasoningDone = !isReasoning,
-              toolCalls = toolCallsList.toList(),
-              toolResults = toolResultsList.toList(),
-              toolErrors = toolErrorsList.toList(),
-              locationData = if (toolExecutor.locationUsedThisTurn) toolExecutor.lastLocationData else null,
-            )
+    try {
+      orchestrator.stream(messages, imageBase64s).collect { chunk ->
+        chunk.reasoning?.let { r ->
+          if (!isReasoning) {
+            isReasoning = true
+            currentReasoning.clear()
           }
+          currentReasoning.append(r)
+        }
+        // Handle content replacement (strips tool markup from display)
+        chunk.contentReplace?.let { replacement ->
+          sb.clear()
+          sb.append(replacement)
+        }
+        if (chunk.content.isNotEmpty()) {
+          if (isReasoning && currentReasoning.isNotEmpty()) {
+            reasoningBlocks.add(currentReasoning.toString())
+            currentReasoning.clear()
+            isReasoning = false
+          }
+          sb.append(chunk.content)
+        }
+        chunk.toolCalls?.let { calls ->
+          if (isReasoning && currentReasoning.isNotEmpty()) {
+            reasoningBlocks.add(currentReasoning.toString())
+            currentReasoning.clear()
+            isReasoning = false
+          }
+          for (c in calls) toolCallsList.add("${c.name}(${c.arguments.entries.joinToString(", ") { "${it.key}=${it.value}" }})")
+        }
+        chunk.toolResults?.let { results ->
+          for (r in results) {
+            toolResultsList.add(r.result.take(2000))
+            if (r.result.startsWith("Error:") || r.result.startsWith("FAILED")) toolErrorsList.add("${r.name}: ${r.result.take(200)}")
+          }
+        }
+        chunk.error?.let { sb.append("\nError: $it") }
+        if (chunk.isDone && isReasoning && currentReasoning.isNotEmpty()) {
+          reasoningBlocks.add(currentReasoning.toString())
+          isReasoning = false
+        }
+        val allReasoning = if (isReasoning && currentReasoning.isNotEmpty()) reasoningBlocks + currentReasoning.toString() else reasoningBlocks.toList()
+        val currentLen = sb.length
+        val hasNewLine = chunk.content.contains('\n')
+        val lineWorth = currentLen - lastUiLength >= charsPerLine
+        if (chunk.isDone || chunk.error != null || hasNewLine || lineWorth || chunk.toolCalls != null || chunk.toolResults != null || chunk.reasoning != null || chunk.contentReplace != null) {
+          lastUiLength = currentLen
+          withContext(Dispatchers.Main) {
+            _messages.value = _messages.value.toMutableList().also {
+              it[it.lastIndex] = it.last().copy(
+                content = sb.toString(),
+                reasoning = allReasoning,
+                isReasoningDone = !isReasoning,
+                toolCalls = toolCallsList.toList(),
+                toolResults = toolResultsList.toList(),
+                toolErrors = toolErrorsList.toList(),
+                locationData = if (toolExecutor.locationUsedThisTurn) toolExecutor.lastLocationData else null,
+              )
+            }
+          }
+        }
+      }
+    } finally {
+      // The UI is throttled during streaming. Flush the latest buffered chunk even
+      // when collection fails or is cancelled before the next UI update.
+      withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+        val allReasoning = if (isReasoning && currentReasoning.isNotEmpty()) {
+          reasoningBlocks + currentReasoning.toString()
+        } else {
+          reasoningBlocks.toList()
+        }
+        _messages.value = _messages.value.toMutableList().also {
+          it[it.lastIndex] = it.last().copy(
+            content = sb.toString(),
+            reasoning = allReasoning,
+            isReasoningDone = !isReasoning,
+            toolCalls = toolCallsList.toList(),
+            toolResults = toolResultsList.toList(),
+            toolErrors = toolErrorsList.toList(),
+            locationData = if (toolExecutor.locationUsedThisTurn) toolExecutor.lastLocationData else null,
+          )
         }
       }
     }
@@ -1120,14 +1158,35 @@ $transcript
         if (resendImages.isNotEmpty()) {
           _messages.value = _messages.value.toMutableList().also { it[it.lastIndex] = it.last().copy(imageUris = resendImages) }
         }
-
-        val finalMsg = _messages.value.last()
-        chatDao.insertMessage(MessageEntity(id = finalMsg.id, conversationId = conversationId, role = Role.ASSISTANT.value, content = finalMsg.content))
-      } catch (_: kotlinx.coroutines.CancellationException) { /* stopped */ } catch (e: Exception) {
+      } catch (_: kotlinx.coroutines.CancellationException) {
+        // Keep any response received before the stream was stopped.
+      } catch (e: Exception) {
         val updated = _messages.value.toMutableList()
-        updated[updated.lastIndex] = updated.last().copy(content = "Error: ${e.message}")
+        val partial = updated.last().content
+        val error = "Error: ${e.message ?: "Unknown streaming error"}"
+        updated[updated.lastIndex] = updated.last().copy(
+          content = if (partial.isBlank()) error else "$partial\n\n$error",
+        )
         _messages.value = updated
       } finally {
+        withContext(kotlinx.coroutines.NonCancellable) {
+          val finalMsg = _messages.value.lastOrNull { it.id == assistantMsg.id }
+          if (finalMsg != null && finalMsg.content.isNotBlank()) {
+            val filesDirPath = getApplication<android.app.Application>().filesDir.absolutePath
+            val imagePaths = finalMsg.imageUris.joinToString(",") {
+              it.removePrefix("file://").removePrefix("$filesDirPath/")
+            }
+            chatDao.insertMessage(
+              MessageEntity(
+                id = finalMsg.id,
+                conversationId = conversationId,
+                role = Role.ASSISTANT.value,
+                content = finalMsg.content,
+                imagePaths = imagePaths,
+              ),
+            )
+          }
+        }
         _isStreaming.value = false
       }
     }
