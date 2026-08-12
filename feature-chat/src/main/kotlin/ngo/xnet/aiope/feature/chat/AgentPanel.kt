@@ -422,7 +422,11 @@ private fun TimersTab(
   var editingTimer by remember { mutableStateOf<ScheduledTaskEntity?>(null) }
 
   Column(Modifier.fillMaxSize()) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+    Row(
+      Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
       Text("Scheduled Tasks", fontSize = 11.sp, color = Color(0xFFAAAAAA), fontWeight = FontWeight.Medium)
       IconButton(onClick = { showAdd = true }, modifier = Modifier.size(24.dp)) {
         Icon(Icons.Default.Add, "Add timer", modifier = Modifier.size(14.dp), tint = Color(0xFF888888))
@@ -431,96 +435,119 @@ private fun TimersTab(
 
     if (scheduledTasks.isEmpty()) {
       Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("No timers set", color = Color(0xFF666666), fontSize = 12.sp)
+        Text("No scheduled tasks", fontSize = 11.sp, color = Color(0xFF666666))
       }
     } else {
-      LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+      LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items(scheduledTasks, key = { it.id }) { timer ->
-          TimerRow(timer = timer, onEdit = { editingTimer = timer }, onDelete = { onDelete(timer.id) })
+          TimerRow(timer, onEdit = { editingTimer = timer }, onDelete = { onDelete(timer.id) })
         }
       }
     }
   }
 
-  if (showAdd) {
-    AddTimerDialog(agents = agents, onDismiss = { showAdd = false }, onSave = {
-      onSave(it)
-      showAdd = false
-    })
+  if (showAdd || editingTimer != null) {
+    AddTimerDialog(
+      agents = agents,
+      editing = editingTimer,
+      onDismiss = {
+        showAdd = false
+        editingTimer = null
+      },
+      onSave = { task ->
+        onSave(task)
+        showAdd = false
+        editingTimer = null
+      },
+    )
   }
+}
 
-  if (editingTimer != null) {
-    AddTimerDialog(agents = agents, editing = editingTimer, onDismiss = { editingTimer = null }, onSave = {
-      onSave(it)
-      editingTimer = null
-    })
-  }
+private fun fmtTime(h: Int, m: Int) = String.format("%02d:%02d", h, m)
+
+private fun describeSchedule(t: ScheduledTaskEntity): String = when (t.scheduleType) {
+  "once" -> "Once, shortly after save"
+  "interval" -> "Every ${t.intervalValue} ${t.intervalUnit}"
+  "daily" -> "Daily at ${fmtTime(t.timeHour, t.timeMinute)}"
+  "weekly" -> "Weekly (${t.daysOfWeek.ifBlank { "Mon-Fri" }}) at ${fmtTime(t.timeHour, t.timeMinute)}"
+  "monthly" -> "Monthly day ${t.dayOfMonth} at ${fmtTime(t.timeHour, t.timeMinute)}"
+  else -> t.scheduleType
 }
 
 @Composable
 private fun TimerRow(timer: ScheduledTaskEntity, onEdit: () -> Unit, onDelete: () -> Unit) {
-  Row(
+  val runs = if (timer.maxRuns > 0) "${timer.runsCompleted}/${timer.maxRuns} runs" else "${timer.runsCompleted} runs"
+  val nextLabel = timer.nextRun?.let {
+    "Next: " + java.text.SimpleDateFormat("EEE MMM d, HH:mm", java.util.Locale.US).format(java.util.Date(it))
+  } ?: "Not scheduled"
+  Column(
     Modifier
       .fillMaxWidth()
-      .clip(RoundedCornerShape(6.dp))
-      .background(Color(0xFF151515))
+      .clip(RoundedCornerShape(10.dp))
+      .background(Color(0xFF1E1E1E))
       .clickable(onClick = onEdit)
-      .padding(horizontal = 8.dp, vertical = 6.dp),
-    verticalAlignment = Alignment.CenterVertically,
+      .padding(10.dp),
   ) {
-    Column(Modifier.weight(1f)) {
-      Text(timer.agentName, fontSize = 10.sp, color = Color(0xFFBBBBBB), fontWeight = FontWeight.Medium)
-      Text(timer.prompt.take(50), fontSize = 9.sp, color = Color(0xFF777777), maxLines = 1)
-      val schedule = buildString {
-        if (timer.oneShot) {
-          append("Once")
-        } else if (timer.cronHour == -1) {
-          append("Every hour")
-        } else {
-          append("${timer.cronHour}:${timer.cronMinute.toString().padStart(2, '0')}")
-        }
-        if (timer.cronDaysOfWeek.isNotEmpty()) append(" (${timer.cronDaysOfWeek})")
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+      Text(
+        timer.agentName,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        color = Color(0xFFDDDDDD),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      IconButton(onClick = onDelete, modifier = Modifier.size(20.dp)) {
+        Icon(Icons.Default.Delete, "Delete", modifier = Modifier.size(12.dp), tint = Color(0xFF555555))
       }
-      Text(schedule, fontSize = 9.sp, color = Color(0xFF555555), fontFamily = FontFamily.Monospace)
     }
-    IconButton(onClick = onDelete, modifier = Modifier.size(20.dp)) {
-      Icon(Icons.Default.Delete, "Delete", modifier = Modifier.size(12.dp), tint = Color(0xFF555555))
+    Text(timer.prompt, fontSize = 10.sp, color = Color(0xFFAAAAAA), maxLines = 2, overflow = TextOverflow.Ellipsis)
+    Spacer(Modifier.height(4.dp))
+    Text(describeSchedule(timer), fontSize = 9.sp, color = Color(0xFF777777), fontFamily = FontFamily.Monospace)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      Text(
+        runs,
+        fontSize = 9.sp,
+        color = if (timer.status == "finished" || (timer.maxRuns > 0 && timer.runsCompleted >= timer.maxRuns)) Color(0xFF4CAF50) else Color(0xFF999999),
+      )
+      Text(nextLabel, fontSize = 9.sp, color = Color(0xFF555555), fontFamily = FontFamily.Monospace)
     }
   }
 }
 
 @Composable
-private fun AddTimerDialog(agents: List<AgentEntity> = emptyList(), editing: ScheduledTaskEntity? = null, onDismiss: () -> Unit, onSave: (ScheduledTaskEntity) -> Unit) {
+private fun AddTimerDialog(
+  agents: List<AgentEntity> = emptyList(),
+  editing: ScheduledTaskEntity? = null,
+  onDismiss: () -> Unit,
+  onSave: (ScheduledTaskEntity) -> Unit,
+) {
+  val scheduleTypes = listOf("once", "interval", "daily", "weekly", "monthly")
+  val scheduleLabels = mapOf("once" to "Once", "interval" to "Interval", "daily" to "Daily", "weekly" to "Weekly", "monthly" to "Monthly")
+  val unitLabels = mapOf("min" to "min", "hour" to "hr", "day" to "day")
+
+  var agentId by remember { mutableStateOf(editing?.agentId ?: agents.firstOrNull()?.id ?: "") }
   var prompt by remember { mutableStateOf(editing?.prompt ?: "") }
-  var selectedTools by remember { mutableStateOf(editing?.tools?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList<String>()) }
-  var preset by remember {
-    mutableStateOf(
-      if (editing?.oneShot == true) {
-        "once"
-      } else if (editing?.cronHour == -1) {
-        "hourly"
-      } else if (editing?.cronDaysOfWeek?.isNotEmpty() == true) {
-        "weekly"
-      } else {
-        "daily"
-      },
-    )
-  }
-  var hour by remember { mutableIntStateOf(editing?.cronHour?.takeIf { it >= 0 } ?: 9) }
-  var minute by remember { mutableIntStateOf(editing?.cronMinute ?: 0) }
-  var second by remember { mutableIntStateOf(0) }
-  var selectedDays by remember { mutableStateOf(editing?.cronDaysOfWeek ?: "") }
-  var selectedMonth by remember { mutableIntStateOf(-1) }
+  var scheduleType by remember { mutableStateOf(editing?.scheduleType ?: "daily") }
+  var intervalValue by remember { mutableStateOf(if ((editing?.intervalValue ?: 0) > 0) editing!!.intervalValue else 30) }
+  var intervalUnit by remember { mutableStateOf(editing?.intervalUnit ?: "min") }
+  var timeHour by remember { mutableStateOf(editing?.timeHour ?: 9) }
+  var timeMinute by remember { mutableStateOf(editing?.timeMinute ?: 0) }
+  var selectedDays by remember { mutableStateOf((editing?.daysOfWeek ?: "").split(",").filter { it.isNotBlank() }) }
+  var dayOfMonth by remember { mutableStateOf(editing?.dayOfMonth ?: 1) }
+  var maxRuns by remember { mutableStateOf(editing?.maxRuns ?: 0) }
 
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text(if (editing != null) "Edit Timer" else "New Timer", fontSize = 14.sp) },
+    title = { Text(if (editing == null) "New Timer" else "Edit Timer", fontSize = 14.sp) },
     text = {
       Column(
         Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        // Prompt
+        Text("Agent", fontSize = 10.sp, color = Color(0xFF888888))
+        agents.firstOrNull { it.id == agentId }?.let { Text(it.name, fontSize = 12.sp, color = Color(0xFFBBBBBB)) }
+
         OutlinedTextField(
           value = prompt,
           onValueChange = { prompt = it },
@@ -528,111 +555,131 @@ private fun AddTimerDialog(agents: List<AgentEntity> = emptyList(), editing: Sch
           modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 56.dp),
           textStyle = LocalTextStyle.current.copy(fontSize = 12.sp),
           minLines = 2,
+          maxLines = 4,
         )
 
-        // Tools
-        Text("Tools", fontSize = 10.sp, color = Color(0xFF888888))
-        val timerToolGroups = listOf(
-          "Web" to listOf("search_web", "fetch_url"),
-          "Files" to listOf("read_file", "list_directory", "write_file"),
-          "Execute" to listOf("run_sh", "ssh_exec"),
-          "Device" to listOf("send_sms", "send_notification", "set_alarm"),
-          "Memory" to listOf("memory_store", "memory_recall"),
-        )
-        ToolGroupSelector(toolGroups = timerToolGroups, selectedTools = selectedTools, onToggle = { tool -> selectedTools = if (tool in selectedTools) selectedTools - tool else selectedTools + tool })
-
-        // Preset chips
+        Text("Schedule", fontSize = 10.sp, color = Color(0xFF888888))
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-          listOf("once", "hourly", "daily", "weekly", "monthly").forEach { p ->
-            FilterChip(
-              selected = preset == p,
-              onClick = { preset = p },
-              label = { Text(p, fontSize = 9.sp) },
-              modifier = Modifier.height(26.dp),
-            )
-          }
-        }
-
-        // Time rollers (H:M:S)
-        if (preset != "hourly") {
-          Text("Time", fontSize = 10.sp, color = Color(0xFF888888))
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            NumberRoller(value = hour, range = 0..23, label = "H", onValueChange = { hour = it })
-            Text(":", fontSize = 14.sp, color = Color(0xFF888888))
-            NumberRoller(value = minute, range = 0..59, label = "M", onValueChange = { minute = it })
-            Text(":", fontSize = 14.sp, color = Color(0xFF888888))
-            NumberRoller(value = second, range = 0..59, label = "S", onValueChange = { second = it })
-          }
-        }
-
-        // Day of week (for weekly)
-        if (preset == "weekly") {
-          Text("Days", fontSize = 10.sp, color = Color(0xFF888888))
-          Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            val dayLabels = listOf("S" to "1", "M" to "2", "T" to "3", "W" to "4", "T" to "5", "F" to "6", "S" to "7")
-            val selected = selectedDays.split(",").filter { it.isNotEmpty() }.toMutableSet()
-            dayLabels.forEach { (label, value) ->
-              FilterChip(
-                selected = value in selected,
-                onClick = {
-                  if (value in selected) selected.remove(value) else selected.add(value)
-                  selectedDays = selected.joinToString(",")
-                },
-                label = { Text(label, fontSize = 9.sp) },
-                modifier = Modifier.height(24.dp).width(32.dp),
+          scheduleTypes.forEach { t ->
+            val selected = scheduleType == t
+            TextButton(
+              onClick = { scheduleType = t },
+              modifier = Modifier.height(28.dp),
+              contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+            ) {
+              Text(
+                scheduleLabels[t] ?: t,
+                fontSize = 11.sp,
+                color = if (selected) Color(0xFF2979FF) else Color(0xFF888888),
+                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
               )
             }
           }
         }
 
-        // Month (for monthly)
-        if (preset == "monthly") {
-          Text("Month", fontSize = 10.sp, color = Color(0xFF888888))
-          Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            var monthExpanded by remember { mutableStateOf(false) }
-            val monthNames = listOf("Every", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-            Box {
-              OutlinedButton(onClick = { monthExpanded = true }, modifier = Modifier.height(32.dp)) {
-                Text(monthNames[selectedMonth + 1], fontSize = 10.sp)
-              }
-              DropdownMenu(expanded = monthExpanded, onDismissRequest = { monthExpanded = false }) {
-                monthNames.forEachIndexed { idx, name ->
-                  DropdownMenuItem(text = { Text(name, fontSize = 11.sp) }, onClick = {
-                    selectedMonth = idx - 1
-                    monthExpanded = false
-                  })
-                }
+        when (scheduleType) {
+          "once" -> Text("Runs once, about a minute after saving", fontSize = 10.sp, color = Color(0xFF666666))
+
+          "interval" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            NumberRoller(intervalValue, 1..720, "every", { intervalValue = it })
+            unitLabels.forEach { (key, label) ->
+              TextButton(
+                onClick = { intervalUnit = key },
+                modifier = Modifier.height(28.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+              ) {
+                Text(label, fontSize = 11.sp, color = if (intervalUnit == key) Color(0xFF2979FF) else Color(0xFF888888))
               }
             }
           }
+
+          "daily" -> TimeRollers(timeHour, timeMinute) { h, m ->
+            timeHour = h
+            timeMinute = m
+          }
+
+          "weekly" -> {
+            TimeRollers(timeHour, timeMinute) { h, m ->
+              timeHour = h
+              timeMinute = m
+            }
+            WeekdayChips(selectedDays) { selectedDays = it }
+          }
+
+          "monthly" -> {
+            TimeRollers(timeHour, timeMinute) { h, m ->
+              timeHour = h
+              timeMinute = m
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              Text("Day of month", fontSize = 10.sp, color = Color(0xFF888888))
+              NumberRoller(dayOfMonth, 1..28, "day", { dayOfMonth = it })
+            }
+          }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("Max runs", fontSize = 10.sp, color = Color(0xFF888888))
+          NumberRoller(maxRuns, 0..60, "runs (0 = unlimited)", { maxRuns = it })
+        }
+        if (maxRuns > 0 && scheduleType == "once") {
+          Text("'Once' always runs a single time", fontSize = 9.sp, color = Color(0xFF666666))
         }
       }
     },
     confirmButton = {
       TextButton(onClick = {
-        if (prompt.isNotBlank()) {
-          val cronHour = when (preset) {
-            "hourly" -> -1
-            else -> hour
-          }
-          onSave(
-            ScheduledTaskEntity(
-              id = editing?.id ?: java.util.UUID.randomUUID().toString(),
-              agentName = "Timer Agent",
-              prompt = prompt,
-              tools = selectedTools.joinToString(","),
-              cronHour = cronHour,
-              cronMinute = minute,
-              cronDaysOfWeek = if (preset == "weekly") selectedDays else "",
-              oneShot = preset == "once",
-              nextRun = if (preset == "once") System.currentTimeMillis() + 60_000L else null,
-            ),
-          )
-        }
-      }) { Text("Save") }
+        if (prompt.isBlank() || agentId.isEmpty()) return@TextButton
+        val base = editing ?: ScheduledTaskEntity(prompt = prompt)
+        onSave(
+          base.copy(
+            agentId = agentId,
+            agentName = agents.firstOrNull { it.id == agentId }?.name ?: "Timer Agent",
+            prompt = prompt,
+            scheduleType = scheduleType,
+            intervalValue = intervalValue,
+            intervalUnit = intervalUnit,
+            timeHour = timeHour,
+            timeMinute = timeMinute,
+            daysOfWeek = selectedDays.joinToString(","),
+            dayOfMonth = dayOfMonth,
+            maxRuns = maxRuns,
+            enabled = true,
+            nextRun = null,
+          ),
+        )
+      }) { Text("Save", fontSize = 12.sp) }
     },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", fontSize = 12.sp) } },
   )
+}
+
+@Composable
+private fun TimeRollers(hour: Int, minute: Int, onChange: (Int, Int) -> Unit) {
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    NumberRoller(hour, 0..23, "hour", { onChange(it, minute) })
+    Text(":", color = Color(0xFF888888), fontSize = 12.sp)
+    NumberRoller(minute, 0..59, "min", { onChange(hour, it) })
+  }
+}
+
+@Composable
+private fun WeekdayChips(days: List<String>, onChange: (List<String>) -> Unit) {
+  val labels = listOf("Mon" to "1", "Tue" to "2", "Wed" to "3", "Thu" to "4", "Fri" to "5", "Sat" to "6", "Sun" to "7")
+  Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    labels.forEach { (label, value) ->
+      val selected = days.contains(value)
+      TextButton(
+        onClick = {
+          onChange(if (selected) days - value else days + value)
+        },
+        modifier = Modifier.height(26.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+      ) {
+        Text(label, fontSize = 9.sp, color = if (selected) Color(0xFF2979FF) else Color(0xFF888888))
+      }
+    }
+  }
 }
 
 @Composable
