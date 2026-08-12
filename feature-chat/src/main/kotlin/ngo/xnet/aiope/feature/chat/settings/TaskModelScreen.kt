@@ -281,7 +281,11 @@ internal suspend fun fetchModels(baseUrl: String, apiKey: String): List<ModelDef
     }
 
     if (resp.responseCode !in 200..299) {
-      val err = try { resp.errorStream?.bufferedReader()?.readText()?.take(200) } catch (_: Exception) { null }
+      val err = try {
+        resp.errorStream?.bufferedReader()?.readText()?.take(200)
+      } catch (_: Exception) {
+        null
+      }
       android.util.Log.e("FetchModels", "HTTP ${resp.responseCode}: $err (url=$url)")
       return@withContext emptyList()
     }
