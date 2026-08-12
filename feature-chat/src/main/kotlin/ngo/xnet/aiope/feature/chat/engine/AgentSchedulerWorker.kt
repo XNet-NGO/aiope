@@ -74,9 +74,13 @@ class AgentSchedulerWorker(
           dao.insertScheduledTask(task.copy(enabled = false, lastRun = now, nextRun = null))
         }
 
+        // Recurring runs carry context: this run number + last 5 previous outputs
+        val runNumber = task.runsCompleted + 1
+        val prevRuns = dao.getTaskRuns(task.id, 5)
+
         // Actually run the agent via gateway
         val result = if (provider != null) {
-          runAgent(dao, provider, task)
+          runAgent(dao, provider, task, runNumber, prevRuns)
         } else {
           "Error: No active provider configured"
         }
@@ -84,6 +88,32 @@ class AgentSchedulerWorker(
         // Store result and mark finished
         val status = if (result.startsWith("Error:")) "failed" else "finished"
         dao.updateAgentTask(taskId, status, result, System.currentTimeMillis())
+
+        // Log this run for future context carry-over (truncate output)
+        dao.insertTaskRun(
+          ngo.xnet.aiope.feature.chat.db.TaskRunEntity(
+            scheduledTaskId = task.id,
+            runNumber = runNumber,
+            timestamp = System.currentTimeMillis(),
+            prompt = task.prompt,
+            output = result.take(4000),
+            status = status,
+          ),
+        )
+
+        // Advance progress; auto-disable at maxRuns (0 = unlimited)
+        val maxedOut = !task.oneShot && task.maxRuns > 0 && runNumber >= task.maxRuns
+        if (task.oneShot || maxedOut) {
+          dao.insertScheduledTask(task.copy(enabled = false, lastRun = now, nextRun = null, runsCompleted = runNumber))
+          if (maxedOut) {
+            showNotification(
+              title = "Agent: ${task.agentName} — finished",
+              body = "Completed $runNumber/${task.maxRuns} runs.",
+            )
+          }
+        } else if (!task.oneShot) {
+          dao.insertScheduledTask(task.copy(runsCompleted = runNumber, lastRun = now, nextRun = nextRun))
+        }
 
         // Post notification with result preview
         showNotification(
@@ -104,16 +134,37 @@ class AgentSchedulerWorker(
     dao: ngo.xnet.aiope.feature.chat.db.ChatDao,
     provider: ProviderProfile,
     task: ScheduledTaskEntity,
+    runNumber: Int,
+    prevRuns: List<ngo.xnet.aiope.feature.chat.db.TaskRunEntity>,
   ): String = try {
     // Resolve agent config
     val agent: AgentEntity? = dao.getAgentByName(task.agentName)
     val basePrompt = agent?.prompt ?: "You are a scheduled task agent. Complete the assigned task using your tools."
-    val systemPrompt = basePrompt + "\n\n## Environment\n- Date/Time: " + java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z")) + "\n- Platform: Android (AIOPE scheduled task)\n- Execution: Background (WorkManager)\n\n## Tool Execution\nYou MUST use tools to complete your task.\n- search_web: search the web\n- fetch_url: fetch URL content\n- read_file/write_file/list_directory: filesystem\n- run_sh: shell commands\n- send_sms: send SMS\n- send_notification: show notification\n- set_alarm: set alarm\n- ssh_exec: remote command\n- memory_store/memory_recall: persistent memory\n\nDO NOT describe what you would do — actually DO it with tools.\nIf a tool fails, try an alternative. When finished, summarize what was accomplished."
+    val systemPrompt = basePrompt + "\n\n## Environment\n- Date/Time: " + java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z")) + "\n- Platform: Android (AIOPE scheduled task)\n- Execution: Background (WorkManager)\n\n## Tool Execution\nYou MUST use tools to complete your task.\n- search_web: search the web\n- fetch_url: fetch URL content\n- read_file/write_file/list_directory: filesystem\n- run_sh: shell commands\n- send_sms: send SMS\n- send_notification: show notification\n- set_alarm: set alarm\n- ssh_exec: remote command\n- memory_store/memory_recall: persistent memory\n\nDO NOT describe what you would do — actually DO it with tools.\nIf a tool fails, try an alternative. When finished, summarize what was accomplished.\nIf this is a recurring run (run # > 1), the previous run outputs are listed in the user message — compare against them and report what CHANGED since the last run."
     val modelId = agent?.model?.ifEmpty { null } ?: provider.selectedModelId
     val temperature = agent?.temperature ?: 0.7f
 
+    // Build user message with run context (previous outputs = carry-over state)
+    val userMessage = buildString {
+      append(task.prompt)
+      append("\n\n## Run Context\n")
+      append("- This is run #").append(runNumber)
+      if (task.maxRuns > 0) append(" of ").append(task.maxRuns)
+      append(".\n")
+      if (prevRuns.isEmpty()) {
+        append("- No previous runs yet — this is the first execution.\n")
+      } else {
+        append("- Previous runs (most recent last):\n")
+        prevRuns.sortedBy { it.runNumber }.forEach { run ->
+          append("  - Run #").append(run.runNumber)
+          append(" (").append(run.status).append("): ")
+          append(run.output.take(600).replace("\n", " ")).append("\n")
+        }
+      }
+    }
+
     // Build messages
-    val messages = listOf("system" to systemPrompt, "user" to task.prompt)
+    val messages = listOf("system" to systemPrompt, "user" to userMessage)
 
     // Resolve tools from timer config
     val timerTools = task.tools.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()

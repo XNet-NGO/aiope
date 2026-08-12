@@ -55,6 +55,14 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
   }
 }
 
+val MIGRATION_7_8 = object : Migration(7, 8) {
+  override fun migrate(db: SupportSQLiteDatabase) {
+    db.execSQL("ALTER TABLE scheduled_tasks ADD COLUMN runsCompleted INTEGER NOT NULL DEFAULT 0")
+    db.execSQL("ALTER TABLE scheduled_tasks ADD COLUMN maxRuns INTEGER NOT NULL DEFAULT 0")
+    db.execSQL("CREATE TABLE IF NOT EXISTS task_runs (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, scheduledTaskId TEXT NOT NULL, runNumber INTEGER NOT NULL, timestamp INTEGER NOT NULL, prompt TEXT NOT NULL, output TEXT NOT NULL, status TEXT NOT NULL)")
+  }
+}
+
 val MIGRATION_6_7 = object : Migration(6, 7) {
   override fun migrate(db: SupportSQLiteDatabase) {
     db.execSQL("ALTER TABLE scheduled_tasks ADD COLUMN tools TEXT NOT NULL DEFAULT ''")
@@ -68,7 +76,7 @@ object ChatModule {
   @Singleton
   fun provideDatabase(@ApplicationContext ctx: Context): ChatDatabase {
     val db = Room.databaseBuilder(ctx, ChatDatabase::class.java, "aiope-chat.db")
-      .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+      .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
       .addCallback(object : androidx.room.RoomDatabase.Callback() {
         override fun onCreate(db: SupportSQLiteDatabase) { /* seeded in open */ }
         override fun onOpen(db: SupportSQLiteDatabase) {

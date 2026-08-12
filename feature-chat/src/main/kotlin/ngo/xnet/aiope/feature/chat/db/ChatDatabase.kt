@@ -108,6 +108,19 @@ data class ScheduledTaskEntity(
   val lastRun: Long? = null,
   val nextRun: Long? = null,
   val createdAt: Long = System.currentTimeMillis(),
+  val runsCompleted: Int = 0, // completed runs (recurring timers)
+  val maxRuns: Int = 0, // 0 = unlimited, else auto-disable after N runs
+)
+
+@Entity(tableName = "task_runs")
+data class TaskRunEntity(
+  @PrimaryKey(autoGenerate = true) val id: Long = 0,
+  val scheduledTaskId: String,
+  val runNumber: Int,
+  val timestamp: Long = System.currentTimeMillis(),
+  val prompt: String = "",
+  val output: String = "",
+  val status: String = "success",
 )
 
 @Dao
@@ -252,6 +265,15 @@ interface ChatDao {
 
   @Query("DELETE FROM scheduled_tasks WHERE id = :id")
   suspend fun deleteScheduledTask(id: String)
+
+  @Query("SELECT * FROM task_runs WHERE scheduledTaskId = :taskId ORDER BY runNumber DESC LIMIT :limit")
+  suspend fun getTaskRuns(taskId: String, limit: Int = 5): List<TaskRunEntity>
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun insertTaskRun(run: TaskRunEntity)
+
+  @Query("DELETE FROM task_runs WHERE scheduledTaskId = :taskId")
+  suspend fun deleteTaskRuns(taskId: String)
 }
 
 @Database(
@@ -260,8 +282,9 @@ interface ChatDao {
     ProviderEntity::class, ToolToggleEntity::class, McpServerEntity::class,
     ModelCacheEntity::class, SettingsKvEntity::class,
     AgentEntity::class, AgentTaskEntity::class, ScheduledTaskEntity::class,
+    TaskRunEntity::class,
   ],
-  version = 7,
+  version = 8,
 )
 abstract class ChatDatabase : RoomDatabase() {
   abstract fun chatDao(): ChatDao

@@ -480,6 +480,14 @@ private fun TimerRow(timer: ScheduledTaskEntity, onEdit: () -> Unit, onDelete: (
           append("${timer.cronHour}:${timer.cronMinute.toString().padStart(2, '0')}")
         }
         if (timer.cronDaysOfWeek.isNotEmpty()) append(" (${timer.cronDaysOfWeek})")
+        if (!timer.oneShot) {
+          if (timer.maxRuns > 0) {
+            append("  ·  ${timer.runsCompleted}/${timer.maxRuns} runs")
+          } else if (timer.runsCompleted > 0) {
+            append("  ·  ran ${timer.runsCompleted}x")
+          }
+          if (!timer.enabled && timer.maxRuns > 0 && timer.runsCompleted >= timer.maxRuns) append("  ·  finished")
+        }
       }
       Text(schedule, fontSize = 9.sp, color = Color(0xFF555555), fontFamily = FontFamily.Monospace)
     }
@@ -511,6 +519,7 @@ private fun AddTimerDialog(agents: List<AgentEntity> = emptyList(), editing: Sch
   var second by remember { mutableIntStateOf(0) }
   var selectedDays by remember { mutableStateOf(editing?.cronDaysOfWeek ?: "") }
   var selectedMonth by remember { mutableIntStateOf(-1) }
+  var maxRuns by remember { mutableIntStateOf(editing?.maxRuns ?: 0) }
 
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -606,6 +615,15 @@ private fun AddTimerDialog(agents: List<AgentEntity> = emptyList(), editing: Sch
             }
           }
         }
+
+        // Max runs (recurring only; 0 = unlimited)
+        if (preset != "once") {
+          Text("Max runs", fontSize = 10.sp, color = Color(0xFF888888))
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            NumberRoller(value = maxRuns, range = 0..99, label = "Runs", onValueChange = { maxRuns = it })
+            Text(if (maxRuns == 0) "0 = unlimited" else "auto-disables after $maxRuns runs", fontSize = 9.sp, color = Color(0xFF666666))
+          }
+        }
       }
     },
     confirmButton = {
@@ -625,6 +643,8 @@ private fun AddTimerDialog(agents: List<AgentEntity> = emptyList(), editing: Sch
               cronMinute = minute,
               cronDaysOfWeek = if (preset == "weekly") selectedDays else "",
               oneShot = preset == "once",
+              maxRuns = maxRuns,
+              runsCompleted = editing?.runsCompleted ?: 0,
               nextRun = if (preset == "once") System.currentTimeMillis() + 60_000L else null,
             ),
           )
