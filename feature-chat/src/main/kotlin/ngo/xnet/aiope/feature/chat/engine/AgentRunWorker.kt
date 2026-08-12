@@ -24,6 +24,8 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 // Tools actually implemented by the background worker. Keep in sync with executeWorkerTool().
 private val workerToolCatalog: Map<String, String> = mapOf(
+  "search_web" to "Search the web for current information. Args: query: String",
+  "fetch_url" to "Fetch a URL and return extracted text and images. Args: url: String",
   "run_sh" to "Run a shell command on this device. Args: command: String, timeout: Number (optional)",
   "ssh_exec" to "Run a command on a remote server over SSH. Args: host: String, command: String, timeout: Number (optional)",
   "send_notification" to "Show a notification on this device. Args: title: String, body: String",
@@ -222,6 +224,16 @@ class AgentRunWorker(
           runProcess(proc, timeout)
         }
 
+        "search_web" -> {
+          val query = args["query"]?.toString() ?: return "Error: no query"
+          searxQuery(query)
+        }
+
+        "fetch_url" -> {
+          val url = args["url"]?.toString() ?: return "Error: no url"
+          fetchUrl(url)
+        }
+
         "send_notification" -> {
           val title = args["title"]?.toString() ?: "Agent"
           val body = args["body"]?.toString() ?: ""
@@ -276,6 +288,83 @@ class AgentRunWorker(
 
         else -> "Tool '$name' not available in background mode"
       }
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+  }
+
+  private val httpClient: okhttp3.OkHttpClient by lazy { SafeOkHttp.builder().build() }
+
+  private fun searxQuery(query: String): String {
+    if (query.isBlank()) return "Error: query required"
+    val u = "https://search.xnet.ngo/search?q=${java.net.URLEncoder.encode(query, "UTF-8")}&format=json"
+    val req = okhttp3.Request.Builder().url(u).header("User-Agent", "AIOPE/2.0 (Android)").build()
+    return try {
+      val resp = httpClient.newCall(req).execute()
+      val body = resp.use { it.body?.string() ?: "" }
+      if (body.isBlank()) return ddgFallback(query)
+      val json = org.json.JSONObject(body)
+      val results = json.optJSONArray("results") ?: return ddgFallback(query)
+      val sb = StringBuilder()
+      for (i in 0 until minOf(results.length(), 8)) {
+        val r = results.optJSONObject(i) ?: continue
+        sb.append("- ${r.optString("title")}\n  ${r.optString("url")}\n  ${r.optString("content")}\n")
+      }
+      sb.toString().ifBlank { ddgFallback(query) }
+    } catch (e: Exception) {
+      "Error: ${e.message}"
+    }
+  }
+
+  private fun ddgFallback(query: String): String {
+    val u = "https://html.duckduckgo.com/html/?q=${java.net.URLEncoder.encode(query, "UTF-8")}"
+    val req = okhttp3.Request.Builder().url(u).header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36").build()
+    val html = try {
+      httpClient.newCall(req).execute().use { it.body?.string() ?: "" }
+    } catch (_: Exception) {
+      return "Error: search unavailable"
+    }
+    val pattern = Regex("""<a rel="nofollow" class="result__a" href="[^"]*uddg=([^&"]+)[^"]*">(.+?)</a>""")
+    val snippetPattern = Regex("""<a class="result__snippet"[^>]*>(.+?)</a>""")
+    val links = pattern.findAll(html).take(10).toList()
+    val snippets = snippetPattern.findAll(html).take(10).toList()
+    if (links.isEmpty()) return "No results found."
+    val sb = StringBuilder()
+    links.forEachIndexed { i, m ->
+      val url = java.net.URLDecoder.decode(m.groupValues[1], "UTF-8")
+      val title = m.groupValues[2].replace(Regex("<[^>]+>"), "")
+      val snippet = snippets.getOrNull(i)?.groupValues?.get(1)?.replace(Regex("<[^>]+>"), "") ?: ""
+      sb.append("- $title\n  $url\n  $snippet\n")
+    }
+    return sb.toString()
+  }
+
+  private fun fetchUrl(urlStr: String): String {
+    return try {
+      val fetchUrl = java.net.URL(urlStr)
+      val req = okhttp3.Request.Builder().url(fetchUrl)
+        .header("User-Agent", "Mozilla/5.0 (Linux; Android) AIOPE/2.0").build()
+      val resp = httpClient.newCall(req).execute()
+      val ct = resp.header("Content-Type") ?: ""
+      val body = resp.use { it.body?.string() ?: "" }
+      if (!ct.contains("html")) return body.take(OUTPUT_TRUNCATE)
+      val base = "${fetchUrl.protocol}://${fetchUrl.host}"
+      val imgs = mutableListOf<String>()
+      Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE).findAll(body).forEach { m ->
+        val src = m.groupValues[1].let {
+          when {
+            it.startsWith("http") -> it
+            it.startsWith("/") -> "$base$it"
+            else -> "$base/$it"
+          }
+        }
+        if (src.matches(Regex(""".*\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$""", RegexOption.IGNORE_CASE)) || !src.contains(".js")) {
+          imgs.add("![${m.groupValues.getOrElse(1) { "" }.take(80).ifEmpty { "image" }}]($src)")
+        }
+      }
+      val text = android.text.Html.fromHtml(body, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
+      val result = (if (imgs.isNotEmpty()) imgs.distinct().take(20).joinToString("\n") + "\n\n" else "") + text
+      result.take(OUTPUT_TRUNCATE)
     } catch (e: Exception) {
       "Error: ${e.message}"
     }
