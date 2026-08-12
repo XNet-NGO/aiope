@@ -101,7 +101,7 @@ object AgentScheduler {
     for (offset in 0..24) {
       val cal = Calendar.getInstance().apply {
         timeInMillis = fromMillis
-        add(Calendar.MONTH, offset)
+        if (offset > 0) add(Calendar.MONTH, offset)
         set(Calendar.DAY_OF_MONTH, day)
         set(Calendar.HOUR_OF_DAY, task.timeHour.coerceIn(0, 23))
         set(Calendar.MINUTE, task.timeMinute.coerceIn(0, 59))
