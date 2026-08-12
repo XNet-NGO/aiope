@@ -1,7 +1,6 @@
 package ngo.xnet.aiope.feature.chat.di
 
 import android.content.Context
-import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import dagger.Module
@@ -15,6 +14,7 @@ import kotlinx.coroutines.launch
 import ngo.xnet.aiope.feature.chat.db.AgentSeeder
 import ngo.xnet.aiope.feature.chat.db.ChatDao
 import ngo.xnet.aiope.feature.chat.db.ChatDatabase
+import ngo.xnet.aiope.feature.chat.engine.AgentDb
 import javax.inject.Singleton
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -106,15 +106,7 @@ object ChatModule {
   @Provides
   @Singleton
   fun provideDatabase(@ApplicationContext ctx: Context): ChatDatabase {
-    val db = Room.databaseBuilder(ctx, ChatDatabase::class.java, "aiope-chat.db")
-      .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
-      .addCallback(object : androidx.room.RoomDatabase.Callback() {
-        override fun onCreate(db: SupportSQLiteDatabase) { /* seeded in open */ }
-        override fun onOpen(db: SupportSQLiteDatabase) {
-          // Handled after build via coroutine below
-        }
-      })
-      .build()
+    val db = AgentDb.get(ctx)
     CoroutineScope(Dispatchers.IO).launch {
       AgentSeeder.seedIfEmpty(db.chatDao())
     }
