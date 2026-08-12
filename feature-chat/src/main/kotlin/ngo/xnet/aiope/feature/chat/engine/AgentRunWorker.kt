@@ -29,6 +29,7 @@ import org.json.JSONObject
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /**
  * Executes one scheduled agent task run.
@@ -47,6 +48,7 @@ class AgentRunWorker(
     const val KEY_TASK_ID = "ngo.xnet.aiope.extra.RUN_TASK_ID"
     private const val MAX_CONTEXT_RUNS = 5
     private const val OUTPUT_TRUNCATE = 4000
+    private const val MAX_RETRIES = 3
   }
 
   override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -127,7 +129,7 @@ class AgentRunWorker(
 
       Result.success()
     } catch (e: Exception) {
-      Result.retry()
+      if (runAttemptCount >= MAX_RETRIES) Result.failure() else Result.retry()
     } finally {
       db.close()
     }
@@ -176,7 +178,7 @@ class AgentRunWorker(
       apiKey = provider.apiKey,
       model = modelId,
       tools = toolDefs,
-      onToolCall = { name, args -> executeWorkerTool(name, args) },
+      onToolCall = { name, args -> executeWorkerTool(dao, name, args) },
       temperature = temperature,
     )
 
@@ -201,7 +203,7 @@ class AgentRunWorker(
       "send_sms" to "Send an SMS. Args: to: String, body: String",
       "send_notification" to "Show a notification. Args: title: String, body: String",
       "set_alarm" to "Set an alarm. Args: hour: Int, minute: Int, label: String",
-      "ssh_exec" to "Run a remote command. Args: host: String, command: String",
+      "ssh_exec" to "Run a remote command. Args: host: String, command: String, timeout: Int",
       "memory_store" to "Store a memory. Args: key: String, value: String",
       "memory_recall" to "Recall memories. Args: query: String",
     )
@@ -217,17 +219,14 @@ class AgentRunWorker(
     }
   }
 
-  private suspend fun executeWorkerTool(name: String, args: Map<String, Any?>): String {
+  private suspend fun executeWorkerTool(dao: ChatDao, name: String, args: Map<String, Any?>): String {
     return try {
       when (name) {
         "run_sh" -> {
           val cmd = args["command"]?.toString() ?: return "Error: no command"
           val timeout = ((args["timeout"] as? Number)?.toLong() ?: 30L).coerceIn(1L, 120L)
-          val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd))
-          val output = proc.inputStream.bufferedReader().readText()
-          val err = proc.errorStream.bufferedReader().readText()
-          proc.waitFor()
-          (output + err).take(4000)
+          val proc = ProcessBuilder("sh", "-c", cmd).redirectErrorStream(true).start()
+          runProcess(proc, timeout)
         }
 
         "send_notification" -> {
@@ -255,27 +254,24 @@ class AgentRunWorker(
         "ssh_exec" -> {
           val host = args["host"]?.toString() ?: return "Error: no host"
           val cmd = args["command"]?.toString() ?: return "Error: no command"
-          val proc = Runtime.getRuntime().exec(arrayOf("ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10", host, cmd))
-          val output = proc.inputStream.bufferedReader().readText()
-          val err = proc.errorStream.bufferedReader().readText()
-          proc.waitFor()
-          (output + err).take(4000)
+          val timeout = ((args["timeout"] as? Number)?.toLong() ?: 30L).coerceIn(1L, 120L)
+          val proc = ProcessBuilder(
+            "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+            host, cmd,
+          ).redirectErrorStream(true).start()
+          runProcess(proc, timeout)
         }
 
         "memory_store" -> {
           val key = args["key"]?.toString() ?: return "Error: no key"
           val value = args["value"]?.toString() ?: return "Error: no value"
-          val db = buildDb()
-          db.chatDao().upsertMemory(MemoryEntity(key = key, content = value))
-          db.close()
+          dao.upsertMemory(MemoryEntity(key = key, content = value))
           "Stored: $key"
         }
 
         "memory_recall" -> {
           val query = args["query"]?.toString() ?: return "Error: no query"
-          val db = buildDb()
-          val memories = db.chatDao().getAllMemories()
-          db.close()
+          val memories = dao.getAllMemories()
           val matches = memories.filter { it.key.contains(query, true) || it.content.contains(query, true) }
           if (matches.isEmpty()) "No memories matching '$query'" else matches.joinToString("\n") { "${it.key}: ${it.content.take(200)}" }
         }
@@ -285,6 +281,27 @@ class AgentRunWorker(
     } catch (e: Exception) {
       "Error: ${e.message}"
     }
+  }
+
+  /** Runs a process with a hard timeout; kills it if it exceeds [timeoutSec]. */
+  private fun runProcess(proc: Process, timeoutSec: Long): String {
+    val output = StringBuilder()
+    val reader = Thread {
+      try {
+        proc.inputStream.bufferedReader().use { output.append(it.readText()) }
+      } catch (_: Exception) {
+        // stream closed by destroyForcibly()
+      }
+    }
+    reader.start()
+    val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
+    if (!finished) {
+      proc.destroyForcibly()
+      proc.waitFor()
+      return "Error: command timed out after ${timeoutSec}s\n$output"
+    }
+    reader.join(2_000)
+    return output.toString().take(OUTPUT_TRUNCATE)
   }
 
   private fun buildDb(): ChatDatabase = Room.databaseBuilder(appContext, ChatDatabase::class.java, "aiope-chat.db")

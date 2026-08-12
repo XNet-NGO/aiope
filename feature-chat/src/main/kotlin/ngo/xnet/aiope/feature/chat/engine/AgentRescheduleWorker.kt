@@ -39,7 +39,7 @@ class AgentRescheduleWorker(
       }
       Result.success()
     } catch (e: Exception) {
-      Result.retry()
+      if (runAttemptCount >= 3) Result.failure() else Result.retry()
     } finally {
       db.close()
     }

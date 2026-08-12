@@ -78,7 +78,7 @@ object AgentScheduler {
 
   private fun nextWallClock(hour: Int, minute: Int, daysOfWeek: String?, fromMillis: Long): Long {
     val allowed = daysOfWeek?.split(",")?.mapNotNull { it.trim().toIntOrNull() }?.toSet()
-    for (offset in 1..400) {
+    for (offset in 0..400) {
       val cal = Calendar.getInstance().apply {
         timeInMillis = fromMillis
         add(Calendar.DAY_OF_YEAR, offset)
@@ -91,14 +91,14 @@ object AgentScheduler {
         val dow = cal.get(Calendar.DAY_OF_WEEK) // 1=Sun .. 7=Sat
         if (dow !in allowed) continue
       }
-      return cal.timeInMillis
+      if (cal.timeInMillis > fromMillis) return cal.timeInMillis
     }
     return fromMillis + 24 * 3_600_000L
   }
 
   private fun nextMonthly(task: ScheduledTaskEntity, fromMillis: Long): Long {
     val day = task.dayOfMonth.coerceIn(1, 28)
-    for (offset in 1..24) {
+    for (offset in 0..24) {
       val cal = Calendar.getInstance().apply {
         timeInMillis = fromMillis
         add(Calendar.MONTH, offset)
