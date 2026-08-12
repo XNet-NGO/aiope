@@ -658,6 +658,7 @@ class ChatViewModel @Inject constructor(
       toolExecutor.fetchLimit = mc.fetchLimit
       toolExecutor.fileReadLimit = mc.fileReadLimit
       toolExecutor.locationUsedThisTurn = false
+      var streamResult: StreamResult? = null
 
       try {
         val useTools = mc.toolsOverride != false // null=auto(send), true=send, false=dont send
@@ -708,7 +709,9 @@ class ChatViewModel @Inject constructor(
         val filesDir = getApplication<android.app.Application>().filesDir
         val imageBase64s = ngo.xnet.aiope.feature.chat.engine.ImageProcessor.encodeImages(filesDir, savedPaths)
 
-        val result = collectStream(orchestrator, sendMessages, imageBase64s)
+        val streamResult1 = collectStream(orchestrator, sendMessages, imageBase64s)
+        streamResult = streamResult1
+        val result = streamResult1.content
 
         // Extract generated image URIs from content
         val generatedImages = Regex("""file:///[^\s)]+\.(png|jpg|jpeg|webp)""").findAll(result).map { it.value }.toList()
@@ -764,6 +767,10 @@ class ChatViewModel @Inject constructor(
                 role = Role.ASSISTANT.value,
                 content = finalMsg.content,
                 imagePaths = imagePaths,
+                inputTokens = streamResult?.usage?.inputTokens ?: 0,
+                outputTokens = streamResult?.usage?.outputTokens ?: 0,
+                latencyMs = streamResult?.latencyMs ?: 0,
+                modelUsed = p.selectedModelId,
               ),
             )
           }
@@ -1016,11 +1023,13 @@ $transcript
   }
 
   /** Shared streaming collection logic used by send() and resend(). Returns final content string. */
+  private data class StreamResult(val content: String, val usage: ngo.xnet.aiope.feature.chat.engine.UsageInfo?, val latencyMs: Long)
+
   private suspend fun collectStream(
     orchestrator: StreamingOrchestrator,
     messages: List<Pair<String, String>>,
     imageBase64s: List<String> = emptyList(),
-  ): String {
+  ): StreamResult {
     val sb = StringBuilder()
     val reasoningBlocks = mutableListOf<String>()
     val currentReasoning = StringBuilder()
@@ -1030,6 +1039,8 @@ $transcript
     val toolErrorsList = mutableListOf<String>()
     var lastUiLength = 0
     val charsPerLine = 55
+    val streamStartMs = System.currentTimeMillis()
+    var lastUsage: ngo.xnet.aiope.feature.chat.engine.UsageInfo? = null
 
     try {
       orchestrator.stream(messages, imageBase64s).collect { chunk ->
@@ -1068,6 +1079,7 @@ $transcript
           }
         }
         chunk.error?.let { sb.append("\nError: $it") }
+        chunk.usage?.let { lastUsage = it }
         if (chunk.isDone && isReasoning && currentReasoning.isNotEmpty()) {
           reasoningBlocks.add(currentReasoning.toString())
           isReasoning = false
@@ -1115,7 +1127,7 @@ $transcript
         }
       }
     }
-    return sb.toString()
+    return StreamResult(sb.toString(), lastUsage, System.currentTimeMillis() - streamStartMs)
   }
 
   private fun resend(text: String) {
@@ -1158,7 +1170,8 @@ $transcript
           onToolCall = { name, args -> toolExecutor.execute(name, args) },
         )
 
-        val result = collectStream(orchestrator, chatMessages)
+        val streamResult2 = collectStream(orchestrator, chatMessages)
+        val result = streamResult2.content
 
         val resendImages = Regex("""file:///[^\s)]+\.(png|jpg|jpeg|webp)""").findAll(result).map { it.value }.toList()
         if (resendImages.isNotEmpty()) {

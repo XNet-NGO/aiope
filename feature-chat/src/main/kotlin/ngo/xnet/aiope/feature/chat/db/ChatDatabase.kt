@@ -17,7 +17,7 @@ data class ConversationEntity(
     ForeignKey(entity = ConversationEntity::class, parentColumns = ["id"], childColumns = ["conversationId"], onDelete = ForeignKey.CASCADE),
   ],
 )
-data class MessageEntity(@PrimaryKey val id: String, val conversationId: String, val role: String, val content: String, val imagePaths: String = "", val timestamp: Long = System.currentTimeMillis())
+data class MessageEntity(@PrimaryKey val id: String, val conversationId: String, val role: String, val content: String, val imagePaths: String = "", val timestamp: Long = System.currentTimeMillis(), val inputTokens: Int = 0, val outputTokens: Int = 0, val latencyMs: Long = 0, val modelUsed: String = "")
 
 @Entity(tableName = "memories")
 data class MemoryEntity(
@@ -314,7 +314,7 @@ interface ChatDao {
     ModelCacheEntity::class, SettingsKvEntity::class,
     AgentEntity::class, AgentTaskEntity::class, ScheduledTaskEntity::class, TaskRunEntity::class,
   ],
-  version = 8,
+  version = 9,
 )
 abstract class ChatDatabase : RoomDatabase() {
   abstract fun chatDao(): ChatDao
