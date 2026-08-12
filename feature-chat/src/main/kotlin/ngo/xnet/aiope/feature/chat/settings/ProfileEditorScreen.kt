@@ -88,20 +88,28 @@ internal fun ProfileEditor(
 
       // Model selector
       Section("Model")
+      var fetchError by remember { mutableStateOf<String?>(null) }
       Row(verticalAlignment = Alignment.CenterVertically) {
         Button(onClick = {
           loading = true
+          fetchError = null
           scope.launch {
             val fetched = fetchModels(p.effectiveApiBase(), p.apiKey)
             if (fetched.isNotEmpty()) {
               store.saveModelCache(p.id, fetched)
               models = fetched
+              fetchError = null
+            } else {
+              fetchError = "No /models endpoint — add models manually below"
             }
             loading = false
           }
         }, enabled = !loading) { Text(if (loading) "Loading…" else "Load Models") }
         Spacer(Modifier.width(8.dp))
         Text("${models.size} models", style = MaterialTheme.typography.bodySmall)
+      }
+      fetchError?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 2.dp))
       }
       Spacer(Modifier.height(8.dp))
       ExposedDropdownMenuBox(expanded = modelExpanded, onExpandedChange = { modelExpanded = it }) {
