@@ -168,8 +168,8 @@ private fun TaskCard(
           // Each profile with its models
           profiles.forEach { profile ->
             var profileExpanded by remember { mutableStateOf(false) }
-            val models = providerStore.getModelCache(profile.builtinId)
-              ?: providerStore.getModelCacheStale(profile.builtinId)
+            val models = providerStore.getModelCache(profile.id)
+              ?: providerStore.getModelCacheStale(profile.id)
               ?: ngo.xnet.aiope.core.network.ProviderTemplates.byId[profile.builtinId]?.defaultModels ?: emptyList()
             val isProfileSelected = tc.profileId == profile.id
 
