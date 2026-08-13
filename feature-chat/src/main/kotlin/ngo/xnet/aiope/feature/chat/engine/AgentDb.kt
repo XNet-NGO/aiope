@@ -10,6 +10,7 @@ import ngo.xnet.aiope.feature.chat.di.MIGRATION_4_5
 import ngo.xnet.aiope.feature.chat.di.MIGRATION_5_6
 import ngo.xnet.aiope.feature.chat.di.MIGRATION_6_7
 import ngo.xnet.aiope.feature.chat.di.MIGRATION_7_8
+import ngo.xnet.aiope.feature.chat.di.MIGRATION_8_9
 import kotlin.jvm.Volatile
 
 /**
@@ -26,7 +27,7 @@ object AgentDb {
 
   fun get(context: Context): ChatDatabase = instance ?: synchronized(this) {
     instance ?: Room.databaseBuilder(context.applicationContext, ChatDatabase::class.java, "aiope-chat.db")
-      .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+      .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
       .build()
       .also { instance = it }
   }
