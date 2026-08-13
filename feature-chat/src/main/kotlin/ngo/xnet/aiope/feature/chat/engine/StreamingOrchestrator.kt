@@ -40,6 +40,7 @@ class StreamingOrchestrator(
       .retryOnConnectionFailure(true)
       .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
       .connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.SECONDS)) // no pooling — fresh connection every request (cellular NAT kills idle)
+      .eventListenerFactory(LlmEventListener.Factory)
       .build()
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
     private const val MAX_RETRIES = 3
@@ -92,6 +93,7 @@ class StreamingOrchestrator(
 
     var firstRequest = true
     var maxRounds = 40
+    var lastUsage: UsageInfo? = null
 
     while (maxRounds-- > 0) {
       if (!firstRequest) {
@@ -175,6 +177,13 @@ class StreamingOrchestrator(
               gotDataThisAttempt = true
               try {
                 val json = JSONObject(data)
+                // Extract usage (often in the final chunk)
+                json.optJSONObject("usage")?.let { u ->
+                  lastUsage = UsageInfo(
+                    inputTokens = u.optInt("prompt_tokens", 0),
+                    outputTokens = u.optInt("completion_tokens", 0),
+                  )
+                }
                 val choices = json.optJSONArray("choices") ?: return
                 if (choices.length() == 0) return
                 val choice = choices.getJSONObject(0)
@@ -482,12 +491,12 @@ class StreamingOrchestrator(
       }
 
       // Done
-      send(ChatStreamChunk(isDone = true))
+      send(ChatStreamChunk(isDone = true, usage = lastUsage))
       close()
       return@callbackFlow
     }
 
-    send(ChatStreamChunk(isDone = true))
+    send(ChatStreamChunk(isDone = true, usage = lastUsage))
     close()
 
     awaitClose { }

@@ -151,14 +151,20 @@ class ToolExecutor(
     return when (name) {
       "run_sh" -> {
         val timeout = ((args["timeout"] as? Number)?.toLong() ?: 300) * 1000
-        ngo.xnet.aiope.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+        ToolProgressBus.update("run_sh", message = args["command"]?.toString()?.take(60) ?: "")
+        val result = ngo.xnet.aiope.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+        ToolProgressBus.clear()
+        result
       }
 
       "run_proot" -> if (!ngo.xnet.aiope.core.terminal.shell.ProotBootstrap.isInstalled(app)) {
         "Alpine not installed. Set up proot in Settings first."
       } else {
         val timeout = ((args["timeout"] as? Number)?.toLong() ?: 300) * 1000
-        ngo.xnet.aiope.core.terminal.shell.ProotExecutor.exec(app, args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+        ToolProgressBus.update("run_proot", message = args["command"]?.toString()?.take(60) ?: "")
+        val result = ngo.xnet.aiope.core.terminal.shell.ProotExecutor.exec(app, args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+        ToolProgressBus.clear()
+        result
       }
 
       "read_file" -> try {
@@ -545,7 +551,10 @@ class ToolExecutor(
 
       "ssh_start", "ssh_exec", "ssh_exit" -> {
         val rtp = remoteToolBridge ?: return@execute "Remote tools not available. feature-remote not initialized."
-        rtp.execute(name, args)
+        if (name == "ssh_exec") ToolProgressBus.update("ssh_exec", message = args["command"]?.toString()?.take(60) ?: "")
+        val result = rtp.execute(name, args)
+        if (name == "ssh_exec") ToolProgressBus.clear()
+        result
       }
 
       else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"
@@ -554,6 +563,7 @@ class ToolExecutor(
 
   private fun executeFetchUrl(args: Map<String, Any?>): String = try {
     val fetchUrl = java.net.URL(args["url"].toString())
+    ToolProgressBus.update("fetch_url", message = fetchUrl.host)
     val mode = args["mode"]?.toString() ?: "text"
     val req = okhttp3.Request.Builder().url(fetchUrl)
       .header("User-Agent", "Mozilla/5.0 (Linux; Android) AIOPE/2.0").build()
@@ -599,7 +609,7 @@ class ToolExecutor(
     "Content Length: ${result.length}\nShowing: $safeOffset to $end\n\n$trimmed"
   } catch (e: Exception) {
     "Error: ${e.message}"
-  }
+  }.also { ToolProgressBus.clear() }
 
   private suspend fun searxQuery(query: String, categories: String = ""): String {
     if (query.isBlank()) return "Error: query required"

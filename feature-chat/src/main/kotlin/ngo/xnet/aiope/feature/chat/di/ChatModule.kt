@@ -100,6 +100,15 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
   }
 }
 
+val MIGRATION_8_9 = object : Migration(8, 9) {
+  override fun migrate(db: SupportSQLiteDatabase) {
+    db.execSQL("ALTER TABLE messages ADD COLUMN inputTokens INTEGER NOT NULL DEFAULT 0")
+    db.execSQL("ALTER TABLE messages ADD COLUMN outputTokens INTEGER NOT NULL DEFAULT 0")
+    db.execSQL("ALTER TABLE messages ADD COLUMN latencyMs INTEGER NOT NULL DEFAULT 0")
+    db.execSQL("ALTER TABLE messages ADD COLUMN modelUsed TEXT NOT NULL DEFAULT ''")
+  }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object ChatModule {
