@@ -34,12 +34,13 @@ class StreamingOrchestrator(
   companion object {
     private val client = SafeOkHttp.builder()
       .connectTimeout(15, TimeUnit.SECONDS)
-      .readTimeout(5, TimeUnit.MINUTES) // reduced from 10m — detect dead connections faster
+      .readTimeout(3, TimeUnit.MINUTES) // shorter than 5m — trigger retry on dead connections sooner
       .writeTimeout(30, TimeUnit.SECONDS)
       .callTimeout(0, TimeUnit.SECONDS)
       .retryOnConnectionFailure(true)
       .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
       .connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.SECONDS)) // no pooling — fresh connection every request (cellular NAT kills idle)
+      .socketFactory(KeepAliveSocketFactory)
       .eventListenerFactory(LlmEventListener.Factory)
       .build()
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
