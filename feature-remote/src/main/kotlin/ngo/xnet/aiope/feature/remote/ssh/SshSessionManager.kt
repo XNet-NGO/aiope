@@ -101,12 +101,17 @@ class SshSessionManager @Inject constructor() {
     addTofuVerifier(client, server.host, server.port)
     client.connect(server.host, server.port)
     val privateKey = server.privateKey
-    if (privateKey.isNullOrBlank()) {
+    val password = server.password
+    if (privateKey.isNullOrBlank() && password.isNullOrBlank()) {
       client.disconnect()
-      throw IllegalStateException("No SSH private key configured for ${server.name}.")
+      throw IllegalStateException("No SSH key or password configured for ${server.name}.")
     }
     try {
-      client.authPublickey(server.user, loadKey(client, privateKey))
+      if (!privateKey.isNullOrBlank()) {
+        client.authPublickey(server.user, loadKey(client, privateKey))
+      } else {
+        client.authPassword(server.user, password!!)
+      }
     } catch (e: Exception) {
       client.disconnect()
       throw IllegalStateException("SSH auth failed for ${server.name}: ${e.message}")
@@ -132,6 +137,24 @@ class SshSessionManager @Inject constructor() {
       android.util.Log.e("AIOPE_SSH", "Auth failed", e)
       client.disconnect()
       throw IllegalStateException("SSH auth failed: ${e.message}")
+    }
+    client
+  }
+
+  suspend fun connectWithPassword(host: String, port: Int, user: String, password: String): SSHClient = withContext(Dispatchers.IO) {
+    val client = SSHClient()
+    client.connectTimeout = 15_000
+    addTofuVerifier(client, host, port)
+    try {
+      client.connect(host, port)
+    } catch (e: Exception) {
+      throw IllegalStateException("Connect failed to $host:$port — ${e.message ?: e.javaClass.simpleName}")
+    }
+    try {
+      client.authPassword(user, password)
+    } catch (e: Exception) {
+      client.disconnect()
+      throw IllegalStateException("SSH password auth failed: ${e.message}")
     }
     client
   }

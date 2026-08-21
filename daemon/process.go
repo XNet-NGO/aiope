@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"sync"
-	"syscall"
 
 	"github.com/charmbracelet/log"
 )
@@ -42,7 +41,7 @@ func (pt *ProcessTracker) KillAll() {
 	defer pt.mu.Unlock()
 	for pid, p := range pt.processes {
 		log.Info("Killing process group", "pid", pid)
-		if err := syscall.Kill(-pid, syscall.SIGHUP); err != nil {
+		if err := killProcessGroup(pid); err != nil {
 			log.Warn("Failed to kill process group, trying direct", "pid", pid, "err", err)
 			p.Kill()
 		}

@@ -14,10 +14,13 @@ echo "Version: $VERSION"
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR" "$PAYLOAD_DIR"
 
-for platform in linux/amd64 linux/arm64 linux/arm; do
+for platform in linux/amd64 linux/arm64 linux/arm windows/amd64; do
     os="${platform%/*}"
     arch="${platform#*/}"
     output="$PAYLOAD_DIR/aiope-remote-${os}-${arch}"
+    if [ "$os" = "windows" ]; then
+        output="${output}.exe"
+    fi
     echo "Building $platform..."
     CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
         $GOBIN build -ldflags="-s -w -X main.Version=$VERSION" \
@@ -32,6 +35,10 @@ if [ -f "$PUBKEY_FILE" ]; then
 else
     echo "Warning: No authorized_keys at $PUBKEY_FILE"
 fi
+
+# Include Windows installer script
+cp "$PROJECT_DIR/scripts/installer-windows.ps1" "$PAYLOAD_DIR/"
+echo "Included installer-windows.ps1"
 
 echo "Packing installer..."
 tar czf "$DIST_DIR/payload.tar.gz" -C "$PAYLOAD_DIR" .
