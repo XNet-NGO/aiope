@@ -305,6 +305,24 @@ class FileServerService : Service() {
   }
 
   private fun getWifiIp(): String {
+    // Prefer WiFi/LAN interface IP over VPN/global
+    try {
+      val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+      for (intf in interfaces) {
+        // Skip VPN/loopback interfaces
+        val name = intf.name.lowercase()
+        if (name.startsWith("tun") || name.startsWith("wg") || name.startsWith("lo")) continue
+        for (addr in intf.inetAddresses) {
+          if (addr.isLoopbackAddress || addr is java.net.Inet6Address) continue
+          val hostAddr = addr.hostAddress ?: continue
+          // Prefer private LAN ranges
+          if (hostAddr.startsWith("192.168.") || hostAddr.startsWith("10.") || hostAddr.startsWith("172.")) {
+            return hostAddr
+          }
+        }
+      }
+    } catch (_: Exception) {}
+    // Fallback to WifiManager
     val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
     val ip = wm.connectionInfo.ipAddress
     return "${ip and 0xff}.${ip shr 8 and 0xff}.${ip shr 16 and 0xff}.${ip shr 24 and 0xff}"
