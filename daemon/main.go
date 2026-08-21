@@ -42,7 +42,7 @@ func main() {
 	}
 
 	done := make(chan os.Signal, 1)
-	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		log.Info("aiope-remote started", "port", port, "version", Version)
