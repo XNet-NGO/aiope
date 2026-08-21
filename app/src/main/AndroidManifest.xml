@@ -64,6 +64,11 @@
       android:exported="false"
       android:foregroundServiceType="specialUse" />
 
+    <service
+      android:name="ngo.xnet.aiope.feature.chat.fileserver.FileServerService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse" />
+
     <receiver
       android:name="ngo.xnet.aiope.feature.chat.engine.AgentAlarmReceiver"
       android:exported="false" />
