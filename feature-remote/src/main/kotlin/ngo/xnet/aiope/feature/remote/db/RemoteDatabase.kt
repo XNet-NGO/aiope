@@ -13,6 +13,8 @@ data class RemoteServerEntity(
   val bootstrapPort: Int = 22,
   val privateKey: String? = null,
   val publicKey: String? = null,
+  val password: String? = null,
+  val osType: String = "linux", // "linux" or "windows"
   val status: String = "offline",
   val lastSeen: Long = 0,
   val osInfo: String? = null,
@@ -52,7 +54,7 @@ interface RemoteServerDao {
 
 @Database(
   entities = [RemoteServerEntity::class],
-  version = 2,
+  version = 3,
   exportSchema = false,
 )
 abstract class RemoteDatabase : RoomDatabase() {

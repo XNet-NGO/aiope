@@ -37,7 +37,7 @@ class ServerListViewModel @Inject constructor(
 
   fun isConnected(server: RemoteServerEntity): Boolean = sshManager.isConnected(server.id)
 
-  fun addServer(name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?) {
+  fun addServer(name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?, password: String?, osType: String) {
     viewModelScope.launch {
       serverDao.upsert(
         RemoteServerEntity(
@@ -48,12 +48,14 @@ class ServerListViewModel @Inject constructor(
           bootstrapPort = port,
           privateKey = privateKey,
           publicKey = publicKey,
+          password = password,
+          osType = osType,
         ),
       )
     }
   }
 
-  fun updateServer(id: String, name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?) {
+  fun updateServer(id: String, name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?, password: String?, osType: String) {
     viewModelScope.launch {
       val existing = serverDao.getById(id) ?: return@launch
       serverDao.upsert(
@@ -64,12 +66,14 @@ class ServerListViewModel @Inject constructor(
           bootstrapPort = port,
           privateKey = privateKey,
           publicKey = publicKey,
+          password = password,
+          osType = osType,
         ),
       )
     }
   }
 
-  fun addAndDeploy(name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?) {
+  fun addAndDeploy(name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?, password: String?, osType: String) {
     val id = UUID.randomUUID().toString()
     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
       val server = RemoteServerEntity(
@@ -80,6 +84,8 @@ class ServerListViewModel @Inject constructor(
         bootstrapPort = port,
         privateKey = privateKey,
         publicKey = publicKey,
+        password = password,
+        osType = osType,
         status = "deploying",
       )
       serverDao.upsert(server)

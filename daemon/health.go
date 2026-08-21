@@ -6,7 +6,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -50,11 +49,10 @@ func GetHealth(tracker *ProcessTracker) HealthReport {
 		}
 	}
 
-	var stat syscall.Statfs_t
 	var diskTotal, diskFree uint64
-	if err := syscall.Statfs("/", &stat); err == nil {
-		diskTotal = stat.Blocks * uint64(stat.Bsize) / (1024 * 1024 * 1024)
-		diskFree = stat.Bfree * uint64(stat.Bsize) / (1024 * 1024 * 1024)
+	if total, free, ok := getDiskFree(); ok {
+		diskTotal = total / (1024 * 1024 * 1024)
+		diskFree = free / (1024 * 1024 * 1024)
 	}
 
 	uptime := ""
