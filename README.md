@@ -17,7 +17,7 @@ The agent loop runs entirely on-device: reason, call a tool, read the result, de
 
 Underneath is a serious stack, built over ~1000 commits across 26 repositories: a self-hosted [AIOPE Gateway](https://github.com/XNet-NGO/aiope-gateway) that routes to Google AI Studio, Pollinations, and other providers through a single API key; a custom Compose markdown renderer; a terminal emulator with a proot Alpine Linux environment; a Go remote-agent daemon; and an agent framework with 8 builtin agents and a full custom-agent builder. AIOPE connects to any OpenAI-compatible API and works with your own keys -- BYOK, always.
 
-<p align="center"><img src="docs/images/screenshot.png" width="320" alt="AIOPE Screenshot">&nbsp;&nbsp;<img src="docs/images/screenshot2.png" width="320" alt="AIOPE Screenshot 2"></p>
+<p align="center"><img src="docs/images/screenshot.png" width="200" alt="AIOPE Screenshot">&nbsp;<img src="docs/images/screenshot2.png" width="200" alt="AIOPE Screenshot 2">&nbsp;<img src="docs/images/screenshot3.png" width="200" alt="AIOPE Screenshot 3">&nbsp;<img src="docs/images/screenshot4.png" width="200" alt="AIOPE Screenshot 4"></p>
 
 ---
 
