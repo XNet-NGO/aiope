@@ -279,6 +279,13 @@ class StreamingOrchestrator(
                   if (contentSoFar.length > 2_000_000) {
                     contentSoFar.delete(0, contentSoFar.length - 1_500_000)
                   }
+                  // Suppress display of minimax tool call XML (will be parsed after stream)
+                  val soFar = contentSoFar.toString()
+                  if (soFar.contains("<minimax:tool_call>") && !soFar.contains("</minimax:tool_call>")) {
+                    content = "" // Hold back — still accumulating tool call block
+                  } else if (soFar.contains("<minimax:tool_call>") && soFar.contains("</minimax:tool_call>")) {
+                    content = "" // Entire block received — will be handled by fallback parser
+                  }
                 }
 
                 // On retry, skip emitting content we already sent to the UI
@@ -302,7 +309,7 @@ class StreamingOrchestrator(
                   }
                 }
 
-                if (finishReason == "tool_calls" || (finishReason == "stop" && toolAcc.isNotEmpty())) {
+                if (finishReason == "tool_calls" || finishReason == "tool_use" || (finishReason == "stop" && toolAcc.isNotEmpty())) {
                   hasToolCalls = toolAcc.isNotEmpty()
                 }
               } catch (e: Exception) {
