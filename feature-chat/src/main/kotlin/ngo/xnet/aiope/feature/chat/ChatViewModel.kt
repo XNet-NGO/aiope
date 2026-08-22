@@ -682,11 +682,6 @@ class ChatViewModel @Inject constructor(
           }
           if (role != null) {
             var content = msg.content
-            // Append tool call names (not results) so the model recalls what tools it ran
-            if (role == "assistant" && msg.toolCalls.isNotEmpty()) {
-              val toolNames = msg.toolCalls.map { it.substringBefore("(").substringBefore(" ").trim() }.joinToString(", ")
-              content = "[used: $toolNames]\n$content"
-            }
             trimmed.add(0, role to content)
           }
         }
@@ -1150,12 +1145,7 @@ $transcript
             Role.USER -> chatMessages.add("user" to msg.content)
 
             Role.ASSISTANT -> {
-              var content = msg.content
-              if (msg.toolCalls.isNotEmpty()) {
-                val toolNames = msg.toolCalls.map { it.substringBefore("(").substringBefore(" ").trim() }.joinToString(", ")
-                content = "[used: $toolNames]\n$content"
-              }
-              chatMessages.add("assistant" to content)
+              chatMessages.add("assistant" to msg.content)
             }
 
             else -> {}
