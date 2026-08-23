@@ -64,7 +64,7 @@ class NetworkScanner(private val context: Context) {
   // ══════════════════════════════════════════════════════════════
 
   suspend fun discoverHosts() = withContext(Dispatchers.IO) {
-    _state.value = ScanState(isScanning = true, phase = "Detecting network...")
+    _state.value = ScanState(isScanning = true, phase = "Detecting network...", wanIp = _state.value.wanIp)
     val localIp = getLocalIp()
     val gatewayIp = getGatewayIp()
     android.util.Log.i("Scanner", "localIp=$localIp gatewayIp=$gatewayIp")
@@ -134,14 +134,28 @@ class NetworkScanner(private val context: Context) {
     android.util.Log.i("Scanner", "Neighbors from ARP: ${neighbors.size} - ${neighbors.keys.take(10)}")
     val allIps = (aliveHosts.keys + neighbors.keys).distinct()
 
-    val hosts = allIps.map { ip ->
-      val mac = neighbors[ip]
-      HostInfo(
-        ip = ip,
-        mac = mac,
-        vendor = lookupVendor(mac),
-        isGateway = ip == gatewayIp,
-      )
+    // Phase 4: Resolve hostnames
+    _state.value = _state.value.copy(phase = "Resolving hostnames...")
+    val hosts = coroutineScope {
+      allIps.map { ip ->
+        async(Dispatchers.IO) {
+          val mac = neighbors[ip]
+          val hostname = try {
+            val addr = InetAddress.getByName(ip)
+            val name = addr.canonicalHostName
+            if (name != ip) name else null
+          } catch (_: Exception) {
+            null
+          }
+          HostInfo(
+            ip = ip,
+            mac = mac,
+            hostname = hostname,
+            vendor = lookupVendor(mac),
+            isGateway = ip == gatewayIp,
+          )
+        }
+      }.awaitAll()
     }.sortedBy { ipToLong(it.ip) }
 
     _state.value = _state.value.copy(
@@ -364,13 +378,55 @@ class NetworkScanner(private val context: Context) {
 
   private fun probeUdpServices(ip: String): List<PortResult> {
     val results = mutableListOf<PortResult>()
-    // DNS
+    // DNS (port 53)
     probeUdp(ip, 53, buildDnsQuery())?.let { results.add(PortResult(53, "udp", "open", "dns")) }
-    // NTP
+    // DHCP server (port 67)
+    probeUdp(ip, 67, DHCP_DISCOVER)?.let { results.add(PortResult(67, "udp", "open", "dhcp")) }
+    // NTP (port 123)
     probeUdp(ip, 123, ByteArray(48).also { it[0] = 0x1B })?.let { results.add(PortResult(123, "udp", "open", "ntp")) }
-    // NetBIOS
-    probeUdp(ip, 137, NBSTAT_QUERY)?.let { results.add(PortResult(137, "udp", "open", "netbios")) }
+    // NetBIOS Name (port 137)
+    probeUdp(ip, 137, NBSTAT_QUERY)?.let { resp ->
+      val name = parseNetBiosName(resp)
+      results.add(PortResult(137, "udp", "open", "netbios", name))
+    }
+    // SNMP (port 161) - public community string
+    probeUdp(ip, 161, SNMP_GET_REQUEST)?.let { resp ->
+      val info = parseSnmpResponse(resp)
+      results.add(PortResult(161, "udp", "open", "snmp", info))
+    }
+    // SSDP/UPnP (port 1900)
+    probeUdp(ip, 1900, SSDP_MSEARCH)?.let { resp ->
+      val info = String(resp).lines().firstOrNull { it.startsWith("SERVER:", true) }?.substringAfter(":")?.trim()
+      results.add(PortResult(1900, "udp", "open", "ssdp", info))
+    }
+    // mDNS (port 5353)
+    probeUdp(ip, 5353, buildMdnsQuery())?.let { results.add(PortResult(5353, "udp", "open", "mdns")) }
+    // IPSec IKE (port 500)
+    probeUdp(ip, 500, IKE_INIT)?.let { results.add(PortResult(500, "udp", "open", "ike/ipsec")) }
+    // SIP (port 5060)
+    probeUdp(ip, 5060, SIP_OPTIONS.toByteArray())?.let { results.add(PortResult(5060, "udp", "open", "sip")) }
     return results
+  }
+
+  private fun parseNetBiosName(data: ByteArray): String? {
+    if (data.size < 57) return null
+    try {
+      val nameCount = data[56].toInt() and 0xFF
+      if (nameCount > 0 && data.size > 57 + 18) {
+        return String(data, 57, 15).trim { it <= ' ' || it == '\u0000' }
+      }
+    } catch (_: Exception) {}
+    return null
+  }
+
+  private fun parseSnmpResponse(data: ByteArray): String? {
+    // Very basic: look for printable ASCII strings in the response
+    try {
+      val str = String(data, Charsets.US_ASCII)
+      val printable = str.filter { it in ' '..'~' }
+      return if (printable.length > 5) printable.take(80) else null
+    } catch (_: Exception) {}
+    return null
   }
 
   private fun probeUdp(ip: String, port: Int, payload: ByteArray): ByteArray? = try {
@@ -519,5 +575,47 @@ class NetworkScanner(private val context: Context) {
       0x41, 0x41, 0x41, 0x41, 0x41, 0x00, 0x00, 0x21,
       0x00, 0x01,
     )
+
+    // SNMP v1 GetRequest for sysDescr.0 (community: public)
+    private val SNMP_GET_REQUEST = byteArrayOf(
+      0x30, 0x29, 0x02, 0x01, 0x00, 0x04, 0x06, 0x70, 0x75, 0x62, 0x6C, 0x69, 0x63,
+      0xA0.toByte(), 0x1C, 0x02, 0x04, 0x00, 0x00, 0x00, 0x01, 0x02, 0x01, 0x00, 0x02, 0x01, 0x00,
+      0x30, 0x0E, 0x30, 0x0C, 0x06, 0x08, 0x2B, 0x06, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x05, 0x00,
+    )
+
+    // DHCP Discover (minimal)
+    private val DHCP_DISCOVER = byteArrayOf(
+      0x01, 0x01, 0x06, 0x00, 0x12, 0x34, 0x56, 0x78.toByte(),
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    )
+
+    // SSDP M-SEARCH
+    private val SSDP_MSEARCH = "M-SEARCH * HTTP/1.1\r\nHost:239.255.255.250:1900\r\nST:ssdp:all\r\nMAN:\"ssdp:discover\"\r\nMX:2\r\n\r\n".toByteArray()
+
+    // IKE SA_INIT (minimal header to elicit response)
+    private val IKE_INIT = byteArrayOf(
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x20, 0x22, 0x08, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x1C, 0x00, 0x00, 0x00, 0x00,
+    )
+
+    // SIP OPTIONS
+    private const val SIP_OPTIONS = "OPTIONS sip:nm SIP/2.0\r\nVia: SIP/2.0/UDP nm;branch=z9hG4bK0\r\nFrom: <sip:nm@nm>;tag=0\r\nTo: <sip:nm@nm>\r\nCall-ID: 0@0.0.0.0\r\nCSeq: 0 OPTIONS\r\nMax-Forwards: 0\r\nContent-Length: 0\r\n\r\n"
+  }
+
+  private fun buildMdnsQuery(): ByteArray {
+    // Query for _services._dns-sd._udp.local
+    val buf = java.io.ByteArrayOutputStream()
+    buf.write(byteArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00))
+    val parts = "_services._dns-sd._udp.local".split(".")
+    for (part in parts) {
+      buf.write(part.length)
+      buf.write(part.toByteArray())
+    }
+    buf.write(byteArrayOf(0x00, 0x00, 0x0C, 0x00, 0x01))
+    return buf.toByteArray()
   }
 }
