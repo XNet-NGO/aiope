@@ -67,6 +67,7 @@ class NetworkScanner(private val context: Context) {
     _state.value = ScanState(isScanning = true, phase = "Detecting network...")
     val localIp = getLocalIp()
     val gatewayIp = getGatewayIp()
+    android.util.Log.i("Scanner", "localIp=$localIp gatewayIp=$gatewayIp")
     _state.value = _state.value.copy(localIp = localIp)
 
     if (localIp == null) {
@@ -76,20 +77,37 @@ class NetworkScanner(private val context: Context) {
 
     val subnet = localIp.substringBeforeLast(".")
 
-    // Phase 1: Flood entire subnet with TCP connections simultaneously (1000ms timeout)
-    // The connections will fail but the kernel performs ARP resolution as a side effect
+    // Phase 1: Probe entire subnet — TCP connect + isReachable simultaneously
+    // Both trigger ARP, and isReachable directly tells us if host is up
     _state.value = _state.value.copy(phase = "Scanning $subnet.0/24...")
+    val aliveHosts = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
     coroutineScope {
       (1..254).map { i ->
         async(Dispatchers.IO) {
+          val ip = "$subnet.$i"
+          var found = false
+          // Method 1: InetAddress.isReachable (ICMP or TCP echo)
           try {
-            Socket().use { s ->
-              s.tcpNoDelay = true
-              s.connect(InetSocketAddress("$subnet.$i", 7), 1000)
+            if (InetAddress.getByName(ip).isReachable(1000)) {
+              found = true
             }
-          } catch (_: Exception) {
-            // Expected — we just want the ARP side effect
+          } catch (_: Exception) {}
+          // Method 2: TCP connect to common ports
+          if (!found) {
+            val ports = intArrayOf(7, 80, 443, 22, 445, 139, 8080, 3389)
+            for (port in ports) {
+              try {
+                Socket().use { s ->
+                  s.tcpNoDelay = true
+                  s.connect(InetSocketAddress(ip, port), 500)
+                  found = true
+                }
+                break
+              } catch (_: Exception) {}
+            }
           }
+          if (found) aliveHosts[ip] = true
           _state.value = _state.value.copy(progress = i / 254f)
         }
       }.awaitAll()
@@ -98,10 +116,15 @@ class NetworkScanner(private val context: Context) {
     // Phase 2: Wait for ARP table to settle
     delay(500)
 
-    // Phase 3: Read the neighbor/ARP table
-    _state.value = _state.value.copy(phase = "Reading neighbor table...")
-    val neighbors = readNeighborTable()
-    val hosts = neighbors.map { (ip, mac) ->
+    // Phase 3: Read ARP table and merge with directly-found hosts
+    _state.value = _state.value.copy(phase = "Reading results...")
+    android.util.Log.i("Scanner", "Alive from probes: ${aliveHosts.size} - ${aliveHosts.keys.take(10)}")
+    val neighbors = readNeighborTable().toMap() // ip -> mac
+    android.util.Log.i("Scanner", "Neighbors from ARP: ${neighbors.size} - ${neighbors.keys.take(10)}")
+    val allIps = (aliveHosts.keys + neighbors.keys).distinct()
+
+    val hosts = allIps.map { ip ->
+      val mac = neighbors[ip]
       HostInfo(
         ip = ip,
         mac = mac,
@@ -224,22 +247,25 @@ class NetworkScanner(private val context: Context) {
   // PRIVATE HELPERS
   // ══════════════════════════════════════════════════════════════
 
-  /** Read ARP/neighbor table. Tries `ip neigh` first, falls back to /proc/net/arp */
+  /** Read ARP/neighbor table. Tries multiple approaches for Android compatibility */
   private fun readNeighborTable(): List<Pair<String, String>> {
     val results = mutableListOf<Pair<String, String>>()
 
-    // Try `ip neigh` (works on most Android versions)
+    // Approach 1: ip neigh (works on most Android with toybox/toolbox)
     try {
-      val process = Runtime.getRuntime().exec("ip neigh")
+      val process = Runtime.getRuntime().exec(arrayOf("ip", "neigh"))
       BufferedReader(InputStreamReader(process.inputStream, StandardCharsets.UTF_8)).use { reader ->
         reader.lineSequence().forEach { line ->
           val parts = line.split("\\s+".toRegex())
           if (parts.size >= 5) {
             val ip = parts[0]
-            val mac = parts[4].uppercase()
             val state = parts.last()
-            if (state != "FAILED" && state != "INCOMPLETE" && mac.contains(":") && mac != "00:00:00:00:00:00") {
-              results.add(ip to mac)
+            if (state != "FAILED" && state != "INCOMPLETE") {
+              // MAC is typically at index 4
+              val mac = parts.firstOrNull { it.matches(Regex("[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}")) }?.uppercase()
+              if (mac != null && mac != "00:00:00:00:00:00") {
+                results.add(ip to mac)
+              }
             }
           }
         }
@@ -249,20 +275,43 @@ class NetworkScanner(private val context: Context) {
 
     if (results.isNotEmpty()) return results
 
-    // Fallback: /proc/net/arp
+    // Approach 2: /proc/net/arp (may be restricted on API 29+)
     try {
       File("/proc/net/arp").bufferedReader().useLines { lines ->
         lines.drop(1).forEach { line ->
           val parts = line.split("\\s+".toRegex())
-          if (parts.size >= 4 && parts[2] != "0x0") {
+          if (parts.size >= 4) {
             val ip = parts[0]
+            val flags = parts[2]
             val mac = parts[3].uppercase()
-            if (mac != "00:00:00:00:00:00") {
+            // flags 0x2 = complete entry, 0x0 = incomplete
+            if (flags != "0x0" && mac != "00:00:00:00:00:00" && mac.contains(":")) {
               results.add(ip to mac)
             }
           }
         }
       }
+    } catch (_: Exception) {}
+
+    if (results.isNotEmpty()) return results
+
+    // Approach 3: cat /proc/net/arp via shell (some Android restricts direct File access but allows exec)
+    try {
+      val process = Runtime.getRuntime().exec(arrayOf("cat", "/proc/net/arp"))
+      BufferedReader(InputStreamReader(process.inputStream, StandardCharsets.UTF_8)).use { reader ->
+        reader.lineSequence().drop(1).forEach { line ->
+          val parts = line.split("\\s+".toRegex())
+          if (parts.size >= 4) {
+            val ip = parts[0]
+            val flags = parts[2]
+            val mac = parts[3].uppercase()
+            if (flags != "0x0" && mac != "00:00:00:00:00:00" && mac.contains(":")) {
+              results.add(ip to mac)
+            }
+          }
+        }
+      }
+      process.waitFor()
     } catch (_: Exception) {}
 
     return results
