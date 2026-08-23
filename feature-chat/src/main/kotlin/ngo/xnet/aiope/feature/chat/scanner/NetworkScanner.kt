@@ -76,24 +76,23 @@ class NetworkScanner(private val context: Context) {
 
     val subnet = localIp.substringBeforeLast(".")
 
-    // Phase 1: Flood subnet with TCP port 7 connections to trigger ARP resolution
-    _state.value = _state.value.copy(phase = "Discovering hosts on $subnet.0/24...")
+    // Phase 1: Flood entire subnet with TCP connections simultaneously (1000ms timeout)
+    // The connections will fail but the kernel performs ARP resolution as a side effect
+    _state.value = _state.value.copy(phase = "Scanning $subnet.0/24...")
     coroutineScope {
-      (1..254).chunked(50).forEachIndexed { chunkIdx, chunk ->
-        chunk.map { i ->
-          async(Dispatchers.IO) {
-            try {
-              Socket().use { s ->
-                s.tcpNoDelay = true
-                s.connect(InetSocketAddress("$subnet.$i", 7), 200)
-              }
-            } catch (_: Exception) {
-              // Expected — we don't care if it connects, just that ARP fires
+      (1..254).map { i ->
+        async(Dispatchers.IO) {
+          try {
+            Socket().use { s ->
+              s.tcpNoDelay = true
+              s.connect(InetSocketAddress("$subnet.$i", 7), 1000)
             }
+          } catch (_: Exception) {
+            // Expected — we just want the ARP side effect
           }
-        }.awaitAll()
-        _state.value = _state.value.copy(progress = (chunkIdx * 50f) / 254f)
-      }
+          _state.value = _state.value.copy(progress = i / 254f)
+        }
+      }.awaitAll()
     }
 
     // Phase 2: Wait for ARP table to settle
@@ -350,7 +349,7 @@ class NetworkScanner(private val context: Context) {
   private fun getLocalIp(): String? {
     try {
       val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
-      // First pass: prefer WiFi/ethernet interfaces with /24
+      // First pass: prefer non-cellular private IPs with /24
       for (intf in interfaces) {
         if (!intf.isUp || intf.isLoopback) continue
         val name = intf.name.lowercase()
@@ -363,7 +362,7 @@ class NetworkScanner(private val context: Context) {
           if (prefix in 16..24 && (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."))) return ip
         }
       }
-      // Second pass: accept any private IP including WireGuard /32
+      // Second pass: accept any private IP (WireGuard /32, VPN, etc.)
       val intfs2 = java.net.NetworkInterface.getNetworkInterfaces()
       for (intf in intfs2) {
         if (!intf.isUp || intf.isLoopback) continue
@@ -374,6 +373,17 @@ class NetworkScanner(private val context: Context) {
           if (addr.isLoopbackAddress || addr is java.net.Inet6Address) continue
           val ip = addr.hostAddress ?: continue
           if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) return ip
+        }
+      }
+      // Third pass: include cellular (still a valid local IP to show)
+      val intfs3 = java.net.NetworkInterface.getNetworkInterfaces()
+      for (intf in intfs3) {
+        if (!intf.isUp || intf.isLoopback) continue
+        for (ifAddr in intf.interfaceAddresses) {
+          val addr = ifAddr.address ?: continue
+          if (addr.isLoopbackAddress || addr is java.net.Inet6Address) continue
+          val ip = addr.hostAddress ?: continue
+          if (!ip.startsWith("127.")) return ip
         }
       }
     } catch (_: Exception) {}
