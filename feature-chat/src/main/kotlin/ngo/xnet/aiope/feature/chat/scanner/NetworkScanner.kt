@@ -75,6 +75,17 @@ class NetworkScanner(private val context: Context) {
       return@withContext
     }
 
+    // Detect if we're on cellular (CGNAT ranges that shouldn't be scanned)
+    val isCellular = isCellularIp(localIp)
+    if (isCellular) {
+      _state.value = _state.value.copy(
+        isScanning = false,
+        phase = "Cellular network — subnet scan skipped",
+        progress = 1f,
+      )
+      return@withContext
+    }
+
     val subnet = localIp.substringBeforeLast(".")
 
     // Phase 1: Probe entire subnet — TCP connect + isReachable simultaneously
@@ -186,13 +197,26 @@ class NetworkScanner(private val context: Context) {
     try {
       val url = java.net.URL("https://api.ipify.org")
       val conn = url.openConnection() as java.net.HttpURLConnection
-      conn.connectTimeout = 5000
-      conn.readTimeout = 5000
-      val ip = conn.inputStream.bufferedReader().readText().trim()
+      conn.connectTimeout = 10000
+      conn.readTimeout = 10000
+      conn.instanceFollowRedirects = true
+      val code = conn.responseCode
+      if (code == 200) {
+        val ip = conn.inputStream.bufferedReader().readText().trim()
+        _state.value = _state.value.copy(wanIp = ip)
+      } else {
+        _state.value = _state.value.copy(wanIp = "HTTP $code")
+      }
       conn.disconnect()
-      _state.value = _state.value.copy(wanIp = ip)
     } catch (e: Exception) {
-      _state.value = _state.value.copy(wanIp = "Error: ${e.message}")
+      android.util.Log.e("Scanner", "WAN IP fetch failed: ${e.message}")
+      // Try fallback
+      try {
+        val ip = java.net.URL("https://checkip.amazonaws.com").readText().trim()
+        _state.value = _state.value.copy(wanIp = ip)
+      } catch (_: Exception) {
+        _state.value = _state.value.copy(wanIp = "Unavailable")
+      }
     }
   }
 
@@ -393,6 +417,28 @@ class NetworkScanner(private val context: Context) {
       }
     } catch (_: Exception) {}
     return db
+  }
+
+  /** Detect CGNAT/cellular IPs that shouldn't be subnet-scanned */
+  private fun isCellularIp(ip: String): Boolean {
+    // Check if the IP comes from a cellular interface
+    try {
+      val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+      for (intf in interfaces) {
+        if (!intf.isUp) continue
+        val name = intf.name.lowercase()
+        val isCellIntf = name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("pdp")
+        if (!isCellIntf) continue
+        for (ifAddr in intf.interfaceAddresses) {
+          val addr = ifAddr.address ?: continue
+          if (addr.hostAddress == ip) return true
+        }
+      }
+    } catch (_: Exception) {}
+    // Also check common CGNAT ranges where subnet scan makes no sense
+    // 100.64.0.0/10 (RFC 6598 CGNAT)
+    if (ip.startsWith("100.") && ip.split(".")[1].toIntOrNull()?.let { it in 64..127 } == true) return true
+    return false
   }
 
   private fun getLocalIp(): String? {
