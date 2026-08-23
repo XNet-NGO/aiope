@@ -175,22 +175,23 @@ class NetworkScanner(private val context: Context) {
     val results = mutableListOf<PortResult>()
 
     coroutineScope {
-      ports.mapIndexed { idx, port ->
-        async(Dispatchers.IO) {
-          _state.value = _state.value.copy(progress = idx.toFloat() / ports.size)
-          try {
-            Socket().use { s ->
-              s.tcpNoDelay = true
-              s.connect(InetSocketAddress(ip, port), timeout)
-              // Grab banner
-              val banner = grabBanner(s, ip, port)
-              PortResult(port, "tcp", "open", SERVICES[port], banner)
+      ports.chunked(100).forEachIndexed { chunkIdx, chunk ->
+        chunk.map { port ->
+          async(Dispatchers.IO) {
+            _state.value = _state.value.copy(progress = (chunkIdx * 100 + chunk.indexOf(port)).toFloat() / ports.size)
+            try {
+              Socket().use { s ->
+                s.tcpNoDelay = true
+                s.connect(InetSocketAddress(ip, port), timeout)
+                val banner = grabBanner(s, ip, port)
+                PortResult(port, "tcp", "open", SERVICES[port], banner)
+              }
+            } catch (_: Exception) {
+              null
             }
-          } catch (_: Exception) {
-            null
           }
-        }
-      }.awaitAll().filterNotNull().let { results.addAll(it) }
+        }.awaitAll().filterNotNull().let { results.addAll(it) }
+      }
     }
 
     // UDP probes
@@ -299,9 +300,10 @@ class NetworkScanner(private val context: Context) {
             val ip = parts[0]
             val state = parts.last()
             if (state != "FAILED" && state != "INCOMPLETE") {
-              // MAC is typically at index 4
-              val mac = parts.firstOrNull { it.matches(Regex("[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}")) }?.uppercase()
-              if (mac != null && mac != "00:00:00:00:00:00") {
+              // MAC is typically at index 4 after "lladdr"
+              val llIdx = parts.indexOf("lladdr")
+              val mac = if (llIdx >= 0 && llIdx + 1 < parts.size) parts[llIdx + 1].uppercase() else null
+              if (mac != null && mac != "00:00:00:00:00:00" && mac.contains(":")) {
                 results.add(ip to mac)
               }
             }
