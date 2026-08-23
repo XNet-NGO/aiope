@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,16 +29,16 @@ import kotlinx.coroutines.launch
 @Composable
 fun ScannerScreen(onBack: () -> Unit) {
   val context = LocalContext.current
-  val scanner = remember { NetworkScanner(context) }
+  val scanner = remember { NetworkScanner.getInstance(context) }
   val state by scanner.state.collectAsState()
-  val scope = rememberCoroutineScope()
-  var selectedHost by remember { mutableStateOf<HostInfo?>(null) }
+  var selectedIp by remember { mutableStateOf<String?>(null) }
   var showDns by remember { mutableStateOf(false) }
+  var showCustom by remember { mutableStateOf(false) }
 
   LaunchedEffect(Unit) {
     if (state.hosts.isEmpty() && !state.isScanning) {
-      scanner.fetchWanIp()
-      scanner.discoverHosts()
+      scanner.launchFetchWanIp()
+      scanner.launchDiscoverHosts()
     }
   }
 
@@ -48,12 +49,11 @@ fun ScannerScreen(onBack: () -> Unit) {
         title = { Text("Network Scanner") },
         navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
         actions = {
+          IconButton(onClick = { showCustom = true }) { Icon(Icons.Default.Tune, "Custom") }
           IconButton(onClick = { showDns = true }) { Icon(Icons.Default.Public, "DNS") }
           IconButton(onClick = {
-            scope.launch {
-              scanner.fetchWanIp()
-              scanner.discoverHosts()
-            }
+            scanner.launchFetchWanIp()
+            scanner.launchDiscoverHosts()
           }, enabled = !state.isScanning) {
             Icon(Icons.Default.Refresh, "Rescan")
           }
@@ -67,17 +67,21 @@ fun ScannerScreen(onBack: () -> Unit) {
         SelectionContainer {
           Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
-              Text("LAN: ${state.localIp ?: "..."}", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+              val lanText = if (state.localIps.size > 1) state.localIps.joinToString(", ") else state.localIp ?: "..."
+              Text("LAN: $lanText", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
               Text("WAN: ${state.wanIp ?: "..."}", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
             }
           }
         }
       }
 
-      // Progress
+      // Progress + Cancel
       if (state.isScanning) {
         LinearProgressIndicator(progress = { if (state.progress > 0f) state.progress else 0f }, modifier = Modifier.fillMaxWidth())
-        Text(state.phase, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+          Text(state.phase, style = MaterialTheme.typography.bodySmall)
+          TextButton(onClick = { scanner.cancelScan() }) { Text("Cancel") }
+        }
       }
 
       state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
@@ -85,25 +89,31 @@ fun ScannerScreen(onBack: () -> Unit) {
       // Host list
       LazyColumn(Modifier.fillMaxSize()) {
         item {
-          Text(
-            "${state.hosts.size} hosts found",
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(16.dp, 8.dp),
-          )
+          if (!state.isScanning && state.hosts.isNotEmpty()) {
+            Text(
+              "${state.hosts.size} hosts found",
+              style = MaterialTheme.typography.labelMedium,
+              modifier = Modifier.padding(16.dp, 8.dp),
+            )
+          }
         }
         items(state.hosts) { host ->
-          HostRow(host, onClick = { selectedHost = host })
+          HostRow(host, onClick = { selectedIp = host.ip })
         }
       }
     }
   }
 
   // Bottom sheets
+  val selectedHost = selectedIp?.let { ip -> state.hosts.firstOrNull { it.ip == ip } }
   if (selectedHost != null) {
-    HostDetailSheet(host = selectedHost!!, scanner = scanner, onDismiss = { selectedHost = null })
+    HostDetailSheet(host = selectedHost, scanner = scanner, onDismiss = { selectedIp = null })
   }
   if (showDns) {
     DnsSheet(scanner = scanner, onDismiss = { showDns = false })
+  }
+  if (showCustom) {
+    CustomScanSheet(scanner = scanner, onDismiss = { showCustom = false })
   }
 }
 
@@ -114,19 +124,21 @@ private fun HostRow(host: HostInfo, onClick: () -> Unit) {
   ListItem(
     modifier = Modifier.clickable(onClick = onClick),
     headlineContent = {
-      Text(host.hostname ?: host.ip, fontFamily = FontFamily.Monospace, fontSize = 14.sp)
+      Text(host.ip, fontFamily = FontFamily.Monospace, fontSize = 14.sp)
     },
     supportingContent = {
-      SelectionContainer {
-        Text(
-          buildString {
-            append(host.ip)
-            host.vendor?.let { append(" • $it") }
-            if (host.openPorts.isNotEmpty()) append(" • ${host.openPorts.size} ports open")
-          },
-          style = MaterialTheme.typography.bodySmall,
-        )
+      val info = buildString {
+        host.vendor?.let { append(it) }
+        host.mac?.let {
+          if (isNotEmpty()) append(" • ")
+          append(it)
+        }
+        if (host.openPorts.isNotEmpty()) {
+          if (isNotEmpty()) append(" • ")
+          append("${host.openPorts.size} ports")
+        }
       }
+      if (info.isNotBlank()) Text(info, style = MaterialTheme.typography.bodySmall)
     },
     leadingContent = {
       val color = when {
@@ -137,8 +149,8 @@ private fun HostRow(host: HostInfo, onClick: () -> Unit) {
       Badge(containerColor = color, modifier = Modifier.size(10.dp)) {}
     },
     trailingContent = {
-      host.mac?.let {
-        Text(it.take(8), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+      if (host.isGateway) {
+        Text("GW", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
       }
     },
   )
@@ -151,53 +163,60 @@ private fun HostRow(host: HostInfo, onClick: () -> Unit) {
 private fun HostDetailSheet(host: HostInfo, scanner: NetworkScanner, onDismiss: () -> Unit) {
   val scope = rememberCoroutineScope()
   val state by scanner.state.collectAsState()
-  val currentHost = state.hosts.firstOrNull { it.ip == host.ip } ?: host
   val context = LocalContext.current
   val clipboard = LocalClipboardManager.current
 
   ModalBottomSheet(onDismissRequest = onDismiss) {
     SelectionContainer {
       Column(Modifier.fillMaxWidth().padding(24.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState())) {
-        Text(currentHost.hostname ?: currentHost.ip, style = MaterialTheme.typography.titleLarge)
+        Text(host.ip, style = MaterialTheme.typography.titleLarge, fontFamily = FontFamily.Monospace)
         Spacer(Modifier.height(4.dp))
-        Text(currentHost.ip, fontFamily = FontFamily.Monospace)
-        currentHost.mac?.let { Text("MAC: $it", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace) }
-        currentHost.vendor?.let { Text("Vendor: $it", style = MaterialTheme.typography.bodySmall) }
-        if (currentHost.isGateway) Text("⭐ Gateway", color = MaterialTheme.colorScheme.primary)
+        host.mac?.let { Text("MAC: $it", fontFamily = FontFamily.Monospace, fontSize = 13.sp) }
+        host.vendor?.let { Text("Vendor: $it", style = MaterialTheme.typography.bodyMedium) }
+        if (host.isGateway) Text("⭐ Gateway", color = MaterialTheme.colorScheme.primary)
 
         Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
           Button(
-            onClick = { scope.launch { scanner.scanPorts(currentHost.ip) } },
+            onClick = { scanner.launchScanPorts(host.ip) },
             enabled = !state.isScanning,
-          ) { Text("Scan Ports") }
+          ) { Text("TCP Scan") }
 
-          if (currentHost.mac != null) {
+          OutlinedButton(
+            onClick = { scanner.launchUdpProbe(host.ip) },
+            enabled = !state.isScanning,
+          ) { Text("UDP Probe") }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          if (host.mac != null) {
             OutlinedButton(onClick = {
               scope.launch {
-                val ok = scanner.wakeOnLan(currentHost.mac!!, currentHost.ip)
+                val ok = scanner.wakeOnLan(host.mac!!, host.ip)
                 Toast.makeText(context, if (ok) "WoL packet sent" else "Failed", Toast.LENGTH_SHORT).show()
               }
             }) { Text("Wake") }
           }
 
           OutlinedButton(onClick = {
-            clipboard.setText(AnnotatedString(currentHost.ip))
+            clipboard.setText(AnnotatedString(host.ip))
             Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
           }) { Text("Copy IP") }
         }
 
-        if (state.isScanning && state.phase.contains(currentHost.ip)) {
+        if (state.isScanning && state.phase.contains(host.ip)) {
           Spacer(Modifier.height(8.dp))
           LinearProgressIndicator(progress = { state.progress }, modifier = Modifier.fillMaxWidth())
+          Text(state.phase, style = MaterialTheme.typography.bodySmall)
         }
 
         // Open ports
-        if (currentHost.openPorts.isNotEmpty()) {
+        if (host.openPorts.isNotEmpty()) {
           Spacer(Modifier.height(16.dp))
-          Text("Open Ports (${currentHost.openPorts.size})", style = MaterialTheme.typography.titleSmall)
+          Text("Open Ports (${host.openPorts.size})", style = MaterialTheme.typography.titleSmall)
           Spacer(Modifier.height(8.dp))
-          currentHost.openPorts.forEach { port ->
+          host.openPorts.forEach { port ->
             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
               Text("${port.port}/${port.protocol}", fontFamily = FontFamily.Monospace, modifier = Modifier.width(80.dp), fontSize = 13.sp)
               Text(port.service ?: "", modifier = Modifier.width(80.dp), fontSize = 13.sp)
@@ -255,4 +274,138 @@ private fun DnsSheet(scanner: NetworkScanner, onDismiss: () -> Unit) {
       }
     }
   }
+}
+
+// ── Custom Scan Sheet ──
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CustomScanSheet(scanner: NetworkScanner, onDismiss: () -> Unit) {
+  var ipsText by remember { mutableStateOf("") }
+  var portsText by remember { mutableStateOf("") }
+  var subnetText by remember { mutableStateOf("") }
+  val state by scanner.state.collectAsState()
+  var mode by remember { mutableIntStateOf(0) } // 0=port scan, 1=subnet discovery
+
+  ModalBottomSheet(onDismissRequest = onDismiss) {
+    Column(Modifier.fillMaxWidth().padding(24.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState())) {
+      Text("Custom Scan", style = MaterialTheme.typography.titleLarge)
+      Spacer(Modifier.height(8.dp))
+
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = mode == 0, onClick = { mode = 0 }, label = { Text("Port Scan") })
+        FilterChip(selected = mode == 1, onClick = { mode = 1 }, label = { Text("Subnet Discovery") })
+      }
+
+      Spacer(Modifier.height(12.dp))
+
+      if (mode == 1) {
+        OutlinedTextField(
+          value = subnetText,
+          onValueChange = { subnetText = it },
+          label = { Text("Subnet") },
+          placeholder = { Text("192.168.1 or 10.8.0") },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+        )
+        Spacer(Modifier.height(12.dp))
+        Button(
+          onClick = {
+            val subnet = subnetText.trim().removeSuffix(".0/24").removeSuffix(".0").removeSuffix("/24")
+            if (subnet.count { it == '.' } == 2) {
+              scanner.launchSubnetScan(subnet)
+              onDismiss()
+            }
+          },
+          enabled = !state.isScanning && subnetText.isNotBlank(),
+        ) { Text("Discover Hosts") }
+        Spacer(Modifier.height(8.dp))
+        Text("Scans the /24 subnet for live hosts via ARP + TCP probes.\nUse this for subnets at the other end of a VPN/WireGuard tunnel.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      } else {
+        OutlinedTextField(
+          value = ipsText,
+          onValueChange = { ipsText = it },
+          label = { Text("IPs") },
+          placeholder = { Text("192.168.1.1, 10.0.0.1-10, 10.0.0.0/24") },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = false,
+          minLines = 2,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+          value = portsText,
+          onValueChange = { portsText = it },
+          label = { Text("Ports (empty = all 65535)") },
+          placeholder = { Text("80, 443, 1000-2000, 8080") },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+        )
+        Spacer(Modifier.height(12.dp))
+        Button(
+          onClick = {
+            val ips = parseIps(ipsText)
+            val ports = parsePorts(portsText).ifEmpty { NetworkScanner.FULL_PORTS }
+            if (ips.isNotEmpty()) {
+              scanner.launchCustomScan(ips, ports)
+              onDismiss()
+            }
+          },
+          enabled = !state.isScanning && ipsText.isNotBlank(),
+        ) { Text("Scan Ports") }
+        Spacer(Modifier.height(8.dp))
+        Text("IPs: comma-separated, ranges (1.1.1.1-10), CIDR (/24)\nPorts: comma-separated, ranges (1000-2000)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+    }
+  }
+}
+
+/** Parse IP input: single IPs, ranges (192.168.1.1-10), CIDR (/24) */
+private fun parseIps(input: String): List<String> {
+  val result = mutableListOf<String>()
+  input.split(",", "\n", " ").map { it.trim() }.filter { it.isNotBlank() }.forEach { token ->
+    when {
+      token.contains("/") -> {
+        val parts = token.split("/")
+        val base = parts[0]
+        val prefix = parts.getOrNull(1)?.toIntOrNull() ?: return@forEach
+        if (prefix == 24) {
+          val subnet = base.substringBeforeLast(".")
+          (1..254).forEach { result.add("$subnet.$it") }
+        }
+      }
+
+      token.contains("-") -> {
+        val base = token.substringBeforeLast(".")
+        val lastOctet = token.substringAfterLast(".")
+        if (lastOctet.contains("-")) {
+          val rangeParts = lastOctet.split("-")
+          val start = rangeParts[0].toIntOrNull() ?: return@forEach
+          val end = rangeParts.getOrNull(1)?.toIntOrNull() ?: return@forEach
+          (start..end).forEach { result.add("$base.$it") }
+        } else {
+          result.add(token)
+        }
+      }
+
+      else -> result.add(token)
+    }
+  }
+  return result.distinct()
+}
+
+/** Parse port input: single ports, ranges (1000-2000) */
+private fun parsePorts(input: String): List<Int> {
+  if (input.isBlank()) return emptyList()
+  val result = mutableListOf<Int>()
+  input.split(",", " ").map { it.trim() }.filter { it.isNotBlank() }.forEach { token ->
+    if (token.contains("-")) {
+      val parts = token.split("-", limit = 2)
+      val start = parts[0].toIntOrNull() ?: return@forEach
+      val end = parts.getOrNull(1)?.toIntOrNull() ?: return@forEach
+      (start..end.coerceAtMost(65535)).forEach { result.add(it) }
+    } else {
+      token.toIntOrNull()?.let { result.add(it) }
+    }
+  }
+  return result.distinct().filter { it in 1..65535 }
 }
