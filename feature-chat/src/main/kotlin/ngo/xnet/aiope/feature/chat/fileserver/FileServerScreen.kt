@@ -28,6 +28,8 @@ fun FileServerScreen(onBack: () -> Unit) {
   var isRunning by remember { mutableStateOf(FileServerService.isRunning()) }
   var rootPath by remember { mutableStateOf(prefs.getString("root_path", "") ?: "") }
   var port by remember { mutableStateOf(prefs.getInt("port", FileServerService.DEFAULT_PORT).toString()) }
+  var useHttps by remember { mutableStateOf(prefs.getBoolean("use_https", false)) }
+  var pinCode by remember { mutableStateOf(prefs.getString("pin", "") ?: "") }
   var serverUrl by remember { mutableStateOf(FileServerService.currentUrl()) }
 
   val dirPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -118,6 +120,34 @@ fun FileServerScreen(onBack: () -> Unit) {
         singleLine = true,
       )
 
+      Spacer(Modifier.height(16.dp))
+
+      // HTTPS toggle
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("HTTPS (self-signed)", modifier = Modifier.weight(1f))
+        Switch(checked = useHttps, onCheckedChange = {
+          useHttps = it
+          prefs.edit().putBoolean("use_https", it).apply()
+        })
+      }
+
+      Spacer(Modifier.height(8.dp))
+
+      // PIN
+      Text("PIN (optional)", style = MaterialTheme.typography.labelMedium)
+      Spacer(Modifier.height(4.dp))
+      OutlinedTextField(
+        value = pinCode,
+        onValueChange = {
+          pinCode = it.filter { c -> c.isDigit() }.take(8)
+          prefs.edit().putString("pin", pinCode).apply()
+        },
+        label = { Text("PIN") },
+        placeholder = { Text("Leave empty for no auth") },
+        modifier = Modifier.width(200.dp),
+        singleLine = true,
+      )
+
       Spacer(Modifier.height(24.dp))
 
       // Start/Stop button
@@ -133,7 +163,7 @@ fun FileServerScreen(onBack: () -> Unit) {
               return@Button
             }
             val p = port.toIntOrNull() ?: FileServerService.DEFAULT_PORT
-            FileServerService.start(context, rootPath, p)
+            FileServerService.start(context, rootPath, p, useHttps, pinCode.ifBlank { null })
             isRunning = true
             // Small delay to get the URL
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({

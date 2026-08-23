@@ -290,9 +290,33 @@ class NetworkScanner(private val context: Context) {
   private fun readNeighborTable(): List<Pair<String, String>> {
     val results = mutableListOf<Pair<String, String>>()
 
-    // Approach 1: ip neigh (works on most Android with toybox/toolbox)
+    // Approach 1: /proc/net/arp (world-readable, most reliable on Android)
     try {
-      val process = Runtime.getRuntime().exec(arrayOf("ip", "neigh"))
+      File("/proc/net/arp").bufferedReader().useLines { lines ->
+        lines.drop(1).forEach { line ->
+          val parts = line.split("\\s+".toRegex())
+          if (parts.size >= 4) {
+            val ip = parts[0]
+            val flags = parts[2]
+            val mac = parts[3].uppercase()
+            if (flags != "0x0" && mac != "00:00:00:00:00:00" && mac.contains(":")) {
+              results.add(ip to mac)
+            }
+          }
+        }
+      }
+    } catch (e: Exception) {
+      android.util.Log.e("Scanner", "/proc/net/arp failed: ${e.message}")
+    }
+
+    if (results.isNotEmpty()) {
+      android.util.Log.i("Scanner", "/proc/net/arp returned ${results.size} hosts")
+      return results
+    }
+
+    // Approach 2: ip neigh command
+    try {
+      val process = Runtime.getRuntime().exec(arrayOf("/system/bin/ip", "neigh"))
       BufferedReader(InputStreamReader(process.inputStream, StandardCharsets.UTF_8)).use { reader ->
         reader.lineSequence().forEach { line ->
           val parts = line.split("\\s+".toRegex())
@@ -300,7 +324,6 @@ class NetworkScanner(private val context: Context) {
             val ip = parts[0]
             val state = parts.last()
             if (state != "FAILED" && state != "INCOMPLETE") {
-              // MAC is typically at index 4 after "lladdr"
               val llIdx = parts.indexOf("lladdr")
               val mac = if (llIdx >= 0 && llIdx + 1 < parts.size) parts[llIdx + 1].uppercase() else null
               if (mac != null && mac != "00:00:00:00:00:00" && mac.contains(":")) {
@@ -311,49 +334,11 @@ class NetworkScanner(private val context: Context) {
         }
       }
       process.waitFor()
-    } catch (_: Exception) {}
+    } catch (e: Exception) {
+      android.util.Log.e("Scanner", "ip neigh failed: ${e.message}")
+    }
 
-    if (results.isNotEmpty()) return results
-
-    // Approach 2: /proc/net/arp (may be restricted on API 29+)
-    try {
-      File("/proc/net/arp").bufferedReader().useLines { lines ->
-        lines.drop(1).forEach { line ->
-          val parts = line.split("\\s+".toRegex())
-          if (parts.size >= 4) {
-            val ip = parts[0]
-            val flags = parts[2]
-            val mac = parts[3].uppercase()
-            // flags 0x2 = complete entry, 0x0 = incomplete
-            if (flags != "0x0" && mac != "00:00:00:00:00:00" && mac.contains(":")) {
-              results.add(ip to mac)
-            }
-          }
-        }
-      }
-    } catch (_: Exception) {}
-
-    if (results.isNotEmpty()) return results
-
-    // Approach 3: cat /proc/net/arp via shell (some Android restricts direct File access but allows exec)
-    try {
-      val process = Runtime.getRuntime().exec(arrayOf("cat", "/proc/net/arp"))
-      BufferedReader(InputStreamReader(process.inputStream, StandardCharsets.UTF_8)).use { reader ->
-        reader.lineSequence().drop(1).forEach { line ->
-          val parts = line.split("\\s+".toRegex())
-          if (parts.size >= 4) {
-            val ip = parts[0]
-            val flags = parts[2]
-            val mac = parts[3].uppercase()
-            if (flags != "0x0" && mac != "00:00:00:00:00:00" && mac.contains(":")) {
-              results.add(ip to mac)
-            }
-          }
-        }
-      }
-      process.waitFor()
-    } catch (_: Exception) {}
-
+    android.util.Log.i("Scanner", "ip neigh returned ${results.size} hosts")
     return results
   }
 
@@ -556,7 +541,11 @@ class NetworkScanner(private val context: Context) {
   private fun ipToLong(ip: String): Long = ip.split(".").fold(0L) { acc, v -> acc * 256 + (v.toIntOrNull() ?: 0) }
 
   companion object {
-    val DEFAULT_PORTS = (1..1024).toList() + listOf(1433, 1521, 1723, 2222, 3306, 3389, 5432, 5900, 5901, 6379, 8080, 8443, 8888, 9090, 27017)
+    val DEFAULT_PORTS = listOf(
+      21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445,
+      465, 587, 993, 995, 1433, 1521, 1723, 2222, 3306, 3389,
+      5432, 5900, 5901, 6379, 8080, 8443, 8888, 9090, 9200, 27017,
+    )
 
     val SERVICES = mapOf(
       21 to "ftp", 22 to "ssh", 23 to "telnet", 25 to "smtp", 53 to "dns",
