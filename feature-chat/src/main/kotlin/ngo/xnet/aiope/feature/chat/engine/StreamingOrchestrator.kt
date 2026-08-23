@@ -279,13 +279,6 @@ class StreamingOrchestrator(
                   if (contentSoFar.length > 2_000_000) {
                     contentSoFar.delete(0, contentSoFar.length - 1_500_000)
                   }
-                  // Suppress display of minimax tool call XML (will be parsed after stream)
-                  val soFar = contentSoFar.toString()
-                  if (soFar.contains("<minimax:tool_call>") && !soFar.contains("</minimax:tool_call>")) {
-                    content = "" // Hold back — still accumulating tool call block
-                  } else if (soFar.contains("<minimax:tool_call>") && soFar.contains("</minimax:tool_call>")) {
-                    content = "" // Entire block received — will be handled by fallback parser
-                  }
                 }
 
                 // On retry, skip emitting content we already sent to the UI
@@ -692,6 +685,10 @@ class StreamingOrchestrator(
   /** Strip tool call markup from text for display purposes */
   private fun stripToolMarkup(text: String): String {
     var cleaned = text
+    // Strip <｜DSML｜function_calls... blocks (DeepSeek broken tool call tokens)
+    cleaned = Regex("""<｜DSML｜[^<]*""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
+    // Strip <tool_results>...</tool_results> blocks (history context)
+    cleaned = Regex("""<tool_results>.*?</tool_results>""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
     // Strip <minimax:tool_call>...</minimax:tool_call> blocks
     cleaned = Regex("""<minimax:tool_call>.*?</minimax:tool_call>""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
     // Strip <tool_call>...</tool_call> blocks

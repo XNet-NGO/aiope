@@ -681,8 +681,7 @@ class ChatViewModel @Inject constructor(
             else -> null
           }
           if (role != null) {
-            var content = msg.content
-            trimmed.add(0, role to content)
+            trimmed.add(0, role to msg.content)
           }
         }
         chatMessages.addAll(trimmed)
