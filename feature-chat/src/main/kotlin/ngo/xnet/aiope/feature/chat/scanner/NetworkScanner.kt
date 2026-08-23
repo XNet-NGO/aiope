@@ -350,6 +350,7 @@ class NetworkScanner(private val context: Context) {
   private fun getLocalIp(): String? {
     try {
       val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+      // First pass: prefer WiFi/ethernet interfaces with /24
       for (intf in interfaces) {
         if (!intf.isUp || intf.isLoopback) continue
         val name = intf.name.lowercase()
@@ -357,8 +358,20 @@ class NetworkScanner(private val context: Context) {
         for (ifAddr in intf.interfaceAddresses) {
           val addr = ifAddr.address ?: continue
           if (addr.isLoopbackAddress || addr is java.net.Inet6Address) continue
+          val ip = addr.hostAddress ?: continue
           val prefix = ifAddr.networkPrefixLength.toInt()
-          if (prefix < 16 || prefix > 30) continue
+          if (prefix in 16..24 && (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."))) return ip
+        }
+      }
+      // Second pass: accept any private IP including WireGuard /32
+      val intfs2 = java.net.NetworkInterface.getNetworkInterfaces()
+      for (intf in intfs2) {
+        if (!intf.isUp || intf.isLoopback) continue
+        val name = intf.name.lowercase()
+        if (name.startsWith("rmnet") || name.startsWith("ccmni") || name.startsWith("pdp")) continue
+        for (ifAddr in intf.interfaceAddresses) {
+          val addr = ifAddr.address ?: continue
+          if (addr.isLoopbackAddress || addr is java.net.Inet6Address) continue
           val ip = addr.hostAddress ?: continue
           if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) return ip
         }
