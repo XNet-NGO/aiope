@@ -62,12 +62,20 @@
     <service
       android:name=".AiopeForegroundService"
       android:exported="false"
-      android:foregroundServiceType="specialUse" />
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="Keeps the AI agent session and streaming inference alive while the app runs in the background" />
+    </service>
 
     <service
       android:name="ngo.xnet.aiope.feature.chat.fileserver.FileServerService"
       android:exported="false"
-      android:foregroundServiceType="specialUse" />
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="Serves user-selected files over an HTTPS file server while the app runs in the background" />
+    </service>
 
     <receiver
       android:name="ngo.xnet.aiope.feature.chat.engine.AgentAlarmReceiver"

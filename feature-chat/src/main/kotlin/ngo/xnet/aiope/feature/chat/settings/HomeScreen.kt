@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -209,7 +207,7 @@ private fun HomeDashboard(providerStore: ProviderStore, activeId: String, onNewC
     fromCache?.takeIf { it.isNotBlank() } ?: active.selectedModelId.substringAfterLast('/').ifBlank { "no model" }
   }
 
-  Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
+  Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
     Spacer(Modifier.height(28.dp))
     Text("CuO", fontSize = 13.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
     Text(greeting, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
@@ -237,7 +235,7 @@ private fun HomeDashboard(providerStore: ProviderStore, activeId: String, onNewC
     Spacer(Modifier.height(20.dp))
     LazyVerticalGrid(
       columns = GridCells.Adaptive(minSize = 150.dp),
-      modifier = Modifier.fillMaxWidth().weight(1f).navigationBarsPadding(),
+      modifier = Modifier.fillMaxWidth().weight(1f),
       verticalArrangement = Arrangement.spacedBy(10.dp),
       horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {

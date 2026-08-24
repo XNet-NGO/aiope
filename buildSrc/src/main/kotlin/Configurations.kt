@@ -1,6 +1,6 @@
 object Configurations {
   const val compileSdk = 37
-  const val targetSdk = 34
+  const val targetSdk = 37
   const val minSdk = 26
   const val majorVersion = 4
   const val minorVersion = 7

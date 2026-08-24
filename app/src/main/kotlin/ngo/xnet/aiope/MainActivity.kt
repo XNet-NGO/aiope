@@ -10,6 +10,7 @@ import android.os.Environment
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
@@ -63,6 +64,9 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    // Required on targetSdk 35+ (Android 16/17): edge-to-edge is enforced, so opt in explicitly
+    // and let the Compose root consume WindowInsets instead of the decor system.
+    enableEdgeToEdge()
 
     // Request permissions on first launch
     val needed = runtimePermissions.filter {
