@@ -22,6 +22,7 @@ okhttp = "5.4.0"
 jtokkit = "1.1.0"
 spotless = "8.9.0"
 pdfboxAndroid = "2.0.27.0"
+junit = "4.13.2"
 
 [libraries]
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "androidxComposeBom" }
@@ -59,6 +60,8 @@ jtokkit = { group = "com.knuddels", name = "jtokkit", version.ref = "jtokkit" }
 pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfboxAndroid" }
 
 # markdown
+
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 # Dependencies of the included build-logic
 android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "androidGradlePlugin" }
