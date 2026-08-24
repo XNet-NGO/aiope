@@ -13,7 +13,7 @@ import ngo.xnet.aiope.feature.chat.settings.ToolStore
 fun AiopeNavHost(navHostController: NavHostController, composeNavigator: AppComposeNavigator, providerStore: ProviderStore, toolStore: ToolStore, chatDao: ChatDao) {
   NavHost(
     navController = navHostController,
-    startDestination = AiopeScreens.Chat.route,
+    startDestination = AiopeScreens.Home.route,
   ) {
     aiopeNavigation(composeNavigator = composeNavigator, providerStore = providerStore, toolStore = toolStore, chatDao = chatDao)
   }

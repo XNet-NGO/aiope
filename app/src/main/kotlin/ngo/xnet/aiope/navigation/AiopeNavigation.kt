@@ -6,14 +6,27 @@ import ngo.xnet.aiope.core.navigation.AiopeScreens
 import ngo.xnet.aiope.core.navigation.AppComposeNavigator
 import ngo.xnet.aiope.feature.chat.ChatScreen
 import ngo.xnet.aiope.feature.chat.db.ChatDao
+import ngo.xnet.aiope.feature.chat.settings.HomeScreen
 import ngo.xnet.aiope.feature.chat.settings.ProviderStore
 import ngo.xnet.aiope.feature.chat.settings.SettingsScreen
 import ngo.xnet.aiope.feature.chat.settings.ToolStore
 import ngo.xnet.aiope.feature.remote.ui.ServerListScreen
 
 fun NavGraphBuilder.aiopeNavigation(composeNavigator: AppComposeNavigator, providerStore: ProviderStore, toolStore: ToolStore, chatDao: ChatDao) {
+  composable(route = AiopeScreens.Home.route) {
+    HomeScreen(
+      providerStore = providerStore,
+      toolStore = toolStore,
+      chatDao = chatDao,
+      serversContent = { onBack -> ServerListScreen(onBack = onBack) },
+      onNewChat = { composeNavigator.navigate(AiopeScreens.Chat.route) },
+    )
+  }
   composable(route = AiopeScreens.Chat.route) {
-    ChatScreen(onOpenSettings = { composeNavigator.navigate(AiopeScreens.Settings.route) })
+    ChatScreen(
+      onOpenSettings = { composeNavigator.navigate(AiopeScreens.Settings.route) },
+      onOpenHome = { composeNavigator.navigateUp() },
+    )
   }
   composable(route = AiopeScreens.Settings.route) {
     SettingsScreen(

@@ -34,7 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () -> Unit = {}) {
+fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () -> Unit = {}, onOpenHome: () -> Unit = {}) {
   val messages by viewModel.messages.collectAsStateWithLifecycle()
   val isStreaming by viewModel.isStreaming.collectAsStateWithLifecycle()
   val isInRealtimeVoice by viewModel.isInRealtimeVoice.collectAsStateWithLifecycle()
@@ -83,6 +83,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
           onToggleBrowser = { viewModel.toggleBrowser() },
           onToggleAgentPanel = { viewModel.toggleAgentPanel() },
           onOpenSettings = onOpenSettings,
+          onOpenHome = onOpenHome,
           onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
           onSwitchModel = { viewModel.switchModel(it) },
           onChats = { showConversations = true },
@@ -147,6 +148,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
           onToggleBrowser = { viewModel.toggleBrowser() },
           onToggleAgentPanel = { viewModel.toggleAgentPanel() },
           onOpenSettings = onOpenSettings,
+          onOpenHome = onOpenHome,
           onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
           onSwitchModel = { viewModel.switchModel(it) },
           onChats = { showConversations = true },
@@ -241,6 +243,7 @@ private fun ChatContent(
   onToggleBrowser: () -> Unit,
   onToggleAgentPanel: () -> Unit = {},
   onOpenSettings: () -> Unit,
+  onOpenHome: () -> Unit = {},
   onGetModels: () -> List<ngo.xnet.aiope.core.network.ModelDef>,
   onGetActiveModelId: () -> String,
   onSwitchModel: (String) -> Unit,
@@ -278,8 +281,11 @@ private fun ChatContent(
           modifier = Modifier.fillMaxWidth(),
         ) {
           Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
-            // Left: Chats icon + Share
+            // Left: Home + Chats icon + Share
             Row(modifier = Modifier.align(Alignment.CenterStart)) {
+              IconButton(onClick = onOpenHome, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.Home, "Home", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+              }
               IconButton(onClick = onChats, modifier = Modifier.size(36.dp)) {
                 Icon(Icons.Default.Forum, "Chats", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
               }

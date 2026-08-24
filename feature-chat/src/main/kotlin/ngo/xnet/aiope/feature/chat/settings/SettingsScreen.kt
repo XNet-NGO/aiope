@@ -16,8 +16,7 @@ import ngo.xnet.aiope.feature.chat.theme.LocalThemeState
 @Composable
 fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: ChatDao, onBack: () -> Unit, serversContent: (@Composable (onBack: () -> Unit) -> Unit)? = null) {
   val theme = LocalThemeState.current
-  var screen by remember { mutableStateOf("list") }
-  var editId by remember { mutableStateOf<String?>(null) }
+  var screen by remember { mutableStateOf<CuoDestination>(CuoDestination.List) }
   var profiles by remember { mutableStateOf(providerStore.getAll()) }
   var activeId by remember { mutableStateOf(providerStore.getActive().id) }
   fun refresh() {
@@ -28,27 +27,27 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: 
   Box(Modifier.fillMaxSize()) {
     ChatBackground(theme)
     Box(Modifier.fillMaxSize().alpha(theme.uiOpacity)) {
-      when (screen) {
-        "list" -> ProfileList(
+      when (val dest = screen) {
+        CuoDestination.List -> ProfileList(
           providerStore, chatDao,
-          onAgent = { screen = "agent" }, onTasks = { screen = "tasks" }, onTools = { screen = "tools" }, onMcp = { screen = "mcp" }, onServers = { screen = "servers" }, onVoice = { screen = "voice" }, onTheme = { screen = "theme" }, onProviders = { screen = "providers" }, onRag = { screen = "rag" }, onBack = onBack,
+          onAgent = { screen = CuoDestination.Agent }, onTasks = { screen = CuoDestination.Tasks }, onTools = { screen = CuoDestination.Tools }, onMcp = { screen = CuoDestination.Mcp }, onServers = { screen = CuoDestination.Servers }, onVoice = { screen = CuoDestination.Voice }, onTheme = { screen = CuoDestination.Theme }, onProviders = { screen = CuoDestination.Providers }, onRag = { screen = CuoDestination.Rag }, onBack = onBack,
         )
 
-        "voice" -> VoiceSettingsScreen(onBack = { screen = "list" })
+        CuoDestination.Voice -> VoiceSettingsScreen(onBack = { screen = CuoDestination.List })
 
-        "theme" -> ngo.xnet.aiope.feature.chat.theme.ThemeSettingsScreen(onBack = { screen = "list" })
+        CuoDestination.Theme -> ngo.xnet.aiope.feature.chat.theme.ThemeSettingsScreen(onBack = { screen = CuoDestination.List })
 
-        "tools" -> ToolToggleScreen(toolStore, onBack = { screen = "list" })
+        CuoDestination.Tools -> ToolToggleScreen(toolStore, onBack = { screen = CuoDestination.List })
 
-        "agent" -> AgentScreen(dao = chatDao, onBack = { screen = "list" })
+        CuoDestination.Agent -> AgentScreen(dao = chatDao, onBack = { screen = CuoDestination.List })
 
-        "rag" -> RagScreen(onBack = { screen = "list" })
+        CuoDestination.Rag -> RagScreen(onBack = { screen = CuoDestination.List })
 
-        "mcp" -> McpServerScreen(toolStore, onBack = { screen = "list" })
+        CuoDestination.Mcp -> McpServerScreen(toolStore, onBack = { screen = CuoDestination.List })
 
-        "servers" -> serversContent?.invoke { screen = "list" }
+        CuoDestination.Servers -> serversContent?.invoke { screen = CuoDestination.List }
 
-        "pick" -> TemplatePicker(onPick = { b ->
+        CuoDestination.Pick -> TemplatePicker(onPick = { b ->
           val p = ProviderProfile(builtinId = b.id, label = b.displayName, apiBase = b.apiBase ?: "", selectedModelId = b.defaultModels.firstOrNull()?.id ?: "")
           providerStore.save(p)
           providerStore.setActive(p.id)
@@ -58,12 +57,11 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: 
             val cache = providerStore.getModelCacheStale(sibling.id)
             if (!cache.isNullOrEmpty()) providerStore.saveModelCache(p.id, cache)
           }
-          editId = p.id
           refresh()
-          screen = "edit"
-        }, onBack = { screen = "list" })
+          screen = CuoDestination.Edit(p.id)
+        }, onBack = { screen = CuoDestination.List })
 
-        "edit" -> editId?.let { providerStore.getById(it) }?.let { profile ->
+        is CuoDestination.Edit -> providerStore.getById(dest.profileId)?.let { profile ->
           ProfileEditor(
             profile,
             providerStore,
@@ -71,20 +69,20 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: 
               providerStore.save(it)
               providerStore.setActive(it.id)
               refresh()
-              screen = "list"
+              screen = CuoDestination.List
             },
             onDelete = {
               providerStore.delete(profile.id)
               refresh()
-              screen = "list"
+              screen = CuoDestination.List
             },
-            onBack = { screen = "list" },
+            onBack = { screen = CuoDestination.List },
           )
         }
 
-        "tasks" -> TaskModelScreen(providerStore, onBack = { screen = "list" })
+        CuoDestination.Tasks -> TaskModelScreen(providerStore, onBack = { screen = CuoDestination.List })
 
-        "providers" -> ProviderListScreen(
+        CuoDestination.Providers -> ProviderListScreen(
           profiles,
           activeId,
           providerStore,
@@ -93,12 +91,14 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: 
             activeId = it.id
           },
           onEdit = {
-            editId = it.id
-            screen = "edit"
+            screen = CuoDestination.Edit(it.id)
           },
-          onAdd = { screen = "pick" },
-          onBack = { screen = "list" },
+          onAdd = { screen = CuoDestination.Pick },
+          onBack = { screen = CuoDestination.List },
         )
+
+        // Not part of the settings tree: Home root and Home-only screens.
+        CuoDestination.Home, CuoDestination.Scanner, CuoDestination.FileServer -> {}
       }
     }
   }
