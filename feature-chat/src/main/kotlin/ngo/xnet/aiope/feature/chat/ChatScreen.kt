@@ -34,7 +34,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
 @Composable
-fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () -> Unit = {}, onOpenHome: () -> Unit = {}) {
+fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), startNewConversation: Boolean = false, onOpenSettings: () -> Unit = {}, onOpenHome: () -> Unit = {}) {
+  LaunchedEffect(startNewConversation) {
+    if (startNewConversation) viewModel.startNewConversation()
+  }
   val messages by viewModel.messages.collectAsStateWithLifecycle()
   val isStreaming by viewModel.isStreaming.collectAsStateWithLifecycle()
   val isInRealtimeVoice by viewModel.isInRealtimeVoice.collectAsStateWithLifecycle()

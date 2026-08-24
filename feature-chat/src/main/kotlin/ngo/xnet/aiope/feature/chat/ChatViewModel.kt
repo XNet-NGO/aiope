@@ -324,11 +324,30 @@ class ChatViewModel @Inject constructor(
   private val _conversations = MutableStateFlow<List<ConversationEntity>>(emptyList())
   val conversations = _conversations.asStateFlow()
 
+  /**
+   * The startup conversation restore. [startNewConversation] waits for it before creating a fresh
+   * conversation, otherwise the restore would race and overwrite the new empty conversation with
+   * the previous chat's messages.
+   */
+  private var restoreJob: kotlinx.coroutines.Job? = null
+
+  /**
+   * Called when the Chat screen is opened from Home's "New Chat" action. Awaits the initial restore
+   * so the two don't race, then starts a fresh conversation unless the current one is already empty
+   * (avoids piling up empty conversations when the user taps New Chat repeatedly).
+   */
+  fun startNewConversation() {
+    viewModelScope.launch {
+      restoreJob?.join()
+      if (_messages.value.isNotEmpty()) newConversation()
+    }
+  }
+
   init {
     refreshModelLabel()
     ngo.xnet.aiope.feature.chat.browser.BrowserServer.start { getBrowser() }
     getBrowser() // preload WebView on main thread
-    viewModelScope.launch {
+    restoreJob = viewModelScope.launch {
       // Reuse last conversation if it exists, or find an empty one
       val all = chatDao.getConversations()
       val empty = all.firstOrNull { chatDao.getMessages(it.id).isEmpty() }

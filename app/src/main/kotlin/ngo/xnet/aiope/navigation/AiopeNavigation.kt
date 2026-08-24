@@ -1,7 +1,9 @@
 package ngo.xnet.aiope.navigation
 
 import androidx.navigation.NavGraphBuilder
+import androidx.navigation.NavType
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import ngo.xnet.aiope.core.navigation.AiopeScreens
 import ngo.xnet.aiope.core.navigation.AppComposeNavigator
 import ngo.xnet.aiope.feature.chat.ChatScreen
@@ -19,11 +21,20 @@ fun NavGraphBuilder.aiopeNavigation(composeNavigator: AppComposeNavigator, provi
       toolStore = toolStore,
       chatDao = chatDao,
       serversContent = { onBack -> ServerListScreen(onBack = onBack) },
-      onNewChat = { composeNavigator.navigate(AiopeScreens.Chat.route) },
+      onNewChat = { composeNavigator.navigate(AiopeScreens.Chat.createRoute(new = true)) },
     )
   }
-  composable(route = AiopeScreens.Chat.route) {
+  composable(
+    route = AiopeScreens.Chat.route,
+    arguments = listOf(
+      navArgument("new") {
+        type = NavType.BoolType
+        defaultValue = false
+      },
+    ),
+  ) { entry ->
     ChatScreen(
+      startNewConversation = entry.arguments?.getBoolean("new") ?: false,
       onOpenSettings = { composeNavigator.navigate(AiopeScreens.Settings.route) },
       onOpenHome = { composeNavigator.navigateUp() },
     )
