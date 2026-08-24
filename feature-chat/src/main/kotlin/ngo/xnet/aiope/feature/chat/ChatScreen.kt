@@ -33,6 +33,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), startNewConversation: Boolean = false, onOpenSettings: () -> Unit = {}, onOpenHome: () -> Unit = {}) {
   LaunchedEffect(startNewConversation) {
@@ -55,6 +56,8 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), startNewConversation:
   val agentMode by viewModel.agentMode.collectAsStateWithLifecycle()
   val autoRun by viewModel.autoRun.collectAsStateWithLifecycle()
   val subagentTasks by viewModel.subagentManager.tasks.collectAsStateWithLifecycle()
+  val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+  val activeConversationId by viewModel.activeConversationId.collectAsStateWithLifecycle()
   val config = LocalConfiguration.current
   val isLandscape = config.screenWidthDp > config.screenHeightDp
   var showModelPicker by remember { mutableStateOf(false) }
@@ -64,144 +67,76 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), startNewConversation:
   var showScanner by remember { mutableStateOf(false) }
   var editText by remember { mutableStateOf("") }
   val context = androidx.compose.ui.platform.LocalContext.current
+  val drawerState = rememberDrawerState(DrawerValue.Closed)
+  val drawerScope = rememberCoroutineScope()
 
   @OptIn(ExperimentalLayoutApi::class)
   val imeVisible = WindowInsets.isImeVisible
   val listState = rememberLazyListState()
 
-  if (isLandscape) {
-    Row(Modifier.fillMaxSize()) {
-      if (!browserMaximized) {
-        ChatContent(
-          messages = messages, isStreaming = isStreaming,
-          agentMode = agentMode, onModeChange = { viewModel.setAgentMode(it) },
-          autoRun = autoRun, onAutoRunChange = { viewModel.setAutoRun(it) },
-          subagentTasks = subagentTasks,
-          terminalVisible = terminalVisible,
-          browserVisible = browserVisible,
-          agentPanelVisible = agentPanelVisible,
-          imeVisible = imeVisible, modelLabel = modelLabel,
-          listState = listState,
-          onSend = { text, imgs -> viewModel.send(text, imgs) }, onStop = { viewModel.cancelStreaming() }, onToggleTerminal = viewModel::toggleTerminal,
-          onToggleBrowser = { viewModel.toggleBrowser() },
-          onToggleAgentPanel = { viewModel.toggleAgentPanel() },
-          onOpenSettings = onOpenSettings,
-          onOpenHome = onOpenHome,
-          onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
-          onSwitchModel = { viewModel.switchModel(it) },
-          onChats = { showConversations = true },
-          onShareChat = { showShareSheet = true },
-          onFileServer = { showFileServer = true },
-          onScanner = { showScanner = true },
-          onEditMessage = { text, idx ->
-            viewModel.truncateAt(idx)
-            editText = text
-          },
-          onRetry = { idx -> viewModel.retry(idx) },
-          onCompact = { idx -> viewModel.compact(idx) },
-          onFork = { idx -> viewModel.fork(idx) },
-          onTranslate = { msgId, lang -> viewModel.translateMessage(msgId, lang) },
-          editText = editText, onEditTextChange = { editText = it },
-          supportsRealtimeVoice = supportsRealtimeVoice, isInRealtimeVoice = isInRealtimeVoice, isVoiceListening = isVoiceListening, isVoiceSpeaking = isVoiceSpeaking, onToggleVoice = { viewModel.toggleRealtimeVoice() },
-          modifier = Modifier.weight(1f),
-        )
-        if (terminalVisible) {
-          TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.width(360.dp).fillMaxHeight())
-        }
-        if (agentPanelVisible) {
-          AgentPanel(
-            modifier = Modifier.width(360.dp).fillMaxHeight(),
-            agents = agentRoster,
-            runningTasks = subagentTasks,
-            persistedTasks = persistedTasks,
-            scheduledTasks = scheduledTasks,
-            models = remember { viewModel.getModelList().map { it.id } },
-            onSpawn = { agent, task -> viewModel.spawnAgentFromPanel(agent, task) },
-            onCancelTask = { viewModel.cancelAgentTask(it) },
-            onRerunTask = { viewModel.rerunAgentTask(it) },
-            onSaveAgent = { viewModel.saveAgent(it) },
-            onDeleteAgent = { viewModel.deleteAgent(it) },
-            onSaveSchedule = { viewModel.saveScheduledTask(it) },
-            onDeleteSchedule = { viewModel.deleteScheduledTask(it) },
-          )
-        }
-      }
-      if (browserVisible) {
-        ngo.xnet.aiope.feature.chat.browser.BrowserPanel(
-          maximized = browserMaximized,
-          onToggleMaximize = { viewModel.setBrowserMaximized(!browserMaximized) },
-          modifier = if (browserMaximized) Modifier.fillMaxSize() else Modifier.width(360.dp).fillMaxHeight(),
-        )
-      }
-    }
-  } else {
-    Column(Modifier.fillMaxSize()) {
-      if (!browserMaximized) {
-        ChatContent(
-          messages = messages, isStreaming = isStreaming,
-          agentMode = agentMode, onModeChange = { viewModel.setAgentMode(it) },
-          autoRun = autoRun, onAutoRunChange = { viewModel.setAutoRun(it) },
-          subagentTasks = subagentTasks,
-          terminalVisible = terminalVisible,
-          browserVisible = browserVisible,
-          agentPanelVisible = agentPanelVisible,
-          imeVisible = imeVisible, modelLabel = modelLabel,
-          listState = listState,
-          onSend = { text, imgs -> viewModel.send(text, imgs) }, onStop = { viewModel.cancelStreaming() }, onToggleTerminal = viewModel::toggleTerminal,
-          onToggleBrowser = { viewModel.toggleBrowser() },
-          onToggleAgentPanel = { viewModel.toggleAgentPanel() },
-          onOpenSettings = onOpenSettings,
-          onOpenHome = onOpenHome,
-          onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
-          onSwitchModel = { viewModel.switchModel(it) },
-          onChats = { showConversations = true },
-          onShareChat = { showShareSheet = true },
-          onFileServer = { showFileServer = true },
-          onScanner = { showScanner = true },
-          onEditMessage = { text, idx ->
-            viewModel.truncateAt(idx)
-            editText = text
-          },
-          onRetry = { idx -> viewModel.retry(idx) },
-          onCompact = { idx -> viewModel.compact(idx) },
-          onFork = { idx -> viewModel.fork(idx) },
-          onTranslate = { msgId, lang -> viewModel.translateMessage(msgId, lang) },
-          editText = editText, onEditTextChange = { editText = it },
-          supportsRealtimeVoice = supportsRealtimeVoice, isInRealtimeVoice = isInRealtimeVoice, isVoiceListening = isVoiceListening, isVoiceSpeaking = isVoiceSpeaking, onToggleVoice = { viewModel.toggleRealtimeVoice() },
-          modifier = Modifier.weight(1f),
-        )
-        if (terminalVisible) {
-          TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.fillMaxWidth().height(240.dp))
-        }
-        if (agentPanelVisible) {
-          AgentPanel(
-            modifier = Modifier.fillMaxWidth().height(240.dp),
-            agents = agentRoster,
-            runningTasks = subagentTasks,
-            persistedTasks = persistedTasks,
-            scheduledTasks = scheduledTasks,
-            models = remember { viewModel.getModelList().map { it.id } },
-            onSpawn = { agent, task -> viewModel.spawnAgentFromPanel(agent, task) },
-            onCancelTask = { viewModel.cancelAgentTask(it) },
-            onRerunTask = { viewModel.rerunAgentTask(it) },
-            onSaveAgent = { viewModel.saveAgent(it) },
-            onDeleteAgent = { viewModel.deleteAgent(it) },
-            onSaveSchedule = { viewModel.saveScheduledTask(it) },
-            onDeleteSchedule = { viewModel.deleteScheduledTask(it) },
-          )
-        }
-      }
-      if (browserVisible) {
-        ngo.xnet.aiope.feature.chat.browser.BrowserPanel(
-          maximized = browserMaximized,
-          onToggleMaximize = { viewModel.setBrowserMaximized(!browserMaximized) },
-          modifier = if (browserMaximized) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(300.dp),
-        )
-      }
-    }
-  }
+  val openDrawer = { drawerScope.launch { drawerState.open() } }
+  val closeDrawer = { drawerScope.launch { drawerState.close() } }
 
-  if (showConversations) ConversationSheet(viewModel, onDismiss = { showConversations = false })
+  ModalNavigationDrawer(
+    drawerState = drawerState,
+    drawerContent = {
+      ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        ngo.xnet.aiope.feature.chat.ui.ChatDrawerContent(
+          conversations = conversations,
+          activeConversationId = activeConversationId,
+          onNewChat = {
+            viewModel.newConversation()
+            closeDrawer()
+          },
+          onOpenConversation = {
+            viewModel.loadConversation(it)
+            closeDrawer()
+          },
+          onDeleteConversation = { viewModel.deleteConversation(it) },
+          onOpenHome = {
+            closeDrawer()
+            onOpenHome()
+          },
+          onOpenSettings = {
+            closeDrawer()
+            onOpenSettings()
+          },
+        )
+      }
+    },
+  ) {
+    ChatScreenBody(
+      viewModel = viewModel,
+      messages = messages,
+      isStreaming = isStreaming,
+      isLandscape = isLandscape,
+      imeVisible = imeVisible,
+      listState = listState,
+      modelLabel = modelLabel,
+      agentMode = agentMode,
+      autoRun = autoRun,
+      subagentTasks = subagentTasks,
+      terminalVisible = terminalVisible,
+      browserVisible = browserVisible,
+      browserMaximized = browserMaximized,
+      agentPanelVisible = agentPanelVisible,
+      agentRoster = agentRoster,
+      persistedTasks = persistedTasks,
+      scheduledTasks = scheduledTasks,
+      supportsRealtimeVoice = supportsRealtimeVoice,
+      isInRealtimeVoice = isInRealtimeVoice,
+      isVoiceListening = isVoiceListening,
+      isVoiceSpeaking = isVoiceSpeaking,
+      editText = editText,
+      onEditTextChange = { editText = it },
+      onOpenDrawer = { openDrawer() },
+      onOpenSettings = onOpenSettings,
+      onOpenHome = onOpenHome,
+      onShareChat = { showShareSheet = true },
+      onFileServer = { showFileServer = true },
+      onScanner = { showScanner = true },
+    )
+  }
 
   if (showShareSheet) {
     ShareFormatSheet(
@@ -221,6 +156,141 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), startNewConversation:
     ngo.xnet.aiope.feature.chat.scanner.ScannerScreen(onBack = { showScanner = false })
   }
 }
+
+/**
+ * Portrait/landscape arrangement of the chat surface and its side panels.
+ *
+ * Split out of [ChatScreen] so the drawer wrapper stays readable; it owns no state of its own.
+ */
+@Composable
+private fun ChatScreenBody(
+  viewModel: ChatViewModel,
+  messages: List<ChatMessage>,
+  isStreaming: Boolean,
+  isLandscape: Boolean,
+  imeVisible: Boolean,
+  listState: androidx.compose.foundation.lazy.LazyListState,
+  modelLabel: String,
+  agentMode: ngo.xnet.aiope.feature.chat.engine.AgentMode,
+  autoRun: Boolean,
+  subagentTasks: List<ngo.xnet.aiope.feature.chat.engine.AgentExecutor.RunningTask>,
+  terminalVisible: Boolean,
+  browserVisible: Boolean,
+  browserMaximized: Boolean,
+  agentPanelVisible: Boolean,
+  agentRoster: List<ngo.xnet.aiope.feature.chat.db.AgentEntity>,
+  persistedTasks: List<ngo.xnet.aiope.feature.chat.db.AgentTaskEntity>,
+  scheduledTasks: List<ngo.xnet.aiope.feature.chat.db.ScheduledTaskEntity>,
+  supportsRealtimeVoice: Boolean,
+  isInRealtimeVoice: Boolean,
+  isVoiceListening: Boolean,
+  isVoiceSpeaking: Boolean,
+  editText: String,
+  onEditTextChange: (String) -> Unit,
+  onOpenDrawer: () -> Unit,
+  onOpenSettings: () -> Unit,
+  onOpenHome: () -> Unit,
+  onShareChat: () -> Unit,
+  onFileServer: () -> Unit,
+  onScanner: () -> Unit,
+) {
+  val chat: @Composable (Modifier) -> Unit = { mod ->
+    ChatContent(
+      messages = messages, isStreaming = isStreaming,
+      agentMode = agentMode, onModeChange = { viewModel.setAgentMode(it) },
+      autoRun = autoRun, onAutoRunChange = { viewModel.setAutoRun(it) },
+      subagentTasks = subagentTasks,
+      terminalVisible = terminalVisible,
+      browserVisible = browserVisible,
+      agentPanelVisible = agentPanelVisible,
+      imeVisible = imeVisible, modelLabel = modelLabel,
+      listState = listState,
+      onSend = { text, imgs -> viewModel.send(text, imgs) },
+      onStop = { viewModel.cancelStreaming() },
+      onToggleTerminal = viewModel::toggleTerminal,
+      onToggleBrowser = { viewModel.toggleBrowser() },
+      onToggleAgentPanel = { viewModel.toggleAgentPanel() },
+      onOpenDrawer = onOpenDrawer,
+      onNewChat = { viewModel.newConversation() },
+      onOpenSettings = onOpenSettings,
+      onGetModels = { viewModel.getModelList() },
+      onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
+      onSwitchModel = { viewModel.switchModel(it) },
+      onShareChat = onShareChat,
+      onFileServer = onFileServer,
+      onScanner = onScanner,
+      onEditMessage = { text, idx ->
+        viewModel.truncateAt(idx)
+        onEditTextChange(text)
+      },
+      onRetry = { idx -> viewModel.retry(idx) },
+      onCompact = { idx -> viewModel.compact(idx) },
+      onFork = { idx -> viewModel.fork(idx) },
+      onTranslate = { msgId, lang -> viewModel.translateMessage(msgId, lang) },
+      editText = editText, onEditTextChange = onEditTextChange,
+      supportsRealtimeVoice = supportsRealtimeVoice,
+      isInRealtimeVoice = isInRealtimeVoice,
+      isVoiceListening = isVoiceListening,
+      isVoiceSpeaking = isVoiceSpeaking,
+      onToggleVoice = { viewModel.toggleRealtimeVoice() },
+      modifier = mod,
+    )
+  }
+  val agentPanel: @Composable (Modifier) -> Unit = { mod ->
+    AgentPanel(
+      modifier = mod,
+      agents = agentRoster,
+      runningTasks = subagentTasks,
+      persistedTasks = persistedTasks,
+      scheduledTasks = scheduledTasks,
+      models = remember { viewModel.getModelList().map { it.id } },
+      onSpawn = { agent, task -> viewModel.spawnAgentFromPanel(agent, task) },
+      onCancelTask = { viewModel.cancelAgentTask(it) },
+      onRerunTask = { viewModel.rerunAgentTask(it) },
+      onSaveAgent = { viewModel.saveAgent(it) },
+      onDeleteAgent = { viewModel.deleteAgent(it) },
+      onSaveSchedule = { viewModel.saveScheduledTask(it) },
+      onDeleteSchedule = { viewModel.deleteScheduledTask(it) },
+    )
+  }
+
+  if (isLandscape) {
+    Row(Modifier.fillMaxSize()) {
+      if (!browserMaximized) {
+        chat(Modifier.weight(1f))
+        if (terminalVisible) {
+          TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.width(360.dp).fillMaxHeight())
+        }
+        if (agentPanelVisible) agentPanel(Modifier.width(360.dp).fillMaxHeight())
+      }
+      if (browserVisible) {
+        ngo.xnet.aiope.feature.chat.browser.BrowserPanel(
+          maximized = browserMaximized,
+          onToggleMaximize = { viewModel.setBrowserMaximized(!browserMaximized) },
+          modifier = if (browserMaximized) Modifier.fillMaxSize() else Modifier.width(360.dp).fillMaxHeight(),
+        )
+      }
+    }
+  } else {
+    Column(Modifier.fillMaxSize()) {
+      if (!browserMaximized) {
+        chat(Modifier.weight(1f))
+        if (terminalVisible) {
+          TerminalPanel(keyboardVisible = imeVisible, modifier = Modifier.fillMaxWidth().height(240.dp))
+        }
+        if (agentPanelVisible) agentPanel(Modifier.fillMaxWidth().height(240.dp))
+      }
+      if (browserVisible) {
+        ngo.xnet.aiope.feature.chat.browser.BrowserPanel(
+          maximized = browserMaximized,
+          onToggleMaximize = { viewModel.setBrowserMaximized(!browserMaximized) },
+          modifier = if (browserMaximized) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(300.dp),
+        )
+      }
+    }
+  }
+}
+
 
 // ── Main chat content ──
 
@@ -245,12 +315,12 @@ private fun ChatContent(
   onToggleTerminal: () -> Unit,
   onToggleBrowser: () -> Unit,
   onToggleAgentPanel: () -> Unit = {},
+  onOpenDrawer: () -> Unit = {},
+  onNewChat: () -> Unit = {},
   onOpenSettings: () -> Unit,
-  onOpenHome: () -> Unit = {},
   onGetModels: () -> List<ngo.xnet.aiope.core.network.ModelDef>,
   onGetActiveModelId: () -> String,
   onSwitchModel: (String) -> Unit,
-  onChats: () -> Unit,
   onShareChat: () -> Unit,
   onFileServer: () -> Unit = {},
   onScanner: () -> Unit = {},
@@ -268,156 +338,36 @@ private fun ChatContent(
   onToggleVoice: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
-  var showModelPicker by remember { mutableStateOf(false) }
   val theme = ngo.xnet.aiope.feature.chat.theme.LocalThemeState.current
   Box(modifier.background(MaterialTheme.colorScheme.background)) {
     ngo.xnet.aiope.feature.chat.theme.ChatBackground(theme)
     Column(Modifier.fillMaxSize().alpha(theme.uiOpacity)) {
-      // ── Toolbar ──
-      val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
-      val barColor = if (isLight) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surfaceContainer
-      val barBorder = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isLight) 0.6f else 0.3f)
-      Box(Modifier.fillMaxWidth().zIndex(1f)) {
-        Surface(
-          color = barColor,
-          border = androidx.compose.foundation.BorderStroke(0.5.dp, barBorder),
-          modifier = Modifier.fillMaxWidth(),
-        ) {
-          Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
-            // Left: Home + Chats icon + Share
-            Row(modifier = Modifier.align(Alignment.CenterStart)) {
-              IconButton(onClick = onOpenHome, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.Home, "Home", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
-              }
-              IconButton(onClick = onChats, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.Forum, "Chats", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
-              }
-              IconButton(onClick = onShareChat, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.Share, "Share", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
-              }
-              IconButton(onClick = onFileServer, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.Dns, "File Server", modifier = Modifier.size(18.dp), tint = if (ngo.xnet.aiope.feature.chat.fileserver.FileServerService.isRunning()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-              }
-              IconButton(onClick = onScanner, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.NetworkCheck, "Scanner", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
-              }
-            }
-            // Center: Model dropdown spinner
-            Box(modifier = Modifier.align(Alignment.Center)) {
-              TextButton(
-                onClick = { showModelPicker = !showModelPicker },
-                contentPadding = PaddingValues(horizontal = 8.dp),
-              ) {
-                Text(modelLabel, fontSize = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurface)
-                Icon(Icons.Default.ArrowDropDown, null, modifier = Modifier.size(16.dp))
-              }
-              DropdownMenu(expanded = showModelPicker, onDismissRequest = { showModelPicker = false }) {
-                val models = onGetModels()
-                val activeModelId = onGetActiveModelId()
-                models.forEach { m ->
-                  val selected = m.id == activeModelId
-                  DropdownMenuItem(
-                    text = {
-                      Text(
-                        "${if (selected) "• " else ""}${m.displayName}",
-                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        fontSize = 13.sp,
-                      )
-                    },
-                    onClick = {
-                      onSwitchModel(m.id)
-                      showModelPicker = false
-                    },
-                  )
-                }
-                if (models.isEmpty()) {
-                  DropdownMenuItem(text = { Text("No models — fetch in Settings", fontSize = 12.sp) }, onClick = {})
-                }
-              }
-            }
-            // Right: Browser + Terminal + Settings
-            Row(modifier = Modifier.align(Alignment.CenterEnd)) {
-              IconButton(onClick = onToggleBrowser, modifier = Modifier.size(36.dp)) {
-                Icon(
-                  Icons.Default.Language,
-                  "Browser",
-                  modifier = Modifier.size(18.dp),
-                  tint = if (browserVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                )
-              }
-              IconButton(onClick = onToggleTerminal, modifier = Modifier.size(36.dp)) {
-                Icon(
-                  Icons.Default.Terminal,
-                  "Terminal",
-                  modifier = Modifier.size(18.dp),
-                  tint = if (terminalVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                )
-              }
-              IconButton(onClick = onToggleAgentPanel, modifier = Modifier.size(36.dp)) {
-                Icon(
-                  Icons.Default.SmartToy,
-                  "Agents",
-                  modifier = Modifier.size(18.dp),
-                  tint = if (agentPanelVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                )
-              }
-              IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
-                Icon(
-                  Icons.Default.Settings,
-                  "Settings",
-                  modifier = Modifier.size(18.dp),
-                  tint = MaterialTheme.colorScheme.onSurface,
-                )
-              }
-            }
-          }
-        }
-        // Pill hanging below toolbar into chat area
-        Surface(
-          shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
-          color = barColor,
-          modifier = Modifier.align(Alignment.BottomCenter).offset(y = 22.dp)
-            .drawBehind {
-              val stroke = 0.5.dp.toPx()
-              val r = 16.dp.toPx()
-              val path = androidx.compose.ui.graphics.Path().apply {
-                moveTo(0f, 0f)
-                lineTo(0f, size.height - r)
-                arcTo(androidx.compose.ui.geometry.Rect(0f, size.height - 2 * r, 2 * r, size.height), 180f, -90f, false)
-                lineTo(size.width - r, size.height)
-                arcTo(androidx.compose.ui.geometry.Rect(size.width - 2 * r, size.height - 2 * r, size.width, size.height), 90f, -90f, false)
-                lineTo(size.width, 0f)
-              }
-              drawPath(path, barBorder, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
-            },
-        ) {
-          Row(
-            Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            ngo.xnet.aiope.feature.chat.engine.AgentMode.entries.forEach { mode ->
-              val selected = mode == agentMode
-              val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent
-              val textColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-              Text(
-                text = mode.label,
-                fontSize = 11.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                color = textColor,
-                modifier = Modifier
-                  .clip(RoundedCornerShape(12.dp))
-                  .background(bg)
-                  .clickable { onModeChange(mode) }
-                  .padding(horizontal = 14.dp, vertical = 4.dp),
-              )
-            }
-          }
-        }
-      }
+      // ── Top bar: drawer · model · new chat · overflow ──
+      ngo.xnet.aiope.feature.chat.ui.ChatTopBar(
+        modelLabel = modelLabel,
+        onOpenDrawer = onOpenDrawer,
+        onNewChat = onNewChat,
+        onGetModels = onGetModels,
+        onGetActiveModelId = onGetActiveModelId,
+        onSwitchModel = onSwitchModel,
+        browserVisible = browserVisible,
+        terminalVisible = terminalVisible,
+        agentPanelVisible = agentPanelVisible,
+        autoRun = autoRun,
+        onAutoRunChange = onAutoRunChange,
+        onToggleBrowser = onToggleBrowser,
+        onToggleTerminal = onToggleTerminal,
+        onToggleAgentPanel = onToggleAgentPanel,
+        onFileServer = onFileServer,
+        onScanner = onScanner,
+        onShareChat = onShareChat,
+        onOpenSettings = onOpenSettings,
+        modifier = Modifier.zIndex(1f),
+      )
 
       // ── Messages or empty state ──
       if (messages.isEmpty()) {
-        EmptyState(onSend = onSend, modifier = Modifier.weight(1f))
+        ngo.xnet.aiope.feature.chat.ui.ChatEmptyState(onSend = onSend, modifier = Modifier.weight(1f))
       } else {
         MessageList(
           messages = messages, isStreaming = isStreaming,
@@ -464,33 +414,20 @@ private fun ChatContent(
         )
       }
 
-      HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-      // ── Input ──
-      Surface(color = MaterialTheme.colorScheme.surface) {
+      // ── Mode selector + composer, grouped at the bottom where the user is typing ──
+      Row(
+        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        ngo.xnet.aiope.feature.chat.ui.ModeSelector(agentMode = agentMode, onModeChange = onModeChange)
+      }
+      ngo.xnet.aiope.feature.chat.ui.GlassSurface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(26.dp),
+      ) {
         ChatInput(onSend = onSend, onStop = onStop, isStreaming = isStreaming, editText = editText, onEditTextChange = onEditTextChange, autoRun = autoRun, onAutoRunChange = onAutoRunChange, supportsRealtimeVoice = supportsRealtimeVoice, isInRealtimeVoice = isInRealtimeVoice, isVoiceListening = isVoiceListening, isVoiceSpeaking = isVoiceSpeaking, onToggleVoice = onToggleVoice)
       }
     }
-  }
-}
-
-// ── Empty state ──
-
-@Composable
-private fun EmptyState(onSend: (String, List<String>) -> Unit, modifier: Modifier = Modifier) {
-  val purple = Color(0xFF00E5FF)
-  Column(
-    modifier.fillMaxSize().padding(32.dp),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.Center,
-  ) {
-    Text("CuO", fontSize = 24.sp, color = purple)
-    Text(
-      "What can I help you with?",
-      fontSize = 14.sp,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      modifier = Modifier.padding(top = 8.dp),
-    )
   }
 }
 
@@ -545,30 +482,14 @@ private fun MessageList(
       }
       item(key = "bottom_anchor") { Spacer(Modifier.height(1.dp)) }
     }
-    // Scroll nav: right center of screen
-    if (messages.size > 2) {
-      Column(
-        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(0.dp),
-      ) {
-        val btnMod = Modifier.size(28.dp)
-        val btnColors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
-        IconButton(onClick = { scope.launch { listState.animateScrollToItem(0) } }, modifier = btnMod, colors = btnColors) {
-          Text("\u25B2", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.height(14.dp))
-        IconButton(onClick = { scope.launch { listState.animateScrollToItem(messages.size / 2) } }, modifier = btnMod, colors = btnColors) {
-          Icon(Icons.Default.FiberManualRecord, "Center", modifier = Modifier.size(8.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.height(14.dp))
-        IconButton(onClick = {
-          scope.launch {
-            listState.animateScrollToItem(messages.size)
-          }
-        }, modifier = btnMod, colors = btnColors) {
-          Text("\u25BC", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-      }
+    // Scroll rail: glass chip on the right edge for long threads
+    if (messages.size > 4) {
+      ngo.xnet.aiope.feature.chat.ui.ScrollRail(
+        onTop = { scope.launch { listState.animateScrollToItem(0) } },
+        onMiddle = { scope.launch { listState.animateScrollToItem(messages.size / 2) } },
+        onBottom = { scope.launch { listState.animateScrollToItem(messages.size) } },
+        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 6.dp),
+      )
     }
   }
 }
@@ -646,40 +567,51 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
         )
       }
     }
-    OutlinedTextField(
+    // Borderless field: the glass pane around the composer already provides the frame, so an
+    // outlined box inside it reads as a double border.
+    TextField(
       value = text,
       onValueChange = { text = it },
       modifier = Modifier.fillMaxWidth(),
-      placeholder = { Text("Ask AI...") },
+      placeholder = { Text("Message CuO…", fontSize = 15.sp) },
       maxLines = 6,
       enabled = !isStreaming,
-      colors = OutlinedTextFieldDefaults.colors(
-        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+      colors = TextFieldDefaults.colors(
+        focusedContainerColor = Color.Transparent,
+        unfocusedContainerColor = Color.Transparent,
+        disabledContainerColor = Color.Transparent,
+        focusedIndicatorColor = Color.Transparent,
+        unfocusedIndicatorColor = Color.Transparent,
+        disabledIndicatorColor = Color.Transparent,
       ),
-      shape = RoundedCornerShape(16.dp),
     )
-    Spacer(Modifier.height(4.dp))
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+      Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, bottom = 4.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      val iconMod = Modifier.size(38.dp)
+      val iconSize = Modifier.size(20.dp)
       // Attach — opens system file picker (all types)
-      IconButton(onClick = { launcher.launch("*/*") }) {
-        Icon(Icons.Default.AttachFile, "Attach", tint = MaterialTheme.colorScheme.onSurface)
+      IconButton(onClick = { launcher.launch("*/*") }, modifier = iconMod) {
+        Icon(Icons.Default.AttachFile, "Attach", iconSize, tint = MaterialTheme.colorScheme.onSurfaceVariant)
       }
       // Camera — capture photo
       val cameraUri = remember { mutableStateOf<android.net.Uri?>(null) }
       val photoLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.TakePicture(),
       ) { success -> if (success) cameraUri.value?.let { pendingImages.add(it.toString()) } }
-      IconButton(onClick = {
-        val file = java.io.File(context.cacheDir, "photo_${System.currentTimeMillis()}.jpg")
-        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        cameraUri.value = uri
-        photoLauncher.launch(uri)
-      }) {
-        Icon(Icons.Default.CameraAlt, "Camera", tint = MaterialTheme.colorScheme.onSurface)
-      } // Mic — launches Android speech recognizer
+      IconButton(
+        onClick = {
+          val file = java.io.File(context.cacheDir, "photo_${System.currentTimeMillis()}.jpg")
+          val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+          cameraUri.value = uri
+          photoLauncher.launch(uri)
+        },
+        modifier = iconMod,
+      ) {
+        Icon(Icons.Default.CameraAlt, "Camera", iconSize, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+      // Mic — launches Android speech recognizer (dictation into the field)
       val speechLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
       ) { result ->
@@ -690,122 +622,65 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
           }
         }
       }
-      IconButton(onClick = {
-        val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-          putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        }
-        try {
-          speechLauncher.launch(intent)
-        } catch (_: Exception) {}
-      }) {
-        Icon(Icons.Default.Mic, "Voice", tint = MaterialTheme.colorScheme.onSurface)
-      }
-      // Realtime voice button (always available via task model)
       IconButton(
-        onClick = { onToggleVoice() },
+        onClick = {
+          val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+          }
+          try {
+            speechLauncher.launch(intent)
+          } catch (_: Exception) {}
+        },
+        modifier = iconMod,
       ) {
+        Icon(Icons.Default.Mic, "Dictate", iconSize, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+      // Live voice call
+      IconButton(onClick = { onToggleVoice() }, modifier = iconMod) {
         Icon(
-          imageVector = if (isInRealtimeVoice) Icons.Default.CallEnd else Icons.Default.Call,
+          imageVector = if (isInRealtimeVoice) Icons.Default.CallEnd else Icons.Default.GraphicEq,
           contentDescription = if (isInRealtimeVoice) "End voice call" else "Start voice call",
-          tint = if (isInRealtimeVoice) {
-            MaterialTheme.colorScheme.error
-          } else {
-            MaterialTheme.colorScheme.primary
-          },
+          modifier = iconSize,
+          tint = if (isInRealtimeVoice) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
-      // Waveform visualization when in voice mode
       if (isInRealtimeVoice) {
         RealtimeWaveform(
           isListening = isVoiceListening,
           isSpeaking = isVoiceSpeaking,
           modifier = Modifier.weight(1f),
         )
+      } else {
+        Spacer(Modifier.weight(1f))
       }
-      // Clear
-      IconButton(onClick = {
-        text = ""
-        pendingImages.clear()
-      }) {
-        Icon(Icons.Default.Clear, "Clear", tint = MaterialTheme.colorScheme.onSurface)
-      }
-      Spacer(Modifier.weight(1f))
-      // Auto-run toggle (vertical: up=off, down=on)
-      Switch(
-        checked = autoRun,
-        onCheckedChange = onAutoRunChange,
-        modifier = Modifier.graphicsLayer { rotationZ = 90f }.scale(0.65f),
-      )
-      // Send / Stop
-      Button(
+      // Send / Stop as a single round action, the way both reference apps do it.
+      val canSend = text.isNotBlank() || pendingImages.isNotEmpty()
+      FilledIconButton(
         onClick = {
           if (isStreaming) {
             onStop()
-          } else if (text.isNotBlank() || pendingImages.isNotEmpty()) {
+          } else if (canSend) {
             onSend(text.trim(), pendingImages.toList())
             text = ""
             pendingImages.clear()
           }
         },
-        enabled = text.isNotBlank() || pendingImages.isNotEmpty() || isStreaming,
-        colors = ButtonDefaults.buttonColors(
-          containerColor = if (isStreaming) Color(0xFFFF1744) else MaterialTheme.colorScheme.primary,
+        enabled = canSend || isStreaming,
+        modifier = Modifier.size(42.dp),
+        colors = IconButtonDefaults.filledIconButtonColors(
+          containerColor = if (isStreaming) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
         ),
       ) {
-        Text(if (isStreaming) "Stop" else "Send")
+        Icon(
+          if (isStreaming) Icons.Default.Stop else Icons.Default.ArrowUpward,
+          if (isStreaming) "Stop" else "Send",
+          Modifier.size(20.dp),
+        )
       }
     }
   }
 }
 
-// ── Model picker bottom sheet ──
-
-// ── Conversation list bottom sheet ──
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ConversationSheet(viewModel: ChatViewModel, onDismiss: () -> Unit) {
-  val conversations by viewModel.conversations.collectAsStateWithLifecycle()
-  ModalBottomSheet(onDismissRequest = onDismiss) {
-    Row(
-      Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text("Conversations", style = MaterialTheme.typography.titleSmall)
-      Row {
-        TextButton(onClick = {
-          viewModel.newConversation()
-          onDismiss()
-        }) { Text("+ New Chat") }
-      }
-    }
-    if (conversations.isEmpty()) {
-      Text("No conversations yet.", Modifier.padding(16.dp))
-    }
-    conversations.forEach { conv ->
-      ListItem(
-        headlineContent = { Text(conv.title, maxLines = 1) },
-        supportingContent = {
-          Text(
-            java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.US).format(conv.updatedAt),
-            style = MaterialTheme.typography.bodySmall,
-          )
-        },
-        trailingContent = {
-          IconButton(onClick = { viewModel.deleteConversation(conv.id) }) {
-            Icon(Icons.Default.Delete, "Delete", modifier = Modifier.size(18.dp))
-          }
-        },
-        modifier = Modifier.clickable {
-          viewModel.loadConversation(conv.id)
-          onDismiss()
-        },
-      )
-    }
-    Spacer(Modifier.height(32.dp))
-  }
-}
 
 /**
  * Animated waveform visualization for realtime voice mode

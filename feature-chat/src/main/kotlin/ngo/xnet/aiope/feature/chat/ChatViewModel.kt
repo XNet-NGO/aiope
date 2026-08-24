@@ -279,10 +279,18 @@ class ChatViewModel @Inject constructor(
   val browserMaximized = _browserMaximized.asStateFlow()
 
   private var conversationId: String
-    get() = savedState["conversationId"] ?: UUID.randomUUID().toString().also { savedState["conversationId"] = it }
+    get() = savedState["conversationId"] ?: UUID.randomUUID().toString().also {
+      savedState["conversationId"] = it
+      _activeConversationId.value = it
+    }
     set(value) {
       savedState["conversationId"] = value
+      _activeConversationId.value = value
     }
+
+  /** Which conversation the drawer should highlight. */
+  private val _activeConversationId = MutableStateFlow(savedState.get<String>("conversationId"))
+  val activeConversationId: kotlinx.coroutines.flow.StateFlow<String?> = _activeConversationId.asStateFlow()
 
   val _modelLabel = MutableStateFlow("")
   val modelLabel: String get() = _modelLabel.value
