@@ -111,6 +111,59 @@ internal fun ProfileList(
           modifier = Modifier.clickable { onRag() },
         )
         HorizontalDivider()
+        // Geoapify key for search_location. Without it the tool only works when the active
+        // gateway proxies /v1/data?q=places, so the key needs to be reachable from the UI.
+        run {
+          var showKeyDialog by remember { mutableStateOf(false) }
+          var keyDraft by remember { mutableStateOf("") }
+          var hasKey by remember { mutableStateOf(providerStore.getGeoapifyKey().isNotBlank()) }
+          ListItem(
+            headlineContent = { Text("Place Search Key") },
+            supportingContent = {
+              Text(
+                if (hasKey) "Geoapify key set — search_location enabled" else "Not set — search_location falls back to the gateway",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            },
+            modifier = Modifier.clickable {
+              keyDraft = providerStore.getGeoapifyKey()
+              showKeyDialog = true
+            },
+          )
+          if (showKeyDialog) {
+            AlertDialog(
+              onDismissRequest = { showKeyDialog = false },
+              title = { Text("Geoapify API key") },
+              text = {
+                Column {
+                  Text(
+                    "Used by search_location to find nearby places. Free keys at geoapify.com. Leave empty to rely on the active gateway.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                  Spacer(Modifier.height(12.dp))
+                  OutlinedTextField(
+                    value = keyDraft,
+                    onValueChange = { keyDraft = it },
+                    label = { Text("API key") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                  )
+                }
+              },
+              confirmButton = {
+                TextButton(onClick = {
+                  providerStore.setGeoapifyKey(keyDraft.trim())
+                  hasKey = keyDraft.isNotBlank()
+                  showKeyDialog = false
+                }) { Text("Save") }
+              },
+              dismissButton = { TextButton(onClick = { showKeyDialog = false }) { Text("Cancel") } },
+            )
+          }
+        }
+        HorizontalDivider()
 
         // Export / Import
         if (chatDao != null) {
