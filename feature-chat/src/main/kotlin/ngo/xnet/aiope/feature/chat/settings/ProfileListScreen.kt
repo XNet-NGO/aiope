@@ -83,7 +83,7 @@ internal fun ProfileList(
         HorizontalDivider()
         ListItem(
           headlineContent = { Text("Remote Servers") },
-          supportingContent = { Text("Deploy and manage SSH dev servers controlled by AIOPE", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+          supportingContent = { Text("Deploy and manage SSH dev servers controlled by CuO", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
           modifier = Modifier.clickable { onServers() },
         )
         HorizontalDivider()
@@ -150,7 +150,7 @@ internal fun ProfileList(
                 val json = SettingsPorter.export(chatDao)
                 withContext(Dispatchers.Main) {
                   exportJson = json
-                  exportLauncher.launch("aiope-settings.json")
+                  exportLauncher.launch("cuo-settings.json")
                 }
               }
             },

@@ -40,10 +40,10 @@ class AiopeForegroundService : Service() {
   private fun createChannel() {
     val channel = NotificationChannel(
       CHANNEL_ID,
-      "AIOPE Background",
+      "CuO Background",
       NotificationManager.IMPORTANCE_LOW,
     ).apply {
-      description = "Keeps AIOPE running"
+      description = "Keeps CuO running"
       setShowBadge(false)
       setSound(null, null)
     }
@@ -60,7 +60,7 @@ class AiopeForegroundService : Service() {
     }
     val pending = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
     return NotificationCompat.Builder(this, CHANNEL_ID)
-      .setContentTitle("AIOPE")
+      .setContentTitle("CuO")
       .setContentText("Running")
       .setSmallIcon(android.R.drawable.ic_menu_manage)
       .setOngoing(true)

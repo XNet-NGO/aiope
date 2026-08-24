@@ -719,9 +719,9 @@ private fun blendColor(fg: Int, bg: Int, alpha: Float): Int {
 internal fun saveImageToGallery(context: Context, bitmap: android.graphics.Bitmap) {
   try {
     val values = android.content.ContentValues().apply {
-      put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "AIOPE2_${System.currentTimeMillis()}.png")
+      put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "CuO_${System.currentTimeMillis()}.png")
       put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
-      put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/AIOPE2")
+      put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CuO")
     }
     val uri = context.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
     uri?.let { context.contentResolver.openOutputStream(it)?.use { os -> bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, os) } }

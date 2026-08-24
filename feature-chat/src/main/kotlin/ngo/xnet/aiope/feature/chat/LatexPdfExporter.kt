@@ -109,7 +109,7 @@ object LatexPdfExporter {
 
   private fun print(activity: Activity, webView: WebView, host: FrameLayout) {
     try {
-      val jobName = "AIOPE Conversation"
+      val jobName = "CuO Conversation"
       val delegate = webView.createPrintDocumentAdapter(jobName)
       val adapter = object : PrintDocumentAdapter() {
         override fun onStart() = delegate.onStart()

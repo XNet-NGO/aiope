@@ -475,7 +475,7 @@ private fun EmptyState(onSend: (String, List<String>) -> Unit, modifier: Modifie
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.Center,
   ) {
-    Text("AIOPE", fontSize = 24.sp, color = purple)
+    Text("CuO", fontSize = 24.sp, color = purple)
     Text(
       "What can I help you with?",
       fontSize = 14.sp,

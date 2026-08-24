@@ -1,7 +1,7 @@
 
 <p align="center"><img src="logo.png" width="200" alt="AIOPE"></p>
 
-# AIOPE
+# CuO Agentic Android
 
 [![Android CI](https://github.com/XNet-NGO/AIOPE/actions/workflows/android.yml/badge.svg)](https://github.com/XNet-NGO/AIOPE/actions/workflows/android.yml)
 [![Release](https://img.shields.io/github/v/release/XNet-NGO/AIOPE)](https://github.com/XNet-NGO/AIOPE/releases/latest)
@@ -11,7 +11,7 @@
 
 **An AI that doesn't just talk. It acts.**
 
-AIOPE is a fully autonomous AI agent that lives on your Android device -- 48 tools, realtime voice with full tool access, a complete Linux terminal in your pocket, browser automation, an on-device RAG knowledge base, remote server management with its own Go daemon, live location and data feeds, and the ability to build native interactive UI on the fly. It is the most feature-complete agent app on Android.
+AIOPE (now CuO Agentic Android, short "CuO") is a fully autonomous AI agent that lives on your Android device -- 48 tools, realtime voice with full tool access, a complete Linux terminal in your pocket, browser automation, an on-device RAG knowledge base, remote server management with its own Go daemon, live location and data feeds, and the ability to build native interactive UI on the fly. It is the most feature-complete agent app on Android.
 
 The agent loop runs entirely on-device: reason, call a tool, read the result, decide, repeat -- up to 140 rounds per turn. AIOPE can research a topic, write code, save it, run it in the terminal, fix the errors, and report back, all in a single turn. It spawns background agents, runs multi-agent DAG pipelines, schedules recurring tasks, and can execute every one of its tools by voice.
 

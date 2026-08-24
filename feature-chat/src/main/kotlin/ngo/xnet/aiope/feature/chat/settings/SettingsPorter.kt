@@ -106,7 +106,7 @@ object SettingsPorter {
     val intent = Intent(Intent.ACTION_SEND).apply {
       type = "application/json"
       putExtra(Intent.EXTRA_TEXT, json)
-      putExtra(Intent.EXTRA_SUBJECT, "AIOPE Settings Backup")
+      putExtra(Intent.EXTRA_SUBJECT, "CuO Settings Backup")
     }
     ctx.startActivity(Intent.createChooser(intent, "Export settings").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
   }

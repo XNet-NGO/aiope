@@ -416,7 +416,7 @@ class ChatViewModel @Inject constructor(
 
       else -> { // markdown and pdf use the same base content
         buildString {
-          append("# AIOPE Conversation\n\n")
+          append("# CuO Conversation\n\n")
           msgs.forEach { m ->
             when (m.role) {
               Role.USER -> append("## User\n\n${m.content}\n\n")
@@ -1261,7 +1261,7 @@ $transcript
 
 ## Environment
 - Date/Time: ${java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z"))}
-- Platform: Android (AIOPE agent system)
+- Platform: Android (CuO agent system)
 - Agent: ${agent?.name ?: "default"}
 
 ## Tool Execution

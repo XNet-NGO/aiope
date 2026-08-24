@@ -270,7 +270,7 @@ class FileServerService : Service() {
     val files = dir.listFiles()?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyList()
     val html = buildString {
       append("<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>")
-      append("<title>AIOPE Files - ${dir.name}</title>")
+      append("<title>CuO Files - ${dir.name}</title>")
       append("<style>body{font-family:system-ui;margin:20px;background:#1a1a1a;color:#eee}a{color:#6cf;text-decoration:none}a:hover{text-decoration:underline}")
       append(".entry{padding:8px 12px;border-bottom:1px solid #333;display:flex;justify-content:space-between}")
       append(".size{color:#888;font-size:0.9em}</style></head><body>")
@@ -290,7 +290,7 @@ class FileServerService : Service() {
       append("<input type='file' name='file' multiple style='color:#eee;margin-right:8px'>")
       append("<button type='submit' style='padding:6px 16px;background:#6cf;color:#000;border:none;border-radius:4px;cursor:pointer'>Upload</button>")
       append("</form>")
-      append("<p style='font-size:0.8em;color:#666'>AIOPE File Server • ${files.size} items</p>")
+      append("<p style='font-size:0.8em;color:#666'>CuO File Server • ${files.size} items</p>")
       append("</body></html>")
     }
     val bytes = html.toByteArray()
@@ -307,7 +307,7 @@ class FileServerService : Service() {
 
   private fun sendPinPrompt(out: BufferedOutputStream) {
     val html = """<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>AIOPE Files - Login</title>
+<title>CuO Files - Login</title>
 <style>body{font-family:system-ui;margin:0;background:#1a1a1a;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh}
 .box{background:#222;padding:32px;border-radius:12px;text-align:center}
 input{padding:12px;font-size:18px;border:1px solid #444;border-radius:6px;background:#333;color:#eee;text-align:center;letter-spacing:4px;width:150px}
@@ -329,7 +329,7 @@ button{margin-top:16px;padding:10px 24px;background:#6cf;color:#000;border:none;
     // Generate self-signed X.509 cert using BouncyCastle
     val now = java.util.Date()
     val until = java.util.Date(now.time + 365L * 24 * 60 * 60 * 1000)
-    val issuer = org.bouncycastle.asn1.x500.X500Name("CN=AIOPE File Server")
+    val issuer = org.bouncycastle.asn1.x500.X500Name("CN=CuO File Server")
     val serial = java.math.BigInteger.valueOf(System.currentTimeMillis())
     val subjectPublicKeyInfo = org.bouncycastle.asn1.x509.SubjectPublicKeyInfo.getInstance(kp.public.encoded)
     val certBuilder = org.bouncycastle.cert.X509v3CertificateBuilder(issuer, serial, now, until, issuer, subjectPublicKeyInfo)
@@ -411,7 +411,7 @@ button{margin-top:16px;padding:10px 24px;background:#6cf;color:#000;border:none;
       "File Server",
       NotificationManager.IMPORTANCE_LOW,
     ).apply {
-      description = "AIOPE local file server"
+      description = "CuO local file server"
       setShowBadge(false)
       setSound(null, null)
     }
