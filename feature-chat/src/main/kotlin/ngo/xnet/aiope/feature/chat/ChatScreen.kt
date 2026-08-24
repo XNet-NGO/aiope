@@ -291,7 +291,6 @@ private fun ChatScreenBody(
   }
 }
 
-
 // ── Main chat content ──
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -680,7 +679,6 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
     }
   }
 }
-
 
 /**
  * Animated waveform visualization for realtime voice mode

@@ -145,8 +145,10 @@ class ToolExecutor(
     return when {
       shared && !hasAllFiles ->
         " — shared storage needs All-Files access (Android 11+): grant it in Settings > Apps > CuO > Permissions, or use the app sandbox at $sandbox."
+
       path.startsWith("/data/data") || path.startsWith("/data/user") ->
         " — scoped storage (Android 10+) blocks other apps' private data on non-rooted devices. Use $sandbox instead."
+
       else -> " — path is outside CuO's sandbox ($sandbox); Android may deny access."
     }
   }
@@ -226,7 +228,9 @@ class ToolExecutor(
         val d = java.io.File(args["path"].toString())
         when {
           !d.exists() -> "Error: path not found: ${d.path}${storageHint(d)}"
+
           !d.isDirectory -> "Error: '${d.path}' is a file — use read_file."
+
           else -> d.listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" }
             ?: "Error: cannot list ${d.path}${storageHint(d)}"
         }
@@ -1259,7 +1263,7 @@ class ToolExecutor(
     val resp = client.newCall(builder.build()).execute()
     resp.use { r ->
       val bodyStr = r.body?.string() ?: ""
-      val selHeaders = listOf("Content-Type", "Content-Length", "Location", "Cache-Control", "Set-Cookie").mapNotNull { h -> r.header(h)?.let { "${h}: ${it.take(200)}" } }.joinToString("\n")
+      val selHeaders = listOf("Content-Type", "Content-Length", "Location", "Cache-Control", "Set-Cookie").mapNotNull { h -> r.header(h)?.let { "$h: ${it.take(200)}" } }.joinToString("\n")
       val trunc = bodyStr.take(20480)
       val note = if (bodyStr.length > 20480) "\n...(truncated, ${bodyStr.length} bytes total)" else ""
       "HTTP ${r.code} ${r.message}\n$selHeaders\n\n$trunc$note"

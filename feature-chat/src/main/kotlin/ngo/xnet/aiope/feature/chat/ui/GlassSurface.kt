@@ -58,5 +58,4 @@ fun GlassSurface(
 }
 
 /** Hairline border drawn on top of the fill, so the gradient doesn't wash it out. */
-private fun Modifier.glassBorder(shape: Shape, color: Color): Modifier =
-  this.border(BorderStroke(0.7.dp, color), shape)
+private fun Modifier.glassBorder(shape: Shape, color: Color): Modifier = this.border(BorderStroke(0.7.dp, color), shape)

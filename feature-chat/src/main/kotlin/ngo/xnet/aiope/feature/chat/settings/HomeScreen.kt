@@ -24,8 +24,8 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
@@ -40,10 +40,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -198,7 +198,6 @@ private fun HomeDashboard(providerStore: ProviderStore, activeId: String, onNewC
   val greeting = when {
     hour < 12 -> "Good morning"
     hour < 18 -> "Good afternoon"
-
     else -> "Good evening"
   }
   val active = remember(activeId) { providerStore.getById(activeId) ?: providerStore.getActive() }

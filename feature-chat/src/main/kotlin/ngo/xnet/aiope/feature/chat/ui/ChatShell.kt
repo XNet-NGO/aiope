@@ -55,7 +55,7 @@ import ngo.xnet.aiope.core.network.ModelDef
 import ngo.xnet.aiope.feature.chat.db.ConversationEntity
 import ngo.xnet.aiope.feature.chat.engine.AgentMode
 
-/**
+/*
  * Chat shell chrome, arranged the way the mainstream assistant apps do it:
  *
  * - one **top bar** with three things only — drawer, model, overflow — instead of ten icons;

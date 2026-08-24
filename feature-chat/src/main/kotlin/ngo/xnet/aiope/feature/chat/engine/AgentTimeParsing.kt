@@ -70,6 +70,5 @@ internal object AgentTimeParsing {
   }
 
   /** [parse] with a one-hour-from-now fallback, for callers that must produce some instant. */
-  fun parseOrDefault(s: String, now: Long = System.currentTimeMillis()): Long =
-    parse(s, now) ?: (now + 3_600_000L)
+  fun parseOrDefault(s: String, now: Long = System.currentTimeMillis()): Long = parse(s, now) ?: (now + 3_600_000L)
 }

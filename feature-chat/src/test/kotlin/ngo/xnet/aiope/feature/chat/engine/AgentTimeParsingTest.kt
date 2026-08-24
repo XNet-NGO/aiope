@@ -16,11 +16,10 @@ import java.util.Locale
  */
 class AgentTimeParsingTest {
 
-  private fun at(y: Int, mo: Int, d: Int, h: Int, mi: Int): Long =
-    Calendar.getInstance().apply {
-      set(y, mo - 1, d, h, mi, 0)
-      set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
+  private fun at(y: Int, mo: Int, d: Int, h: Int, mi: Int): Long = Calendar.getInstance().apply {
+    set(y, mo - 1, d, h, mi, 0)
+    set(Calendar.MILLISECOND, 0)
+  }.timeInMillis
 
   private fun fmt(millis: Long) = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(millis)
 
