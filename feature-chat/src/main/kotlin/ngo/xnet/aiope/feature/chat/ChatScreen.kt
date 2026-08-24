@@ -475,9 +475,9 @@ private fun EmptyState(onSend: (String, List<String>) -> Unit, modifier: Modifie
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.Center,
   ) {
-    Text("AIOPE", fontSize = 24.sp, color = purple)
+    Text("Joshy", fontSize = 24.sp, color = purple)
     Text(
-      "What can I help you with?",
+      "What up buddy what are we doing this sesh",
       fontSize = 14.sp,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       modifier = Modifier.padding(top = 8.dp),
