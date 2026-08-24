@@ -129,6 +129,28 @@ class ToolExecutor(
 
   private fun td(name: String, desc: String, params: String) = StreamingOrchestrator.ToolDef(name, desc, org.json.JSONObject(params))
 
+  /**
+   * Explains an inaccessible path in terms of Android's storage rules so the model can recover
+   * instead of retrying blindly. Scoped storage (Android 10+) hides other apps' data, and shared
+   * storage outside the app sandbox needs All-Files access on Android 11+.
+   */
+  private fun storageHint(f: java.io.File): String {
+    val path = f.absolutePath
+    val sandbox = app.filesDir.absolutePath
+    val extSandbox = app.getExternalFilesDir(null)?.absolutePath
+    val inSandbox = path.startsWith(sandbox) || (extSandbox != null && path.startsWith(extSandbox))
+    if (inSandbox) return ""
+    val hasAllFiles = android.os.Build.VERSION.SDK_INT < 30 || android.os.Environment.isExternalStorageManager()
+    val shared = path.startsWith("/sdcard") || path.startsWith("/storage/emulated")
+    return when {
+      shared && !hasAllFiles ->
+        " — shared storage needs All-Files access (Android 11+): grant it in Settings > Apps > CuO > Permissions, or use the app sandbox at $sandbox."
+      path.startsWith("/data/data") || path.startsWith("/data/user") ->
+        " — scoped storage (Android 10+) blocks other apps' private data on non-rooted devices. Use $sandbox instead."
+      else -> " — path is outside CuO's sandbox ($sandbox); Android may deny access."
+    }
+  }
+
   private fun fetchDataCategories(): String {
     cachedDataCategories?.let { return it }
     return try {
@@ -167,7 +189,9 @@ class ToolExecutor(
         result
       }
 
-      "run_proot" -> if (!ngo.xnet.aiope.core.terminal.shell.ProotBootstrap.isInstalled(app)) {
+      "run_proot" -> if (android.os.Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) {
+        "The proot/Alpine environment ships arm64-v8a native binaries only; this device is ${android.os.Build.SUPPORTED_ABIS.joinToString()}. Use run_sh instead."
+      } else if (!ngo.xnet.aiope.core.terminal.shell.ProotBootstrap.isInstalled(app)) {
         "Alpine not installed. Set up proot in Settings first."
       } else {
         val timeout = ((args["timeout"] as? Number)?.toLong() ?: 300) * 1000
@@ -178,9 +202,15 @@ class ToolExecutor(
       }
 
       "read_file" -> try {
-        java.io.File(args["path"].toString()).readText().let { if (it.length > fileReadLimit) "File too large" else it }
+        val f = java.io.File(args["path"].toString())
+        when {
+          f.isDirectory -> "Error: '${f.path}' is a directory — use list_directory."
+          !f.exists() -> "Error: file not found: ${f.path}${storageHint(f)}"
+          !f.canRead() -> "Error: cannot read ${f.path}${storageHint(f)}"
+          else -> f.readText().let { if (it.length > fileReadLimit) "File too large" else it }
+        }
       } catch (e: Exception) {
-        "Error: ${e.message}"
+        "Error: ${e.message}${storageHint(java.io.File(args["path"].toString()))}"
       }
 
       "write_file" -> try {
@@ -189,13 +219,19 @@ class ToolExecutor(
         f.writeText(args["content"].toString())
         "OK: Written ${args["content"].toString().length} bytes to ${f.absolutePath}"
       } catch (e: Exception) {
-        "FAILED write_file: ${args["path"]} — ${e.message}"
+        "FAILED write_file: ${args["path"]} — ${e.message}${storageHint(java.io.File(args["path"].toString()))}"
       }
 
       "list_directory" -> try {
-        java.io.File(args["path"].toString()).listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" } ?: "Empty"
+        val d = java.io.File(args["path"].toString())
+        when {
+          !d.exists() -> "Error: path not found: ${d.path}${storageHint(d)}"
+          !d.isDirectory -> "Error: '${d.path}' is a file — use read_file."
+          else -> d.listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" }
+            ?: "Error: cannot list ${d.path}${storageHint(d)}"
+        }
       } catch (e: Exception) {
-        "Error: ${e.message}"
+        "Error: ${e.message}${storageHint(java.io.File(args["path"].toString()))}"
       }
 
       "open_intent" -> try {
@@ -207,6 +243,13 @@ class ToolExecutor(
       }
 
       "get_location" -> {
+        if (!PermissionHelper.hasPermission(app, android.Manifest.permission.ACCESS_FINE_LOCATION) &&
+          !PermissionHelper.hasPermission(app, android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        ) {
+          if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.ACCESS_FINE_LOCATION)) {
+            return@execute "Location permission denied. Grant location access to CuO in Android Settings."
+          }
+        }
         val loc = locationProvider.getFreshLocation() ?: locationProvider.getLastLocation()
         if (loc != null) {
           lastLocationData = LocationData(loc.latitude, loc.longitude, if (loc.hasAltitude()) loc.altitude else null, if (loc.hasSpeed()) loc.speed.toDouble() else null, if (loc.hasBearing()) loc.bearing.toDouble() else null, loc.accuracy.toDouble())
@@ -407,6 +450,12 @@ class ToolExecutor(
         val title = args["title"]?.toString() ?: "CuO"
         val body = args["body"]?.toString() ?: return@execute "Error: body required"
         val channelId = "aiope_tools"
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+          !PermissionHelper.hasPermission(app, "android.permission.POST_NOTIFICATIONS") &&
+          !PermissionHelper.ensurePermission(app, "android.permission.POST_NOTIFICATIONS")
+        ) {
+          return@execute "Notification permission denied (Android 13+ requires POST_NOTIFICATIONS)."
+        }
         val nm = app.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         if (android.os.Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(android.app.NotificationChannel(channelId, "Tool Notifications", android.app.NotificationManager.IMPORTANCE_DEFAULT))
         val n = android.app.Notification.Builder(app, channelId).setContentTitle(title).setContentText(body).setSmallIcon(android.R.drawable.ic_dialog_info).setAutoCancel(true).build()
@@ -583,7 +632,8 @@ class ToolExecutor(
         if (oldStr.isEmpty()) return@execute "Error: old_string cannot be empty"
         val replaceAll = args["replace_all"] as? Boolean ?: false
         val f = java.io.File(path)
-        if (!f.isFile) return@execute "Error: file not found: $path"
+        if (!f.isFile) return@execute "Error: file not found: $path${storageHint(f)}"
+        if (!f.canWrite()) return@execute "Error: cannot write $path${storageHint(f)}"
         val text = f.readText()
         val count = text.split(oldStr).size - 1
         if (count == 0) return@execute "Error: old_string not found in $path. read_file first and copy the exact text including whitespace."
@@ -635,10 +685,15 @@ class ToolExecutor(
         try {
           val armed = AgentScheduler.schedule(app, task)
           chatDao.insertScheduledTask(armed)
+          val exactNote = if (!AgentScheduler.canScheduleExact(app)) {
+            "\nNote: exact alarms are not permitted on this device, so runs use inexact timing and may be delayed by Doze. Enable \"Alarms & reminders\" for CuO in Android Settings for precise timing."
+          } else {
+            ""
+          }
           if (!armed.enabled) {
             "Error: schedule produced no next run. Check max_runs and schedule parameters."
           } else {
-            "Scheduled task created.\nID: ${armed.id}\nPrompt: ${prompt.take(120)}\nSchedule: ${AgentScheduler.describe(armed)}\nNext run: ${AgentScheduler.formatTime(armed.nextRun)}\nTools: ${tools.ifBlank { "(none - reasoning only)" }}\nRuns report via notification."
+            "Scheduled task created.\nID: ${armed.id}\nPrompt: ${prompt.take(120)}\nSchedule: ${AgentScheduler.describe(armed)}\nNext run: ${AgentScheduler.formatTime(armed.nextRun)}\nTools: ${tools.ifBlank { "(none - reasoning only)" }}\nRuns report via notification.$exactNote"
           }
         } catch (e: Exception) {
           "Error: ${e.message}"
@@ -1144,7 +1199,9 @@ class ToolExecutor(
       }
     }
     val root = java.io.File(rootPath)
-    if (!root.exists()) return "Error: path not found: $rootPath"
+    if (!root.exists()) return "Error: path not found: $rootPath${storageHint(root)}"
+    if (!root.isDirectory) return "Error: '$rootPath' is a file, not a directory."
+    if (!root.canRead()) return "Error: cannot read $rootPath${storageHint(root)}"
     val matches = mutableListOf<String>()
     val walker = root.walkTopDown().maxDepth(10).onEnter { it.name !in skipDirs }.filter { it.isFile }.iterator()
     while (matches.size < limit && walker.hasNext()) {
