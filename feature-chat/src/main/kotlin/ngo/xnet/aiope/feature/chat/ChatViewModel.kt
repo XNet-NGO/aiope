@@ -682,6 +682,8 @@ class ChatViewModel @Inject constructor(
           }
           if (role != null) {
             var content = msg.content
+            // Skip empty assistant messages (leftover from tool call rounds)
+            if (role == "assistant" && content.isBlank()) continue
             trimmed.add(0, role to content)
           }
         }
@@ -1145,7 +1147,7 @@ $transcript
             Role.USER -> chatMessages.add("user" to msg.content)
 
             Role.ASSISTANT -> {
-              chatMessages.add("assistant" to msg.content)
+              if (msg.content.isNotBlank()) chatMessages.add("assistant" to msg.content)
             }
 
             else -> {}
