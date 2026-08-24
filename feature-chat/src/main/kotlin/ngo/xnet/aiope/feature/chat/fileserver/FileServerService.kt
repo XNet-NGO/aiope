@@ -28,16 +28,20 @@ class FileServerService : Service() {
     const val NOTIFICATION_ID = 42
     const val EXTRA_ROOT_PATH = "root_path"
     const val EXTRA_PORT = "port"
+    const val EXTRA_USE_HTTPS = "use_https"
+    const val EXTRA_PIN = "pin"
     const val DEFAULT_PORT = 8080
 
     private var instance: FileServerService? = null
     fun isRunning(): Boolean = instance != null
     fun currentUrl(): String? = instance?.serverUrl
 
-    fun start(context: Context, rootPath: String, port: Int = DEFAULT_PORT) {
+    fun start(context: Context, rootPath: String, port: Int = DEFAULT_PORT, useHttps: Boolean = false, pin: String? = null) {
       val intent = Intent(context, FileServerService::class.java).apply {
         putExtra(EXTRA_ROOT_PATH, rootPath)
         putExtra(EXTRA_PORT, port)
+        putExtra(EXTRA_USE_HTTPS, useHttps)
+        putExtra(EXTRA_PIN, pin)
       }
       context.startForegroundService(intent)
     }
@@ -51,6 +55,8 @@ class FileServerService : Service() {
   private var serverThread: Thread? = null
   private var rootDir: File = File("/")
   private var port: Int = DEFAULT_PORT
+  private var useHttps: Boolean = false
+  private var pin: String? = null
   var serverUrl: String? = null
     private set
 
@@ -63,6 +69,8 @@ class FileServerService : Service() {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val rootPath = intent?.getStringExtra(EXTRA_ROOT_PATH) ?: return START_NOT_STICKY
     port = intent.getIntExtra(EXTRA_PORT, DEFAULT_PORT)
+    useHttps = intent.getBooleanExtra(EXTRA_USE_HTTPS, false)
+    pin = intent.getStringExtra(EXTRA_PIN)?.ifBlank { null }
     rootDir = File(rootPath)
 
     if (!rootDir.exists() || !rootDir.isDirectory) {
@@ -71,7 +79,8 @@ class FileServerService : Service() {
     }
 
     val ip = getWifiIp()
-    serverUrl = "http://$ip:$port"
+    val scheme = if (useHttps) "https" else "http"
+    serverUrl = "$scheme://$ip:$port"
     startForeground(NOTIFICATION_ID, buildNotification(serverUrl!!))
     startServer()
     return START_STICKY
@@ -90,7 +99,11 @@ class FileServerService : Service() {
   private fun startServer() {
     serverThread = thread(name = "FileServer") {
       try {
-        serverSocket = ServerSocket(port)
+        serverSocket = if (useHttps) {
+          createSslServerSocket(port)
+        } else {
+          ServerSocket(port)
+        }
         while (!Thread.interrupted()) {
           val socket = serverSocket?.accept() ?: break
           thread { handleClient(socket) }
@@ -142,6 +155,28 @@ class FileServerService : Service() {
         }
 
         val out = BufferedOutputStream(s.getOutputStream())
+
+        // PIN authentication check
+        if (pin != null) {
+          val authHeader = headers["authorization"]
+          val queryPin = rawPath.substringAfter("pin=", "").substringBefore("&").ifEmpty { null }
+          val cookiePin = headers["cookie"]?.let { Regex("pin=([^;]+)").find(it)?.groupValues?.get(1) }
+          val authenticated = authHeader == "Bearer $pin" || queryPin == pin || cookiePin == pin
+          if (!authenticated) {
+            // Check if this is a PIN submission via POST form
+            val formPin = headers["x-pin"]
+            if (formPin == pin) {
+              // Set cookie and redirect
+              out.write("HTTP/1.1 302 Found\r\nSet-Cookie: pin=$pin; Path=/; HttpOnly\r\nLocation: /\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+              out.flush()
+              return
+            }
+            // Show login page
+            sendPinPrompt(out)
+            out.flush()
+            return
+          }
+        }
 
         if (method == "POST" && headers["content-type"]?.contains("multipart/form-data") == true) {
           handleUpload(input, headers, safePath, out)
@@ -268,6 +303,48 @@ class FileServerService : Service() {
     val bytes = file.length()
     out.write("HTTP/1.1 200 OK\r\nContent-Type: $mime\r\nContent-Length: $bytes\r\nContent-Disposition: inline; filename=\"${file.name}\"\r\nConnection: close\r\n\r\n".toByteArray())
     file.inputStream().use { it.copyTo(out, 8192) }
+  }
+
+  private fun sendPinPrompt(out: BufferedOutputStream) {
+    val html = """<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>AIOPE Files - Login</title>
+<style>body{font-family:system-ui;margin:0;background:#1a1a1a;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh}
+.box{background:#222;padding:32px;border-radius:12px;text-align:center}
+input{padding:12px;font-size:18px;border:1px solid #444;border-radius:6px;background:#333;color:#eee;text-align:center;letter-spacing:4px;width:150px}
+button{margin-top:16px;padding:10px 24px;background:#6cf;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:16px}</style></head>
+<body><div class='box'><h2>🔒 PIN Required</h2>
+<form onsubmit="fetch('/',{method:'POST',headers:{'X-Pin':document.getElementById('p').value}}).then(r=>{if(r.redirected)location.href=r.url;else alert('Wrong PIN')});return false;">
+<input id='p' type='password' maxlength='8' placeholder='PIN' autofocus><br><button type='submit'>Enter</button></form></div></body></html>
+    """.trimIndent()
+    val bytes = html.toByteArray()
+    out.write("HTTP/1.1 401 Unauthorized\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+    out.write(bytes)
+  }
+
+  private fun createSslServerSocket(port: Int): ServerSocket {
+    val kpg = java.security.KeyPairGenerator.getInstance("RSA")
+    kpg.initialize(2048)
+    val kp = kpg.generateKeyPair()
+
+    // Generate self-signed X.509 cert using BouncyCastle
+    val now = java.util.Date()
+    val until = java.util.Date(now.time + 365L * 24 * 60 * 60 * 1000)
+    val issuer = org.bouncycastle.asn1.x500.X500Name("CN=AIOPE File Server")
+    val serial = java.math.BigInteger.valueOf(System.currentTimeMillis())
+    val subjectPublicKeyInfo = org.bouncycastle.asn1.x509.SubjectPublicKeyInfo.getInstance(kp.public.encoded)
+    val certBuilder = org.bouncycastle.cert.X509v3CertificateBuilder(issuer, serial, now, until, issuer, subjectPublicKeyInfo)
+    val signer = org.bouncycastle.operator.jcajce.JcaContentSignerBuilder("SHA256withRSA").build(kp.private)
+    val certHolder = certBuilder.build(signer)
+    val cert = org.bouncycastle.cert.jcajce.JcaX509CertificateConverter().getCertificate(certHolder)
+
+    val keyStore = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
+    keyStore.load(null, null)
+    keyStore.setKeyEntry("aiope", kp.private, charArrayOf(), arrayOf(cert))
+    val kmf = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm())
+    kmf.init(keyStore, charArrayOf())
+    val sslCtx = javax.net.ssl.SSLContext.getInstance("TLS")
+    sslCtx.init(kmf.keyManagers, null, null)
+    return sslCtx.serverSocketFactory.createServerSocket(port)
   }
 
   private fun sendError(out: BufferedOutputStream, code: Int, msg: String) {

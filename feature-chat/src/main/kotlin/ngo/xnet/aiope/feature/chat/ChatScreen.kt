@@ -58,6 +58,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
   var showConversations by remember { mutableStateOf(false) }
   var showShareSheet by remember { mutableStateOf(false) }
   var showFileServer by remember { mutableStateOf(false) }
+  var showScanner by remember { mutableStateOf(false) }
   var editText by remember { mutableStateOf("") }
   val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -87,6 +88,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
           onChats = { showConversations = true },
           onShareChat = { showShareSheet = true },
           onFileServer = { showFileServer = true },
+          onScanner = { showScanner = true },
           onEditMessage = { text, idx ->
             viewModel.truncateAt(idx)
             editText = text
@@ -150,6 +152,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
           onChats = { showConversations = true },
           onShareChat = { showShareSheet = true },
           onFileServer = { showFileServer = true },
+          onScanner = { showScanner = true },
           onEditMessage = { text, idx ->
             viewModel.truncateAt(idx)
             editText = text
@@ -208,6 +211,10 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
   if (showFileServer) {
     ngo.xnet.aiope.feature.chat.fileserver.FileServerScreen(onBack = { showFileServer = false })
   }
+
+  if (showScanner) {
+    ngo.xnet.aiope.feature.chat.scanner.ScannerScreen(onBack = { showScanner = false })
+  }
 }
 
 // ── Main chat content ──
@@ -240,6 +247,7 @@ private fun ChatContent(
   onChats: () -> Unit,
   onShareChat: () -> Unit,
   onFileServer: () -> Unit = {},
+  onScanner: () -> Unit = {},
   onEditMessage: (String, Int) -> Unit = { _, _ -> },
   onRetry: (Int) -> Unit = {},
   onCompact: (Int) -> Unit = {},
@@ -280,6 +288,9 @@ private fun ChatContent(
               }
               IconButton(onClick = onFileServer, modifier = Modifier.size(36.dp)) {
                 Icon(Icons.Default.Dns, "File Server", modifier = Modifier.size(18.dp), tint = if (ngo.xnet.aiope.feature.chat.fileserver.FileServerService.isRunning()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+              }
+              IconButton(onClick = onScanner, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.NetworkCheck, "Scanner", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
               }
             }
             // Center: Model dropdown spinner
