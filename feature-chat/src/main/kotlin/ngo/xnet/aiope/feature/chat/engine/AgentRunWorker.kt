@@ -31,8 +31,8 @@ private val workerToolCatalog: Map<String, String> = mapOf(
   "run_sh" to "Run a shell command on this device. Args: command: String, timeout: Number (optional)",
   "ssh_exec" to "Run a command on a remote server over SSH. Args: host: String, command: String, timeout: Number (optional)",
   "send_notification" to "Show a notification on this device. Args: title: String, body: String",
-  "set_alarm" to "Set an alarm on this device. Args: hour: Number, minute: Number, label: String (optional)",
-  "memory_store" to "Store a fact in persistent memory. Args: key: String, value: String",
+  "set_alarm" to "Set an alarm on this device. Args: hour: Number, minutes: Number, message: String (optional)",
+  "memory_store" to "Store a fact in persistent memory. Args: key: String, content: String, category: String (optional)",
   "memory_recall" to "Recall stored memories. Args: query: String (optional)",
   "read_file" to "Read a text file from this device. Args: path: String",
   "write_file" to "Write a text file on this device. Args: path: String, content: String",
@@ -270,9 +270,12 @@ class AgentRunWorker(
         }
 
         "set_alarm" -> {
+          // Arg names must match the chat-side schema in ToolExecutor.buildToolDefs():
+          // "minutes"/"message", not "minute"/"label". Accept both so an older model prompt
+          // still works, but the schema names are what the model is actually told to send.
           val hour = (args["hour"] as? Number)?.toInt() ?: return "Error: no hour"
-          val minute = (args["minute"] as? Number)?.toInt() ?: 0
-          val label = args["label"]?.toString() ?: "Agent Alarm"
+          val minute = ((args["minutes"] ?: args["minute"]) as? Number)?.toInt() ?: 0
+          val label = (args["message"] ?: args["label"])?.toString() ?: "Agent Alarm"
           val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
             putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour)
             putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute)
@@ -301,9 +304,11 @@ class AgentRunWorker(
         }
 
         "memory_store" -> {
+          // Chat-side schema calls the payload "content" (with an optional "category"); accept
+          // "value" too rather than failing a background run on a synonym.
           val key = args["key"]?.toString() ?: return "Error: no key"
-          val value = args["value"]?.toString() ?: return "Error: no value"
-          dao.upsertMemory(MemoryEntity(key = key, content = value))
+          val value = (args["content"] ?: args["value"])?.toString() ?: return "Error: no content"
+          dao.upsertMemory(MemoryEntity(key = key, content = value, category = args["category"]?.toString() ?: "general"))
           "Stored: $key"
         }
 

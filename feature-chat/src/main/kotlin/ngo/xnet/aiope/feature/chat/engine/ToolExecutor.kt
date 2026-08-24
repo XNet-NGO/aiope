@@ -1095,13 +1095,7 @@ class ToolExecutor(
     }
   }
 
-  private fun parseTime(s: String): Long = try {
-    val fmts = listOf("yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm", "MM/dd/yyyy HH:mm", "MMM d yyyy h:mm a", "h:mm a")
-    fmts.firstNotNullOfOrNull { fmt -> runCatching { java.text.SimpleDateFormat(fmt, java.util.Locale.US).parse(s)?.time }.getOrNull() } ?: s.toLong()
-  } catch (e: Exception) {
-    android.util.Log.w("ToolExec", "op failed: ${e.message}")
-    System.currentTimeMillis() + 3600000
-  }
+  private fun parseTime(s: String): Long = AgentTimeParsing.parseOrDefault(s)
 
   private fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
     val r = 6371.0
