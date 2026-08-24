@@ -16,5 +16,5 @@ data class ChatStreamChunk(
 
 data class UsageInfo(val inputTokens: Int = 0, val outputTokens: Int = 0)
 
-data class ToolCallInfo(val id: String, val name: String, val arguments: Map<String, Any?>)
+data class ToolCallInfo(val id: String, val name: String, val arguments: Map<String, Any?>, val extraContent: String? = null)
 data class ToolResultInfo(val id: String, val name: String, val arguments: Map<String, Any?>, val result: String)
