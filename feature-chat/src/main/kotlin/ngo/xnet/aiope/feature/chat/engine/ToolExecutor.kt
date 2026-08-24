@@ -104,6 +104,15 @@ class ToolExecutor(
     td("rag_search", "Search the local on-device knowledge base using semantic similarity. Returns relevant document chunks with scores.", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"},"top_k":{"type":"integer","description":"Number of results (default 5)"}},"required":["query"]}"""),
     td("rag_index", "Index a document into the local knowledge base for semantic search.", """{"type":"object","properties":{"title":{"type":"string","description":"Document title"},"content":{"type":"string","description":"Text content to index"}},"required":["title","content"]}"""),
     td("orchestrate", "Execute a multi-agent pipeline (DAG). Each stage dispatches a named agent from the roster with its configured tools. Stages without depends_on run in parallel. Results from completed stages are passed as context to dependent stages.", """{"type":"object","properties":{"task":{"type":"string","description":"Overall task description"},"stages":{"type":"array","description":"Pipeline stages","items":{"type":"object","properties":{"name":{"type":"string","description":"Unique stage name"},"agent":{"type":"string","description":"Agent from roster: Architect, Coder, Researcher, QA, DevOps, Security, Writer, or Reviewer"},"prompt":{"type":"string","description":"Detailed task for this stage"},"depends_on":{"type":"array","items":{"type":"string"},"description":"Names of stages this depends on"}},"required":["name","agent","prompt"]}}},"required":["task","stages"]}"""),
+    td("todo_write", "Write your persistent task list. Call BEFORE starting any multi-step task to plan it, then UPDATE it as you work (status 'in_progress' when starting an item, 'completed' when done). Replaces the whole list unless merge=true, which updates matching ids and appends new ones while keeping the rest.", """{"type":"object","properties":{"todos":{"type":"array","description":"Todo items","items":{"type":"object","properties":{"id":{"type":"string","description":"Short stable id, e.g. '1' or 'setup'"},"content":{"type":"string"},"status":{"type":"string","enum":["pending","in_progress","completed","cancelled"]}},"required":["id","content"]}},"merge":{"type":"boolean","description":"true = upsert by id keeping others; omit/false = full replace"}},"required":["todos"]}"""),
+    td("todo_read", "Read your current persistent todo list grouped by status, with counts.", """{"type":"object","properties":{}}"""),
+    td("edit_file", "Targeted find/replace inside a text file. Prefer over write_file for small changes: pass exact old_string copied from the file (including indentation). Errors clearly when old_string is not found or matches multiple times unless replace_all=true.", """{"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string","description":"Exact text to find"},"new_string":{"type":"string","description":"Replacement text (empty string deletes)"},"replace_all":{"type":"boolean","description":"Replace every occurrence instead of requiring uniqueness"}},"required":["path","old_string","new_string"]}"""),
+    td("search_files", "Search a directory tree without shelling out. target='content' (default) greps file contents with regex returning path:line:text matches; target='files' matches file NAMES against the pattern. Optional glob narrows which files are searched (e.g. '*.kt'). Skips .git, node_modules, build dirs.", """{"type":"object","properties":{"path":{"type":"string","description":"Directory to search"},"pattern":{"type":"string","description":"Regex pattern"},"target":{"type":"string","enum":["content","files"],"description":"'content' greps file contents, 'files' matches names"},"glob":{"type":"string","description":"Optional path/filename glob filter like '*.md'"},"limit":{"type":"integer","description":"Max results (default 50)"}},"required":["path","pattern"]}"""),
+    td("http_request", "Generic HTTP client for calling APIs directly: choose method, headers, body and timeout. Returns HTTP status, key response headers, and the body truncated to ~20KB. Prefer fetch_url for simply reading web pages.", """{"type":"object","properties":{"url":{"type":"string"},"method":{"type":"string","enum":["GET","POST","PUT","PATCH","DELETE"],"description":"Default GET"},"headers":{"type":"object","description":"e.g. {'Content-Type':'application/json','Authorization':'Bearer ...'}"},"body":{"type":"string","description":"Request body string (POST/PUT/PATCH/DELETE)"},"timeout_seconds":{"type":"integer","description":"Default 30, max 300"}},"required":["url"]}"""),
+    td("schedule_task", "Schedule this device's agent to run a prompt automatically in the background (recurring monitoring, reminders-with-action, daily digests). schedule_type: 'interval' every interval_value interval_unit (min|hour|day); 'daily'/'weekly'/'monthly' fire at time_hour:time_minute ('weekly' also days_of_week like '2,3,4,5,6' where 1=Sunday; 'monthly' uses day_of_month 1-28); 'once' fires ~60 seconds later. max_runs caps executions (0=unlimited). tools: comma-separated subset of search_web, fetch_url, run_sh, ssh_exec, send_notification, set_alarm, memory_store, memory_recall. Each run reports via notification.", """{"type":"object","properties":{"prompt":{"type":"string","description":"What the scheduled agent should do each run"},"schedule_type":{"type":"string","enum":["once","interval","daily","weekly","monthly"],"description":"Recurrence model"},"interval_value":{"type":"integer","description":"Every N units (interval type, default 30)"},"interval_unit":{"type":"string","enum":["min","hour","day"]},"time_hour":{"type":"integer","description":"Hour 0-23 (daily/weekly/monthly)"},"time_minute":{"type":"integer","description":"Minute 0-59"},"days_of_week":{"type":"string","description":"Weekly: comma list 1=Sun..7=Sat, e.g. '1,4'"},"day_of_month":{"type":"integer","description":"Monthly: day 1-28"},"max_runs":{"type":"integer","description":"Stop after N runs (0 = unlimited)"},"tools":{"type":"string","description":"Comma-separated tool subset allowed during background runs"}},"required":["prompt","schedule_type"]}"""),
+    td("cancel_schedule", "Cancel and delete a scheduled agent task by its id (get ids from list_schedules). Also cancels its pending alarm.", """{"type":"object","properties":{"task_id":{"type":"string","description":"Task id from list_schedules"}},"required":["task_id"]}"""),
+    td("list_schedules", "List all scheduled agent tasks with their recurrence description, next run time, and run progress.", """{"type":"object","properties":{}}"""),
+    td("datetime_now", "Get the current date and time: local timestamp, timezone with UTC offset, day of week, and epoch ms. Use for any time-related question or time math.", """{"type":"object","properties":{}}"""),
   ) + (remoteToolBridge?.buildToolDefs()?.map { td(it.name, it.description, it.parameters) } ?: emptyList()).filter { toolStore.isToolEnabled(it.name) && it.name !in getAgentMode().disabledTools } + toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
     var defs = mcpManager.getToolDefs(server.id)
     if (defs.isEmpty()) {
@@ -141,6 +150,7 @@ class ToolExecutor(
   private val destructiveTools = setOf(
     "run_sh", "run_proot", "write_file", "send_sms", "delete_sms",
     "delete_event", "ssh_exec", "browser_eval", "browser_click", "browser_fill",
+    "edit_file", "schedule_task", "cancel_schedule",
   )
 
   suspend fun execute(name: String, args: Map<String, Any?>): String {
@@ -557,6 +567,104 @@ class ToolExecutor(
         result
       }
 
+      "todo_write" -> executeTodoWrite(args)
+
+      "todo_read" -> formatTodos(loadTodos())
+
+      "datetime_now" -> {
+        val now = java.time.ZonedDateTime.now()
+        "Now: ${now.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss"))}\nTimezone: ${now.zone.id} (${now.offset})\nDay of week: ${now.dayOfWeek}\nEpoch ms: ${System.currentTimeMillis()}"
+      }
+
+      "edit_file" -> try {
+        val path = args["path"]?.toString() ?: return@execute "Error: path required"
+        val oldStr = args["old_string"]?.toString() ?: return@execute "Error: old_string required"
+        val newStr = args["new_string"]?.toString() ?: ""
+        if (oldStr.isEmpty()) return@execute "Error: old_string cannot be empty"
+        val replaceAll = args["replace_all"] as? Boolean ?: false
+        val f = java.io.File(path)
+        if (!f.isFile) return@execute "Error: file not found: $path"
+        val text = f.readText()
+        val count = text.split(oldStr).size - 1
+        if (count == 0) return@execute "Error: old_string not found in $path. read_file first and copy the exact text including whitespace."
+        if (count > 1 && !replaceAll) return@execute "Error: old_string matches $count times in $path. Include more surrounding context to make it unique, or pass replace_all=true."
+        val updated = if (replaceAll) text.replace(oldStr, newStr) else text.replaceFirst(oldStr, newStr)
+        f.writeText(updated)
+        "OK: Replaced $count occurrence(s) in $path (${updated.length} bytes written)"
+      } catch (e: Exception) {
+        "FAILED edit_file: ${args["path"]} — ${e.message}"
+      }
+
+      "search_files" -> try {
+        executeSearchFiles(args)
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      "http_request" -> executeHttpRequest(args)
+
+      "schedule_task" -> {
+        val prompt = args["prompt"]?.toString() ?: return@execute "Error: prompt required"
+        val type = (args["schedule_type"]?.toString() ?: "interval").lowercase()
+        if (type !in setOf("once", "interval", "daily", "weekly", "monthly")) {
+          return@execute "Error: invalid schedule_type '$type'. Use once, interval, daily, weekly, or monthly."
+        }
+        val unit = when ((args["interval_unit"]?.toString() ?: "min").lowercase()) {
+          "hour" -> "hour"
+          "day" -> "day"
+          else -> "min"
+        }
+        // Keep in sync with workerToolCatalog in AgentRunWorker.kt (file-private there).
+        val allowedTools = setOf("search_web", "fetch_url", "run_sh", "ssh_exec", "send_notification", "set_alarm", "memory_store", "memory_recall")
+        val tools = (args["tools"]?.toString() ?: "").split(",").map { it.trim() }.filter { it in allowedTools }.joinToString(",")
+        val task = ngo.xnet.aiope.feature.chat.db.ScheduledTaskEntity(
+          prompt = prompt,
+          tools = tools,
+          scheduleType = type,
+          intervalValue = (args["interval_value"] as? Number)?.toInt() ?: 30,
+          intervalUnit = unit,
+          timeHour = (args["time_hour"] as? Number)?.toInt() ?: 0,
+          timeMinute = (args["time_minute"] as? Number)?.toInt() ?: 0,
+          daysOfWeek = args["days_of_week"]?.toString() ?: "",
+          dayOfMonth = (args["day_of_month"] as? Number)?.toInt() ?: 1,
+          maxRuns = (args["max_runs"] as? Number)?.toInt() ?: 0,
+        )
+        try {
+          val armed = AgentScheduler.schedule(app, task)
+          chatDao.insertScheduledTask(armed)
+          if (!armed.enabled) {
+            "Error: schedule produced no next run. Check max_runs and schedule parameters."
+          } else {
+            "Scheduled task created.\nID: ${armed.id}\nPrompt: ${prompt.take(120)}\nSchedule: ${AgentScheduler.describe(armed)}\nNext run: ${AgentScheduler.formatTime(armed.nextRun)}\nTools: ${tools.ifBlank { "(none - reasoning only)" }}\nRuns report via notification."
+          }
+        } catch (e: Exception) {
+          "Error: ${e.message}"
+        }
+      }
+
+      "cancel_schedule" -> {
+        val id = args["task_id"]?.toString() ?: return@execute "Error: task_id required"
+        val task = chatDao.getScheduledTaskById(id)
+        if (task == null) {
+          "No scheduled task with id: $id. Use list_schedules to see ids."
+        } else {
+          AgentScheduler.cancel(app, id)
+          chatDao.deleteScheduledTask(id)
+          "Cancelled scheduled task '$id': ${task.prompt.take(80)}"
+        }
+      }
+
+      "list_schedules" -> {
+        val tasks = chatDao.getScheduledTasks()
+        if (tasks.isEmpty()) {
+          "No scheduled agent tasks."
+        } else {
+          tasks.joinToString("\n\n") { t ->
+            "- [${t.id}] \"${t.prompt.take(80)}\"\n  Schedule: ${AgentScheduler.describe(t)} | status: ${t.status} | ${if (t.enabled) "enabled" else "disabled"}\n  Next: ${AgentScheduler.formatTime(t.nextRun)} | Last: ${AgentScheduler.formatTime(t.lastRun)} | Runs: ${t.runsCompleted}${if (t.maxRuns > 0) "/${t.maxRuns}" else ""}${if (t.tools.isNotBlank()) "\n  Tools: ${t.tools}" else ""}"
+          }
+        }
+      }
+
       else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"
     }
   }
@@ -940,5 +1048,167 @@ class ToolExecutor(
     val dLon = Math.toRadians(lon2 - lon1)
     val a = Math.sin(dLat / 2).let { it * it } + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.sin(dLon / 2).let { it * it }
     return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  }
+
+  // ---- Agent todo list (todo_write / todo_read) ----
+  // Uses its own prefs file: ToolStore wipes "aiope_tools" during migration.
+
+  private val todoPrefs by lazy { app.getSharedPreferences("aiope_agent_state", android.content.Context.MODE_PRIVATE) }
+
+  private fun loadTodos(): org.json.JSONArray = try {
+    org.json.JSONArray(todoPrefs.getString("cuo_todos", "[]"))
+  } catch (_: Exception) {
+    org.json.JSONArray()
+  }
+
+  private fun executeTodoWrite(args: Map<String, Any?>): String = try {
+    val incoming = when (val raw = args["todos"]) {
+      is org.json.JSONArray -> raw
+      is String -> org.json.JSONArray(raw)
+      else -> return "Error: 'todos' array required"
+    }
+    if (incoming.length() == 0 && args["merge"] != true) {
+      todoPrefs.edit().remove("cuo_todos").apply()
+      return "OK: Todo list cleared."
+    }
+    val validStatuses = setOf("pending", "in_progress", "completed", "cancelled")
+    fun normalized(src: org.json.JSONObject): org.json.JSONObject {
+      val status = src.optString("status", "pending").lowercase()
+      return org.json.JSONObject()
+        .put("id", src.optString("id"))
+        .put("content", src.optString("content"))
+        .put("status", if (status in validStatuses) status else "pending")
+    }
+    val out = org.json.JSONArray()
+    if (args["merge"] == true) {
+      val unmatched = (0 until incoming.length()).map { incoming.getJSONObject(it) }.toMutableList()
+      val existing = loadTodos()
+      for (i in 0 until existing.length()) {
+        val e = existing.getJSONObject(i)
+        val match = unmatched.firstOrNull { it.optString("id") == e.optString("id") }
+        if (match != null) {
+          out.put(normalized(match))
+          unmatched.remove(match)
+        } else {
+          out.put(e)
+        }
+      }
+      unmatched.forEach { out.put(normalized(it)) }
+    } else {
+      for (i in 0 until incoming.length()) out.put(normalized(incoming.getJSONObject(i)))
+    }
+    todoPrefs.edit().putString("cuo_todos", out.toString()).apply()
+    "OK: Todo list saved (${out.length()} item(s))."
+  } catch (e: Exception) {
+    "Error: ${e.message}"
+  }
+
+  private fun formatTodos(arr: org.json.JSONArray): String {
+    if (arr.length() == 0) return "No todos. Use todo_write to plan multi-step work."
+    val order = listOf("pending", "in_progress", "completed", "cancelled")
+    val grouped = mutableMapOf<String, MutableList<String>>()
+    order.forEach { grouped[it] = mutableListOf() }
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      grouped.getOrPut(o.optString("status", "pending")) { mutableListOf() }.add("[${o.optString("id")}] ${o.optString("content")}")
+    }
+    val body = order.filter { grouped[it]!!.isNotEmpty() }.joinToString("\n") { st -> "$st:\n" + grouped[st]!!.joinToString("\n") { "  - $it" } }
+    val done = grouped["completed"]!!.size
+    val cancelled = grouped["cancelled"]!!.size
+    val open = arr.length() - done - cancelled
+    return "$body\n\n${arr.length()} total | $open open | $done completed | $cancelled cancelled"
+  }
+
+  // ---- File tree search (search_files) ----
+
+  private fun executeSearchFiles(args: Map<String, Any?>): String {
+    val rootPath = args["path"]?.toString() ?: return "Error: path required"
+    val pattern = args["pattern"]?.toString() ?: return "Error: pattern required"
+    val target = (args["target"]?.toString() ?: "content").lowercase()
+    if (target !in setOf("content", "files")) return "Error: target must be 'content' or 'files'"
+    val limit = ((args["limit"] as? Number)?.toInt() ?: 50).coerceIn(1, 500)
+    val skipDirs = setOf(".git", "node_modules", "build")
+    val regex = try {
+      Regex(pattern, RegexOption.IGNORE_CASE)
+    } catch (e: Exception) {
+      return "Error: invalid regex '$pattern': ${e.message}"
+    }
+    val globRegex = args["glob"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { g ->
+      try {
+        Regex("^" + g.replace("**/", "\u0001").replace(".", "\\.").replace("*", "[^/]*").replace("\u0001", "(?:.*/)?") + "$")
+      } catch (_: Exception) {
+        null
+      }
+    }
+    val root = java.io.File(rootPath)
+    if (!root.exists()) return "Error: path not found: $rootPath"
+    val matches = mutableListOf<String>()
+    val walker = root.walkTopDown().maxDepth(10).onEnter { it.name !in skipDirs }.filter { it.isFile }.iterator()
+    while (matches.size < limit && walker.hasNext()) {
+      val file = walker.next()
+      val rel = file.absolutePath.removePrefix(root.absolutePath).trimStart('/')
+      if (globRegex != null && !globRegex.matches(rel) && !globRegex.matches(file.name)) continue
+      if (target == "files") {
+        if (regex.containsMatchIn(file.name)) matches.add(rel)
+      } else {
+        if (file.length() > 1_000_000) continue
+        try {
+          file.useLines { lines ->
+            lines.forEachIndexed { idx, line ->
+              if (matches.size >= limit) return@useLines
+              if (regex.containsMatchIn(line)) matches.add("$rel:${idx + 1}: ${line.trim().take(200)}")
+            }
+          }
+        } catch (_: Exception) {
+          // Binary or unreadable file — skip.
+        }
+      }
+    }
+    val what = if (target == "files") "file(s) named" else "match(es) for"
+    return if (matches.isEmpty()) {
+      "No $what '$pattern' under $rootPath"
+    } else {
+      "Found ${matches.size} $what '$pattern' under $rootPath:\n${matches.joinToString("\n")}"
+    }
+  }
+
+  // ---- Generic HTTP client (http_request) ----
+
+  private suspend fun executeHttpRequest(args: Map<String, Any?>): String = try {
+    val url = args["url"]?.toString() ?: return "Error: url required"
+    val method = (args["method"]?.toString() ?: "GET").uppercase()
+    if (method !in setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")) return "Error: unsupported method: $method"
+    val timeoutSec = ((args["timeout_seconds"] as? Number)?.toLong() ?: 30L).coerceIn(1L, 300L)
+    val headerMap = mutableMapOf<String, String>()
+    when (val h = args["headers"]) {
+      is org.json.JSONObject -> h.keys().forEach { k -> headerMap[k] = h.optString(k) }
+      is Map<*, *> -> h.forEach { (k, v) -> headerMap[k.toString()] = v.toString() }
+    }
+    val bodyText = args["body"]?.toString() ?: ""
+    val client = httpClient.newBuilder().callTimeout(timeoutSec, java.util.concurrent.TimeUnit.SECONDS).build()
+    val contentType = headerMap.entries.firstOrNull { it.key.equals("Content-Type", true) }?.value ?: "text/plain"
+    val builder = okhttp3.Request.Builder().url(url)
+    if (method != "GET" && method != "HEAD") {
+      val reqBody = okhttp3.RequestBody.create(contentType.toMediaTypeOrNull(), bodyText)
+      when (method) {
+        "POST" -> builder.post(reqBody)
+        "PUT" -> builder.put(reqBody)
+        "PATCH" -> builder.patch(reqBody)
+        "DELETE" -> if (bodyText.isEmpty()) builder.delete() else builder.delete(reqBody)
+      }
+    }
+    headerMap.forEach { (k, v) -> builder.header(k, v) }
+    ToolProgressBus.update("http_request", message = "$method $url".take(60))
+    val resp = client.newCall(builder.build()).execute()
+    resp.use { r ->
+      val bodyStr = r.body?.string() ?: ""
+      val selHeaders = listOf("Content-Type", "Content-Length", "Location", "Cache-Control", "Set-Cookie").mapNotNull { h -> r.header(h)?.let { "${h}: ${it.take(200)}" } }.joinToString("\n")
+      val trunc = bodyStr.take(20480)
+      val note = if (bodyStr.length > 20480) "\n...(truncated, ${bodyStr.length} bytes total)" else ""
+      "HTTP ${r.code} ${r.message}\n$selHeaders\n\n$trunc$note"
+    }.also { ToolProgressBus.clear() }
+  } catch (e: Exception) {
+    ToolProgressBus.clear()
+    "Error: ${e.message}"
   }
 }
