@@ -307,6 +307,8 @@ class StreamingOrchestrator(
                       fn.optString("name", "").let { if (it.isNotBlank()) acc["name"] = it }
                       fn.optString("arguments", "").let { acc["args"] = (acc["args"] ?: "") + it }
                     }
+                    // Capture extra_content (Google thought_signature)
+                    tc.optJSONObject("extra_content")?.let { acc["extra_content"] = it.toString() }
                   }
                 }
 
@@ -388,7 +390,7 @@ class StreamingOrchestrator(
           } catch (_: Exception) {
             emptyMap()
           }
-          ToolCallInfo(id = acc["id"] ?: "call_${System.nanoTime()}", name = acc["name"] ?: "", arguments = args)
+          ToolCallInfo(id = acc["id"] ?: "call_${System.nanoTime()}", name = acc["name"] ?: "", arguments = args, extraContent = acc["extra_content"])
         }
         send(ChatStreamChunk(toolCalls = callInfos))
 
@@ -429,7 +431,15 @@ class StreamingOrchestrator(
             put(
               "tool_calls",
               JSONArray().apply {
-                for (c in callInfos) put(JSONObject().put("id", c.id).put("type", "function").put("function", JSONObject().put("name", c.name).put("arguments", JSONObject(c.arguments).toString())))
+                for (c in callInfos) {
+                  val tcObj = JSONObject()
+                    .put("id", c.id)
+                    .put("type", "function")
+                    .put("function", JSONObject().put("name", c.name).put("arguments", JSONObject(c.arguments).toString()))
+                  // Include extra_content (Google thought_signature) if present
+                  c.extraContent?.let { tcObj.put("extra_content", JSONObject(it)) }
+                  put(tcObj)
+                }
               },
             )
           },
