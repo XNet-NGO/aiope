@@ -88,7 +88,7 @@ class ToolExecutor(
     td("image_generate", "Generate an image from a text prompt. Use when the user asks you to draw, create, generate, or make an image/picture/illustration.", """{"type":"object","properties":{"prompt":{"type":"string","description":"Detailed image generation prompt"}},"required":["prompt"]}"""),
     td("analyze_image", "Analyze an image from a URL or local file path using vision. Supports JPEG, PNG, WebP, GIF, BMP, SVG. Use for browser screenshots, fetched images, generated images, or any image the user wants described.", """{"type":"object","properties":{"url":{"type":"string","description":"URL or file:// path of the image to analyze"},"question":{"type":"string","description":"What to look for or ask about the image"}},"required":["url"]}"""),
     td("read_calendar", "Read upcoming calendar events from the device.", """{"type":"object","properties":{"days":{"type":"integer","description":"Number of days ahead to look (default 7)"}},"required":[]}"""),
-    td("create_event", "Create a calendar event. Opens the calendar app with pre-filled details.", """{"type":"object","properties":{"title":{"type":"string"},"start_time":{"type":"string","description":"Start time, e.g. '2025-04-20T14:00' or '2:00 PM'"},"end_time":{"type":"string","description":"End time"},"location":{"type":"string"},"description":{"type":"string"}},"required":["title"]}"""),
+    td("create_event", "Open the calendar app's new-event screen pre-filled with these details. Android does not permit silent inserts, so the user must tap Save for the event to exist — it will NOT be visible to read_calendar until they do.", """{"type":"object","properties":{"title":{"type":"string"},"start_time":{"type":"string","description":"Start time, e.g. '2025-04-20T14:00' or '2:00 PM'"},"end_time":{"type":"string","description":"End time"},"location":{"type":"string"},"description":{"type":"string"}},"required":["title"]}"""),
     td("delete_event", "Delete a calendar event by its ID (from read_calendar).", """{"type":"object","properties":{"event_id":{"type":"integer","description":"Event ID from read_calendar"}},"required":["event_id"]}"""),
     td("set_alarm", "Set an alarm on the device.", """{"type":"object","properties":{"hour":{"type":"integer","description":"Hour (0-23)"},"minutes":{"type":"integer","description":"Minutes (0-59)"},"message":{"type":"string","description":"Alarm label"},"skip_ui":{"type":"boolean","description":"Set silently without opening clock app"}},"required":["hour","minutes"]}"""),
     td("dismiss_alarm", "Dismiss/cancel an alarm by its label.", """{"type":"object","properties":{"message":{"type":"string","description":"Alarm label to dismiss"}},"required":["message"]}"""),
@@ -362,7 +362,10 @@ class ToolExecutor(
           addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         app.startActivity(intent)
-        "Calendar event creation opened: $title"
+        "Opened the calendar app's new-event screen pre-filled with \"$title\". Android does not allow " +
+          "an app to insert events silently, so the event is NOT saved until the user taps Save in that " +
+          "screen. Tell the user to confirm it there; do not claim the event was created, and do not " +
+          "expect read_calendar to show it yet."
       } catch (e: Exception) {
         "Error: ${e.message}"
       }
@@ -732,7 +735,7 @@ class ToolExecutor(
     ToolProgressBus.update("fetch_url", message = fetchUrl.host)
     val mode = args["mode"]?.toString() ?: "text"
     val req = okhttp3.Request.Builder().url(fetchUrl)
-      .header("User-Agent", "Mozilla/5.0 (Linux; Android) AIOPE/2.0").build()
+      .header("User-Agent", "Mozilla/5.0 (Linux; Android) CuO/4.7").build()
     val resp = httpClient.newCall(req).execute()
     val ct = resp.header("Content-Type") ?: ""
     val body = resp.use { it.body?.string() ?: "" }

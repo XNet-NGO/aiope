@@ -36,7 +36,7 @@ class WebBrowser(context: Context) {
     settings.builtInZoomControls = true
     settings.displayZoomControls = false
     setBackgroundColor(android.graphics.Color.BLACK)
-    settings.userAgentString = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36 AIOPE/2"
+    settings.userAgentString = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36 CuO/4.7"
     webViewClient = object : WebViewClient() {
       override fun onPageStarted(v: WebView, url: String, fav: Bitmap?) {
         currentUrl.set(url)

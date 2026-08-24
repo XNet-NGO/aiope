@@ -106,7 +106,7 @@ class McpManager(private val toolStore: ToolStore) {
     val params = JSONObject().apply {
       put("protocolVersion", "2024-11-05")
       put("capabilities", JSONObject())
-      put("clientInfo", JSONObject().put("name", "AIOPE2").put("version", "1.0"))
+      put("clientInfo", JSONObject().put("name", "CuO").put("version", "1.0"))
     }
     sendRequest(server, "initialize", params)
     sessions[server.id] = sessions[server.id] // preserve session from response

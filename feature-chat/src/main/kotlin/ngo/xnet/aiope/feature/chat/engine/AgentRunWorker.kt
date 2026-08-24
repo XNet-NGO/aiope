@@ -159,7 +159,7 @@ class AgentRunWorker(
     }
     val systemPrompt = basePrompt + "\n\n## Environment\n- Date/Time: " +
       ZonedDateTime.now().format(DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z")) +
-      "\n- Platform: Android (AIOPE scheduled task)\n- Execution: Background\n" +
+      "\n- Platform: Android (CuO scheduled task)\n- Execution: Background\n" +
       "\n## Recurring Task\nThis is a RECURRING task. Compare with previous runs (see Run Context) and REPORT WHAT CHANGED since the last run. If nothing changed, say so explicitly." +
       "\n\n## Tool Execution\nYou MUST use tools to complete your task.\n" +
       toolHelp +
@@ -390,7 +390,7 @@ class AgentRunWorker(
   private fun searxQuery(query: String): String {
     if (query.isBlank()) return "Error: query required"
     val u = "https://search.xnet.ngo/search?q=${java.net.URLEncoder.encode(query, "UTF-8")}&format=json"
-    val req = okhttp3.Request.Builder().url(u).header("User-Agent", "AIOPE/2.0 (Android)").build()
+    val req = okhttp3.Request.Builder().url(u).header("User-Agent", "CuO/4.7 (Android)").build()
     return try {
       val resp = httpClient.newCall(req).execute()
       val body = resp.use { it.body?.string() ?: "" }
@@ -435,7 +435,7 @@ class AgentRunWorker(
     return try {
       val fetchUrl = java.net.URL(urlStr)
       val req = okhttp3.Request.Builder().url(fetchUrl)
-        .header("User-Agent", "Mozilla/5.0 (Linux; Android) AIOPE/2.0").build()
+        .header("User-Agent", "Mozilla/5.0 (Linux; Android) CuO/4.7").build()
       val resp = httpClient.newCall(req).execute()
       val ct = resp.header("Content-Type") ?: ""
       val body = resp.use { it.body?.string() ?: "" }

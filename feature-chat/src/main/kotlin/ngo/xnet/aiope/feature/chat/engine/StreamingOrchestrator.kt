@@ -417,11 +417,15 @@ class StreamingOrchestrator(
         }
         send(ChatStreamChunk(toolResults = results))
 
-        // Append assistant tool_calls + tool results for next round
+        // Append assistant tool_calls + tool results for next round.
+        // Any commentary streamed before the tool call is real assistant content: keep it in the
+        // request (sending content=null drops the model's own words from its context) and separate
+        // it from the next round's text, which otherwise glues on ("…the resultDone. …").
+        val preToolText = contentSoFar.toString().trim()
         rawMessages.add(
           JSONObject().apply {
             put("role", "assistant")
-            put("content", JSONObject.NULL)
+            put("content", if (preToolText.isEmpty()) JSONObject.NULL else preToolText)
             put(
               "tool_calls",
               JSONArray().apply {
@@ -430,6 +434,10 @@ class StreamingOrchestrator(
             )
           },
         )
+        if (preToolText.isNotEmpty()) {
+          contentSoFar.append("\n\n")
+          send(ChatStreamChunk(content = "\n\n"))
+        }
         for (r in results) {
           rawMessages.add(
             JSONObject().apply {
@@ -668,16 +676,32 @@ class StreamingOrchestrator(
     return results
   }
 
-  /** Infer the primary argument key for a tool based on its name */
+  /**
+   * Infer the primary argument key for a tool based on its name.
+   *
+   * Only used by the loose bracket/inline tool-call fallbacks (`[Tools: name → value]`) that some
+   * providers emit instead of proper tool_calls JSON, so it maps each tool to its single most
+   * important required parameter. Keep in sync with the schemas in ToolExecutor.buildToolDefs() —
+   * a tool missing here falls back to "input", which no schema accepts.
+   */
   private fun inferArgKey(toolName: String): String = when (toolName) {
     "run_sh", "run_proot" -> "command"
     "read_file", "write_file" -> "path"
     "list_directory" -> "path"
+    "edit_file" -> "path"
+    "search_files" -> "pattern"
+    "http_request" -> "url"
     "search_web", "search_images" -> "query"
     "fetch_url" -> "url"
     "memory_store", "memory_recall", "memory_forget" -> "key"
+    "rag_search" -> "query"
+    "rag_index" -> "content"
+    "todo_write" -> "todos"
+    "schedule_task" -> "prompt"
+    "cancel_schedule" -> "task_id"
     "send_sms" -> "message"
     "send_notification" -> "text"
+    "clipboard_copy" -> "text"
     "open_intent" -> "uri"
     "ssh_exec" -> "command"
     "browser_navigate" -> "url"
@@ -687,6 +711,9 @@ class StreamingOrchestrator(
     "analyze_image" -> "prompt"
     "search_location" -> "query"
     "query_data" -> "source"
+    "create_event" -> "title"
+    "delete_event" -> "event_id"
+    "media_control" -> "action"
     else -> "input"
   }
 
