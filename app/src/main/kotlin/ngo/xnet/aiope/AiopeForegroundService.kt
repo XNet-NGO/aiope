@@ -60,7 +60,7 @@ class AiopeForegroundService : Service() {
     }
     val pending = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
     return NotificationCompat.Builder(this, CHANNEL_ID)
-      .setContentTitle("AIOPE")
+      .setContentTitle("Joshy")
       .setContentText("Running")
       .setSmallIcon(android.R.drawable.ic_menu_manage)
       .setOngoing(true)
