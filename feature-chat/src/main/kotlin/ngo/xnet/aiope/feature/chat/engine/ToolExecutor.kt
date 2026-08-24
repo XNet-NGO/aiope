@@ -404,7 +404,7 @@ class ToolExecutor(
 
       // Notifications
       "send_notification" -> try {
-        val title = args["title"]?.toString() ?: "AIOPE"
+        val title = args["title"]?.toString() ?: "CuO"
         val body = args["body"]?.toString() ?: return@execute "Error: body required"
         val channelId = "aiope_tools"
         val nm = app.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
@@ -420,7 +420,7 @@ class ToolExecutor(
       "clipboard_copy" -> try {
         val text = args["text"]?.toString() ?: return@execute "Error: text required"
         val cm = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        android.os.Handler(android.os.Looper.getMainLooper()).post { cm.setPrimaryClip(android.content.ClipData.newPlainText("AIOPE", text)) }
+        android.os.Handler(android.os.Looper.getMainLooper()).post { cm.setPrimaryClip(android.content.ClipData.newPlainText("CuO", text)) }
         "Copied to clipboard (${text.length} chars)"
       } catch (e: Exception) {
         "Error: ${e.message}"
