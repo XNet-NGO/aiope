@@ -14,6 +14,7 @@ enum class AgentMode(val label: String) {
         "create_event", "delete_event", "set_alarm", "dismiss_alarm", "delete_sms",
         "clipboard_copy", "open_intent", "image_generate",
         "browser_click", "ssh_exec", "browser_fill", "browser_eval",
+        "edit_file", "schedule_task", "cancel_schedule",
       )
 
       else -> emptySet()

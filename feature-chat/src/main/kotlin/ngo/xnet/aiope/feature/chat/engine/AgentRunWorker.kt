@@ -17,6 +17,7 @@ import ngo.xnet.aiope.feature.chat.db.ChatDatabase
 import ngo.xnet.aiope.feature.chat.db.MemoryEntity
 import ngo.xnet.aiope.feature.chat.db.ScheduledTaskEntity
 import ngo.xnet.aiope.feature.chat.db.TaskRunEntity
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import org.json.JSONObject
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -26,12 +27,17 @@ import java.util.concurrent.TimeUnit
 private val workerToolCatalog: Map<String, String> = mapOf(
   "search_web" to "Search the web for current information. Args: query: String",
   "fetch_url" to "Fetch a URL and return extracted text and images. Args: url: String",
+  "http_request" to "Call any HTTP API. Args: url: String, method: String (optional), headers: Object (optional), body: String (optional), timeout_seconds: Number (optional)",
   "run_sh" to "Run a shell command on this device. Args: command: String, timeout: Number (optional)",
   "ssh_exec" to "Run a command on a remote server over SSH. Args: host: String, command: String, timeout: Number (optional)",
   "send_notification" to "Show a notification on this device. Args: title: String, body: String",
   "set_alarm" to "Set an alarm on this device. Args: hour: Number, minute: Number, label: String (optional)",
   "memory_store" to "Store a fact in persistent memory. Args: key: String, value: String",
   "memory_recall" to "Recall stored memories. Args: query: String (optional)",
+  "read_file" to "Read a text file from this device. Args: path: String",
+  "write_file" to "Write a text file on this device. Args: path: String, content: String",
+  "list_directory" to "List a directory on this device. Args: path: String",
+  "datetime_now" to "Current local date, time, timezone and day of week. Args: none",
 )
 
 /**
@@ -212,17 +218,21 @@ class AgentRunWorker(
       val desc = workerToolCatalog[name] ?: return@mapNotNull null
       val props = JSONObject()
       val required = org.json.JSONArray()
-      desc.substringAfter("Args: ", "").split(", ").filter { it.isNotBlank() }.forEach { p ->
-        val key = p.substringBefore(":").trim()
-        val spec = p.substringAfter(":").trim()
-        val optional = spec.contains("optional")
-        val type = when {
-          spec.startsWith("Number") -> "number"
-          spec.startsWith("String") -> "string"
-          else -> "string"
+      val argSpec = desc.substringAfter("Args: ", "")
+      if (!argSpec.equals("none", true)) {
+        argSpec.split(", ").filter { it.isNotBlank() }.forEach { p ->
+          val key = p.substringBefore(":").trim()
+          val spec = p.substringAfter(":").trim()
+          val optional = spec.contains("optional")
+          val type = when {
+            spec.startsWith("Number") -> "number"
+            spec.startsWith("Object") -> "object"
+            spec.startsWith("String") -> "string"
+            else -> "string"
+          }
+          props.put(key, JSONObject().put("type", type))
+          if (!optional) required.put(key)
         }
-        props.put(key, JSONObject().put("type", type))
-        if (!optional) required.put(key)
       }
       val parameters = JSONObject()
         .put("type", "object")
@@ -302,6 +312,70 @@ class AgentRunWorker(
           val memories = dao.getAllMemories()
           val matches = memories.filter { it.key.contains(query, true) || it.content.contains(query, true) }
           if (matches.isEmpty()) "No memories matching '$query'" else matches.joinToString("\n") { "${it.key}: ${it.content.take(200)}" }
+        }
+
+        "http_request" -> {
+          val url = args["url"]?.toString() ?: return "Error: no url"
+          val method = (args["method"]?.toString() ?: "GET").uppercase()
+          if (method !in setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")) return "Error: unsupported method: $method"
+          val timeoutSec = ((args["timeout_seconds"] as? Number)?.toLong() ?: 30L).coerceIn(1L, 120L)
+          val headerMap = mutableMapOf<String, String>()
+          when (val h = args["headers"]) {
+            is JSONObject -> h.keys().forEach { k -> headerMap[k] = h.optString(k) }
+            is Map<*, *> -> h.forEach { (k, v) -> headerMap[k.toString()] = v.toString() }
+          }
+          val bodyText = args["body"]?.toString() ?: ""
+          val contentType = headerMap.entries.firstOrNull { it.key.equals("Content-Type", true) }?.value ?: "text/plain"
+          val builder = okhttp3.Request.Builder().url(url)
+          if (method != "GET" && method != "HEAD") {
+            val reqBody = okhttp3.RequestBody.create(contentType.toMediaTypeOrNull(), bodyText)
+            when (method) {
+              "POST" -> builder.post(reqBody)
+              "PUT" -> builder.put(reqBody)
+              "PATCH" -> builder.patch(reqBody)
+              "DELETE" -> if (bodyText.isEmpty()) builder.delete() else builder.delete(reqBody)
+            }
+          }
+          headerMap.forEach { (k, v) -> builder.header(k, v) }
+          val client = httpClient.newBuilder().callTimeout(timeoutSec, java.util.concurrent.TimeUnit.SECONDS).build()
+          client.newCall(builder.build()).execute().use { r ->
+            val body = r.body?.string() ?: ""
+            "HTTP ${r.code} ${r.message}\n${body.take(8000)}" + if (body.length > 8000) "\n...(truncated)" else ""
+          }
+        }
+
+        "read_file" -> {
+          val path = args["path"]?.toString() ?: return "Error: no path"
+          val f = java.io.File(path)
+          if (!f.isFile) return "Error: file not found: $path"
+          val text = f.readText()
+          if (text.length > 20000) text.take(20000) + "\n...(truncated, ${text.length} chars total)" else text
+        }
+
+        "write_file" -> {
+          val path = args["path"]?.toString() ?: return "Error: no path"
+          val content = args["content"]?.toString() ?: return "Error: no content"
+          val f = java.io.File(path)
+          f.parentFile?.mkdirs()
+          f.writeText(content)
+          "OK: wrote ${content.length} bytes to ${f.absolutePath}"
+        }
+
+        "list_directory" -> {
+          val path = args["path"]?.toString() ?: return "Error: no path"
+          val dir = java.io.File(path)
+          if (!dir.isDirectory) return "Error: not a directory: $path"
+          val entries = dir.listFiles()?.sortedWith(compareBy({ !it.isDirectory }, { it.name })) ?: return "Error: cannot list $path"
+          if (entries.isEmpty()) {
+            "(empty directory)"
+          } else {
+            entries.take(200).joinToString("\n") { if (it.isDirectory) "${it.name}/" else "${it.name} (${it.length()} B)" }
+          }
+        }
+
+        "datetime_now" -> {
+          val now = java.time.ZonedDateTime.now()
+          "Now: ${now.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss"))}\nTimezone: ${now.zone.id} (${now.offset})\nDay of week: ${now.dayOfWeek}\nEpoch ms: ${System.currentTimeMillis()}"
         }
 
         else -> "Tool '$name' not available in background mode"
