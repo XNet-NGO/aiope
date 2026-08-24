@@ -66,9 +66,10 @@ class ProviderStore @Inject constructor(
       label = "AIOPE Gateway",
       apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
       apiBase = "https://inf.xnet.ngo/v1",
-      selectedModelId = "google-ai-studio/models-gemma-4-31b-it",
+      selectedModelId = "google-ai-studio/gemini-3.5-flash-lite",
       isActive = true,
       modelConfigs = mapOf(
+        mc("google-ai-studio/gemini-3.5-flash-lite", tools = true, vision = true, ctx = 1_000_000),
         mc("cline/minimax-minimax-m2.5", tools = true, ctx = 200_000),
         mc("zen/minimax-m2.5-free", tools = true, ctx = 200_000),
         mc("zen/nemotron-3-super-free", tools = true, vision = false, audio = false, video = false, ctx = 1_000_000),
