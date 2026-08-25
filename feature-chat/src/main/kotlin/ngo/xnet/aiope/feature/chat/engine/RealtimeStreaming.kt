@@ -5,7 +5,6 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.launch
 import ngo.xnet.aiope.core.network.ModelConfig
 import ngo.xnet.aiope.core.network.ModelDef
 import ngo.xnet.aiope.core.network.ProviderProfile
@@ -15,12 +14,15 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Base64
 
 /**
  * Bidirectional realtime voice stream.
- * Owns the WebSocket and the mic capture loop — emits StreamEvents to the collector.
+ * Supports two protocols:
+ * 1. AIOPE Gateway (wss://inf.xnet.ngo/ws/voice) — custom protocol
+ * 2. Google AI Studio Live API (direct) — native Gemini BidiGenerateContent
  */
 class RealtimeStreaming(
   private val okHttp: OkHttpClient,
@@ -34,66 +36,39 @@ class RealtimeStreaming(
 ) {
   private var webSocket: WebSocket? = null
 
+  private val isGoogleDirect: Boolean
+    get() = provider.effectiveApiBase().contains("generativelanguage.googleapis.com")
+
   fun createStream(): Flow<StreamEvent> = callbackFlow {
-    val wsUrl = "$gatewayUrl?model=${modelDef.id}"
-    val request = Request.Builder()
-      .url(wsUrl)
-      .addHeader("Authorization", "Bearer ${provider.apiKey}")
-      .build()
+    val (wsUrl, request) = if (isGoogleDirect) {
+      buildGoogleConnection()
+    } else {
+      buildGatewayConnection()
+    }
 
     webSocket = okHttp.newWebSocket(
       request,
       object : WebSocketListener() {
         override fun onOpen(ws: WebSocket, response: Response) {
-          // Send system prompt as first message
-          if (systemPrompt.isNotBlank()) {
-            val setup = JSONObject().apply {
-              put(
-                "setup",
-                JSONObject().apply {
-                  put("systemPrompt", systemPrompt)
-                  put("voiceName", voiceName)
-                },
-              )
-            }
-            ws.send(setup.toString())
+          if (isGoogleDirect) {
+            sendGoogleSetup(ws)
+            audioManager.googleDirect = true
+          } else {
+            sendGatewaySetup(ws)
+            audioManager.googleDirect = false
           }
           trySend(StreamEvent.Connected)
-          // Start mic capture → sends audio over this WS
           audioManager.setWebSocket(ws)
           audioManager.startCapture()
         }
 
         override fun onMessage(ws: WebSocket, text: String) {
           try {
-            val json = JSONObject(text)
-
-            json.optJSONObject("audio")?.optString("pcm")?.let { b64 ->
-              if (b64.isNotBlank()) {
-                trySend(StreamEvent.AudioChunk(Base64.getDecoder().decode(b64)))
-              }
+            if (isGoogleDirect) {
+              parseGoogleMessage(text)?.let { trySend(it) }
+            } else {
+              parseGatewayMessage(text)?.let { trySend(it) }
             }
-
-            json.optJSONObject("text")?.optString("delta")?.let {
-              if (it.isNotBlank()) trySend(StreamEvent.TextDelta(it))
-            }
-
-            if (json.has("turnStart")) trySend(StreamEvent.TurnStart(json.optString("turnStart")))
-            if (json.has("turnComplete")) trySend(StreamEvent.TurnComplete)
-            if (json.has("inputTranscription")) trySend(StreamEvent.InputTranscription(json.getString("inputTranscription")))
-            if (json.has("outputTranscription")) trySend(StreamEvent.OutputTranscription(json.getString("outputTranscription")))
-            if (json.has("toolCall")) {
-              val tc = json.getJSONObject("toolCall")
-              val fcs = tc.getJSONArray("functionCalls")
-              val calls = (0 until fcs.length()).map { i ->
-                val fc = fcs.getJSONObject(i)
-                val args = mutableMapOf<String, String>()
-                fc.optJSONObject("args")?.let { a -> a.keys().forEach { k -> args[k] = a.optString(k, "") } }
-                FunctionCall(fc.getString("name"), fc.getString("id"), args)
-              }
-              trySend(StreamEvent.ToolCallEvent(calls))
-            }
-            if (json.has("error")) trySend(StreamEvent.Error(json.getString("error")))
           } catch (e: Exception) {
             trySend(StreamEvent.Error("Parse error: ${e.message}"))
           }
@@ -118,42 +93,310 @@ class RealtimeStreaming(
     awaitClose { stop() }
   }.flowOn(Dispatchers.IO)
 
-  /** Send text mid-conversation (e.g. barge-in or typed input) */
+  // ══════════════════════════════════════════════════════════════
+  // CONNECTION BUILDERS
+  // ══════════════════════════════════════════════════════════════
+
+  private fun buildGatewayConnection(): Pair<String, Request> {
+    val url = "$gatewayUrl?model=${modelDef.id}"
+    val request = Request.Builder()
+      .url(url)
+      .addHeader("Authorization", "Bearer ${provider.apiKey}")
+      .build()
+    return url to request
+  }
+
+  private fun buildGoogleConnection(): Pair<String, Request> {
+    // Google Live API: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=API_KEY
+    val url = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${provider.apiKey}"
+    val request = Request.Builder().url(url).build()
+    return url to request
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // SETUP MESSAGES
+  // ══════════════════════════════════════════════════════════════
+
+  private fun sendGatewaySetup(ws: WebSocket) {
+    if (systemPrompt.isNotBlank()) {
+      val setup = JSONObject().apply {
+        put(
+          "setup",
+          JSONObject().apply {
+            put("systemPrompt", systemPrompt)
+            put("voiceName", voiceName)
+          },
+        )
+      }
+      ws.send(setup.toString())
+    }
+  }
+
+  private fun sendGoogleSetup(ws: WebSocket) {
+    val setup = JSONObject().apply {
+      put(
+        "setup",
+        JSONObject().apply {
+          put("model", "models/${modelDef.id.removePrefix("models/")}")
+          put(
+            "generationConfig",
+            JSONObject().apply {
+              put("responseModalities", JSONArray().put("AUDIO").put("TEXT"))
+              put(
+                "speechConfig",
+                JSONObject().apply {
+                  put(
+                    "voiceConfig",
+                    JSONObject().apply {
+                      put(
+                        "prebuiltVoiceConfig",
+                        JSONObject().apply {
+                          put("voiceName", voiceName)
+                        },
+                      )
+                    },
+                  )
+                },
+              )
+            },
+          )
+          if (systemPrompt.isNotBlank()) {
+            put(
+              "systemInstruction",
+              JSONObject().apply {
+                put("parts", JSONArray().put(JSONObject().put("text", systemPrompt)))
+              },
+            )
+          }
+          put(
+            "tools",
+            JSONArray().put(
+              JSONObject().apply {
+                put("functionDeclarations", buildGoogleToolDeclarations())
+              },
+            ),
+          )
+        },
+      )
+    }
+    ws.send(setup.toString())
+  }
+
+  private fun buildGoogleToolDeclarations(): JSONArray {
+    // Minimal — the actual tool defs are handled by the orchestrator
+    // For live voice, we just need to declare them so Google knows about them
+    return JSONArray()
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // MESSAGE PARSING
+  // ══════════════════════════════════════════════════════════════
+
+  private fun parseGatewayMessage(text: String): StreamEvent? {
+    val json = JSONObject(text)
+
+    json.optJSONObject("audio")?.optString("pcm")?.let { b64 ->
+      if (b64.isNotBlank()) return StreamEvent.AudioChunk(Base64.getDecoder().decode(b64))
+    }
+    json.optJSONObject("text")?.optString("delta")?.let {
+      if (it.isNotBlank()) return StreamEvent.TextDelta(it)
+    }
+    if (json.has("turnStart")) return StreamEvent.TurnStart(json.optString("turnStart"))
+    if (json.has("turnComplete")) return StreamEvent.TurnComplete
+    if (json.has("inputTranscription")) return StreamEvent.InputTranscription(json.getString("inputTranscription"))
+    if (json.has("outputTranscription")) return StreamEvent.OutputTranscription(json.getString("outputTranscription"))
+    if (json.has("toolCall")) {
+      val tc = json.getJSONObject("toolCall")
+      val fcs = tc.getJSONArray("functionCalls")
+      val calls = (0 until fcs.length()).map { i ->
+        val fc = fcs.getJSONObject(i)
+        val args = mutableMapOf<String, String>()
+        fc.optJSONObject("args")?.let { a -> a.keys().forEach { k -> args[k] = a.optString(k, "") } }
+        FunctionCall(fc.getString("name"), fc.getString("id"), args)
+      }
+      return StreamEvent.ToolCallEvent(calls)
+    }
+    if (json.has("error")) return StreamEvent.Error(json.getString("error"))
+    return null
+  }
+
+  private fun parseGoogleMessage(text: String): StreamEvent? {
+    val json = JSONObject(text)
+
+    // Google Live API response format
+    val serverContent = json.optJSONObject("serverContent")
+    if (serverContent != null) {
+      val modelTurn = serverContent.optJSONObject("modelTurn")
+      if (modelTurn != null) {
+        val parts = modelTurn.optJSONArray("parts")
+        if (parts != null) {
+          for (i in 0 until parts.length()) {
+            val part = parts.getJSONObject(i)
+
+            // Audio data
+            part.optJSONObject("inlineData")?.let { inline ->
+              val mimeType = inline.optString("mimeType", "")
+              if (mimeType.startsWith("audio/")) {
+                val b64 = inline.optString("data", "")
+                if (b64.isNotBlank()) {
+                  return StreamEvent.AudioChunk(Base64.getDecoder().decode(b64))
+                }
+              }
+            }
+
+            // Text content
+            part.optString("text", "").let {
+              if (it.isNotBlank()) return StreamEvent.TextDelta(it)
+            }
+
+            // Function call
+            part.optJSONObject("functionCall")?.let { fc ->
+              val name = fc.getString("name")
+              val id = fc.optString("id", "call_${System.nanoTime()}")
+              val args = mutableMapOf<String, String>()
+              fc.optJSONObject("args")?.let { a -> a.keys().forEach { k -> args[k] = a.optString(k, "") } }
+              return StreamEvent.ToolCallEvent(listOf(FunctionCall(name, id, args)))
+            }
+          }
+        }
+      }
+
+      // Turn complete
+      if (serverContent.optBoolean("turnComplete", false)) {
+        return StreamEvent.TurnComplete
+      }
+
+      // Input transcription
+      serverContent.optJSONObject("inputTranscription")?.optString("text")?.let {
+        if (it.isNotBlank()) return StreamEvent.InputTranscription(it)
+      }
+
+      // Output transcription
+      serverContent.optJSONObject("outputTranscription")?.optString("text")?.let {
+        if (it.isNotBlank()) return StreamEvent.OutputTranscription(it)
+      }
+    }
+
+    // Setup complete acknowledgment
+    if (json.has("setupComplete")) return StreamEvent.Connected
+
+    return null
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // PUBLIC API
+  // ══════════════════════════════════════════════════════════════
+
+  /** Send text mid-conversation */
   fun sendText(text: String) {
-    val json = JSONObject().apply {
-      put("text", JSONObject().apply { put("content", text) })
+    val json = if (isGoogleDirect) {
+      JSONObject().apply {
+        put(
+          "clientContent",
+          JSONObject().apply {
+            put(
+              "turns",
+              JSONArray().put(
+                JSONObject().apply {
+                  put("role", "user")
+                  put("parts", JSONArray().put(JSONObject().put("text", text)))
+                },
+              ),
+            )
+            put("turnComplete", true)
+          },
+        )
+      }
+    } else {
+      JSONObject().apply {
+        put("text", JSONObject().apply { put("content", text) })
+      }
+    }
+    webSocket?.send(json.toString())
+  }
+
+  /** Send audio chunk (called by AudioManager) */
+  fun sendAudio(pcmBase64: String) {
+    val json = if (isGoogleDirect) {
+      JSONObject().apply {
+        put(
+          "realtimeInput",
+          JSONObject().apply {
+            put(
+              "mediaChunks",
+              JSONArray().put(
+                JSONObject().apply {
+                  put("mimeType", "audio/pcm;rate=16000")
+                  put("data", pcmBase64)
+                },
+              ),
+            )
+          },
+        )
+      }
+    } else {
+      JSONObject().apply {
+        put("audio", JSONObject().apply { put("pcm", pcmBase64) })
+      }
     }
     webSocket?.send(json.toString())
   }
 
   /** Send tool execution results back */
   fun sendToolResponse(responses: List<Pair<String, String>>) {
-    val json = JSONObject().apply {
-      put(
-        "toolResponse",
-        JSONObject().apply {
-          put(
-            "functionResponses",
-            org.json.JSONArray().apply {
-              responses.forEach { (id, result) ->
-                put(
-                  JSONObject().apply {
-                    put("id", id)
-                    put("response", JSONObject().apply { put("result", result) })
-                  },
-                )
-              }
-            },
-          )
-        },
-      )
+    val json = if (isGoogleDirect) {
+      JSONObject().apply {
+        put(
+          "toolResponse",
+          JSONObject().apply {
+            put(
+              "functionResponses",
+              JSONArray().apply {
+                responses.forEach { (id, result) ->
+                  put(
+                    JSONObject().apply {
+                      put("id", id)
+                      put("response", JSONObject().apply { put("output", JSONObject().apply { put("result", result) }) })
+                    },
+                  )
+                }
+              },
+            )
+          },
+        )
+      }
+    } else {
+      JSONObject().apply {
+        put(
+          "toolResponse",
+          JSONObject().apply {
+            put(
+              "functionResponses",
+              JSONArray().apply {
+                responses.forEach { (id, result) ->
+                  put(
+                    JSONObject().apply {
+                      put("id", id)
+                      put("response", JSONObject().apply { put("result", result) })
+                    },
+                  )
+                }
+              },
+            )
+          },
+        )
+      }
     }
     webSocket?.send(json.toString())
   }
 
   /** Signal end of user turn */
   fun endTurn() {
-    webSocket?.send("""{"turnEnd":true}""")
+    if (isGoogleDirect) {
+      webSocket?.send("""{"clientContent":{"turnComplete":true}}""")
+    } else {
+      webSocket?.send("""{"turnEnd":true}""")
+    }
   }
 
   /** Tear down everything */
