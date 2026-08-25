@@ -62,6 +62,7 @@ class RealtimeStreaming(
       request,
       object : WebSocketListener() {
         override fun onOpen(ws: WebSocket, response: Response) {
+          android.util.Log.i("VoiceLive", "WebSocket opened: ${response.code} isGoogleDirect=$isGoogleDirect model=${modelDef.id}")
           if (isGoogleDirect) {
             sendGoogleSetup(ws)
             audioManager.googleDirect = true
@@ -82,15 +83,18 @@ class RealtimeStreaming(
               val json = JSONObject(text)
               // Start capture only after setup is acknowledged
               if (json.has("setupComplete")) {
+                android.util.Log.i("VoiceLive", "setupComplete received, starting capture")
                 audioManager.startCapture()
                 trySend(StreamEvent.Connected)
                 return
               }
+              if (text.length < 200) android.util.Log.d("VoiceLive", "msg: $text")
               parseGoogleMessage(text)?.let { trySend(it) }
             } else {
               parseGatewayMessage(text)?.let { trySend(it) }
             }
           } catch (e: Exception) {
+            android.util.Log.e("VoiceLive", "Parse error: ${e.message}")
             trySend(StreamEvent.Error("Parse error: ${e.message}"))
           }
         }
