@@ -551,6 +551,21 @@ class StreamingOrchestrator(
         }
       }
 
+      // Detect DSML hallucination loop: model outputs tool call tokens but no valid calls
+      if (tools.isNotEmpty()) {
+        val text = contentSoFar.toString()
+        if (text.contains("DSML") && text.contains("function_calls")) {
+          val cleanContent = stripToolMarkup(text)
+          if (cleanContent.isNotBlank()) {
+            send(ChatStreamChunk(contentReplace = cleanContent))
+          }
+          // Don't loop — the model is hallucinating tool calls
+          send(ChatStreamChunk(isDone = true, usage = lastUsage))
+          close()
+          return@callbackFlow
+        }
+      }
+
       // Done
       send(ChatStreamChunk(isDone = true, usage = lastUsage))
       close()
@@ -692,7 +707,25 @@ class StreamingOrchestrator(
     }
     if (results.isNotEmpty()) return results
 
-    // Pattern 7: <|tool_call>call:func_name{key:<|"|>value<|"|>}<tool_call|> (Gemma 4 native)
+    // Pattern 7: DSML format (DeepSeek) — <｜DSML｜function_calls followed by JSON array
+    if (text.contains("DSML") && text.contains("function_calls")) {
+      // Extract JSON array after the DSML token
+      val dsmlRegex = Regex("""(?:DSML[｜|]function_calls|DSML.{0,5}function_calls)\s*\[?\s*(\{.*?\})\s*\]?""", RegexOption.DOT_MATCHES_ALL)
+      for (m in dsmlRegex.findAll(text)) {
+        try {
+          val j = JSONObject(m.groupValues[1])
+          val name = j.optString("name", "")
+          if (name in toolNames) {
+            val argsObj = j.optJSONObject("arguments") ?: j.optJSONObject("parameters") ?: JSONObject()
+            val args = argsObj.keys().asSequence().associateWith { k -> argsObj.opt(k) }
+            results.add(name to args)
+          }
+        } catch (_: Exception) {}
+      }
+      if (results.isNotEmpty()) return results
+    }
+
+    // Pattern 8: <|tool_call>call:func_name{key:<|"|>value<|"|>}<tool_call|> (Gemma 4 native)
     if (text.contains("<|tool_call>")) {
       val gemmaRegex = Regex("""<\|tool_call>call:(\w+)\{(.*?)\}<tool_call\|>""", RegexOption.DOT_MATCHES_ALL)
       for (m in gemmaRegex.findAll(text)) {
@@ -761,6 +794,9 @@ class StreamingOrchestrator(
     cleaned = Regex("""\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"(?:arguments|parameters)"\s*:\s*\{.*?\}\s*\}""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
     // Strip [Tools: tool_name → args] bracket format
     cleaned = Regex("""\[Tools?:\s*[a-z_]+\s*→\s*.+?\]""").replace(cleaned, "")
+    // Strip DSML markers (DeepSeek)
+    cleaned = Regex("""<[｜|]DSML[｜|]function_calls.*""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
+    cleaned = Regex("""(?:DSML[｜|]function_calls).*""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
     // Collapse multiple blank lines
     cleaned = Regex("""\n{3,}""").replace(cleaned, "\n\n")
     return cleaned.trim()
