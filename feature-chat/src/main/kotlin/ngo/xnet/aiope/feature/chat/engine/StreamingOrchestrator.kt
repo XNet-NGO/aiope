@@ -332,9 +332,19 @@ class StreamingOrchestrator(
                 if (tcArr != null) {
                   for (i in 0 until tcArr.length()) {
                     val tc = tcArr.getJSONObject(i)
-                    val idx = tc.optInt("index", 0)
+                    val tcId = tc.optString("id", "")
+                    // Use explicit index if provided, otherwise find by id or use next slot
+                    val idx = if (tc.has("index")) {
+                      tc.getInt("index")
+                    } else if (tcId.isNotBlank()) {
+                      // Find existing slot with this id, or assign next available
+                      toolAcc.entries.firstOrNull { it.value["id"] == tcId }?.key
+                        ?: toolAcc.size
+                    } else {
+                      0
+                    }
                     val acc = toolAcc.getOrPut(idx) { mutableMapOf("id" to "", "name" to "", "args" to "") }
-                    tc.optString("id", "").let { if (it.isNotBlank()) acc["id"] = it }
+                    if (tcId.isNotBlank()) acc["id"] = tcId
                     tc.optJSONObject("function")?.let { fn ->
                       fn.optString("name", "").let { if (it.isNotBlank()) acc["name"] = it }
                       fn.optString("arguments", "").let { acc["args"] = (acc["args"] ?: "") + it }
