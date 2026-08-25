@@ -75,6 +75,7 @@ dependencies {
   // compose
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.activity.compose)
+  implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.compose.runtime)
   implementation(libs.androidx.compose.ui.tooling)
   implementation(libs.androidx.compose.ui.tooling.preview)
