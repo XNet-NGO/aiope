@@ -130,6 +130,7 @@ class ChatViewModel @Inject constructor(
           audioManager = realtimeAudioManager!!,
           systemPrompt = sysPrompt,
           voiceName = ngo.xnet.aiope.feature.chat.settings.getVoiceName(getApplication()),
+          tools = toolExecutor.buildToolDefs(),
         )
         this@ChatViewModel.realtimeStream = realtimeStream
 
