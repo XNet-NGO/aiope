@@ -123,6 +123,38 @@ class StreamingOrchestrator(
         }
       }
 
+      // Sanitize for Gemini: remove assistant tool_calls without thought_signature
+      // and their corresponding tool result messages (orphaned from pre-fix history)
+      val toRemove = mutableSetOf<Int>()
+      for (i in rawMessages.indices) {
+        val msg = rawMessages[i]
+        if (msg.optString("role") == "assistant" && msg.has("tool_calls")) {
+          val tcs = msg.optJSONArray("tool_calls")
+          if (tcs != null && tcs.length() > 0) {
+            val firstTc = tcs.optJSONObject(0)
+            val hasSignature = firstTc?.optJSONObject("extra_content")?.optJSONObject("google")?.has("thought_signature") == true
+            if (!hasSignature) {
+              // Collect tool_call IDs to also remove matching tool results
+              val ids = mutableSetOf<String>()
+              for (j in 0 until tcs.length()) {
+                tcs.optJSONObject(j)?.optString("id")?.let { ids.add(it) }
+              }
+              toRemove.add(i)
+              // Find matching tool result messages
+              for (k in (i + 1) until rawMessages.size) {
+                val r = rawMessages[k]
+                if (r.optString("role") == "tool" && r.optString("tool_call_id") in ids) {
+                  toRemove.add(k)
+                }
+              }
+            }
+          }
+        }
+      }
+      if (toRemove.isNotEmpty()) {
+        toRemove.sortedDescending().forEach { rawMessages.removeAt(it) }
+      }
+
       val body = buildRequestBody(rawMessages)
 
       var toolAcc = mutableMapOf<Int, MutableMap<String, String>>()
@@ -300,9 +332,19 @@ class StreamingOrchestrator(
                 if (tcArr != null) {
                   for (i in 0 until tcArr.length()) {
                     val tc = tcArr.getJSONObject(i)
-                    val idx = tc.optInt("index", 0)
+                    val tcId = tc.optString("id", "")
+                    // Use explicit index if provided, otherwise find by id or use next slot
+                    val idx = if (tc.has("index")) {
+                      tc.getInt("index")
+                    } else if (tcId.isNotBlank()) {
+                      // Find existing slot with this id, or assign next available
+                      toolAcc.entries.firstOrNull { it.value["id"] == tcId }?.key
+                        ?: toolAcc.size
+                    } else {
+                      0
+                    }
                     val acc = toolAcc.getOrPut(idx) { mutableMapOf("id" to "", "name" to "", "args" to "") }
-                    tc.optString("id", "").let { if (it.isNotBlank()) acc["id"] = it }
+                    if (tcId.isNotBlank()) acc["id"] = tcId
                     tc.optJSONObject("function")?.let { fn ->
                       fn.optString("name", "").let { if (it.isNotBlank()) acc["name"] = it }
                       fn.optString("arguments", "").let { acc["args"] = (acc["args"] ?: "") + it }
@@ -421,13 +463,15 @@ class StreamingOrchestrator(
 
         // Append assistant tool_calls + tool results for next round.
         // Any commentary streamed before the tool call is real assistant content: keep it in the
-        // request (sending content=null drops the model's own words from its context) and separate
-        // it from the next round's text, which otherwise glues on ("…the resultDone. …").
+        // request (dropping it loses the model's own words from its context) and separate it from
+        // the next round's text, which otherwise glues on ("…the resultDone. …").
         val preToolText = contentSoFar.toString().trim()
         rawMessages.add(
           JSONObject().apply {
             put("role", "assistant")
-            put("content", if (preToolText.isEmpty()) JSONObject.NULL else preToolText)
+            // Empty string rather than JSONObject.NULL: upstream hit providers that reject a null
+            // content alongside tool_calls, and "" carries the same "no commentary" meaning.
+            put("content", preToolText.ifEmpty { "" })
             put(
               "tool_calls",
               JSONArray().apply {
@@ -514,6 +558,21 @@ class StreamingOrchestrator(
           }
           contentSoFar.clear()
           continue
+        }
+      }
+
+      // Detect DSML hallucination loop: model outputs tool call tokens but no valid calls
+      if (tools.isNotEmpty()) {
+        val text = contentSoFar.toString()
+        if (text.contains("DSML") && text.contains("function_calls")) {
+          val cleanContent = stripToolMarkup(text)
+          if (cleanContent.isNotBlank()) {
+            send(ChatStreamChunk(contentReplace = cleanContent))
+          }
+          // Don't loop — the model is hallucinating tool calls
+          send(ChatStreamChunk(isDone = true, usage = lastUsage))
+          close()
+          return@callbackFlow
         }
       }
 
@@ -658,7 +717,25 @@ class StreamingOrchestrator(
     }
     if (results.isNotEmpty()) return results
 
-    // Pattern 7: <|tool_call>call:func_name{key:<|"|>value<|"|>}<tool_call|> (Gemma 4 native)
+    // Pattern 7: DSML format (DeepSeek) — <｜DSML｜function_calls followed by JSON array
+    if (text.contains("DSML") && text.contains("function_calls")) {
+      // Extract JSON array after the DSML token
+      val dsmlRegex = Regex("""(?:DSML[｜|]function_calls|DSML.{0,5}function_calls)\s*\[?\s*(\{.*?\})\s*\]?""", RegexOption.DOT_MATCHES_ALL)
+      for (m in dsmlRegex.findAll(text)) {
+        try {
+          val j = JSONObject(m.groupValues[1])
+          val name = j.optString("name", "")
+          if (name in toolNames) {
+            val argsObj = j.optJSONObject("arguments") ?: j.optJSONObject("parameters") ?: JSONObject()
+            val args = argsObj.keys().asSequence().associateWith { k -> argsObj.opt(k) }
+            results.add(name to args)
+          }
+        } catch (_: Exception) {}
+      }
+      if (results.isNotEmpty()) return results
+    }
+
+    // Pattern 8: <|tool_call>call:func_name{key:<|"|>value<|"|>}<tool_call|> (Gemma 4 native)
     if (text.contains("<|tool_call>")) {
       val gemmaRegex = Regex("""<\|tool_call>call:(\w+)\{(.*?)\}<tool_call\|>""", RegexOption.DOT_MATCHES_ALL)
       for (m in gemmaRegex.findAll(text)) {
@@ -696,34 +773,62 @@ class StreamingOrchestrator(
    */
   private fun inferArgKey(toolName: String): String = when (toolName) {
     "run_sh", "run_proot" -> "command"
-    "read_file", "write_file" -> "path"
+
+    "read_file", "write_file", "edit_file" -> "path"
+
+    // search_files takes a regex/glob in `pattern`, not a path — its schema rejects "path".
     "list_directory" -> "path"
-    "edit_file" -> "path"
+
     "search_files" -> "pattern"
-    "http_request" -> "url"
+
     "search_web", "search_images" -> "query"
-    "fetch_url" -> "url"
+
+    "fetch_url", "http_request" -> "url"
+
     "memory_store", "memory_recall", "memory_forget" -> "key"
+
     "rag_search" -> "query"
+
     "rag_index" -> "content"
+
     "todo_write" -> "todos"
+
     "schedule_task" -> "prompt"
+
     "cancel_schedule" -> "task_id"
+
     "send_sms" -> "message"
+
     "send_notification" -> "text"
+
     "clipboard_copy" -> "text"
+
     "open_intent" -> "uri"
+
     "ssh_exec" -> "command"
+
     "browser_navigate" -> "url"
+
     "browser_click", "browser_fill" -> "selector"
+
     "browser_eval" -> "script"
+
     "image_generate" -> "prompt"
+
     "analyze_image" -> "prompt"
+
     "search_location" -> "query"
+
     "query_data" -> "source"
+
+    // schedule_task / cancel_schedule / rag_search are already mapped above; only the entries
+    // unique to this branch need adding here.
     "create_event" -> "title"
+
     "delete_event" -> "event_id"
+
     "media_control" -> "action"
+
     else -> "input"
   }
 
@@ -746,6 +851,9 @@ class StreamingOrchestrator(
     cleaned = Regex("""\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"(?:arguments|parameters)"\s*:\s*\{.*?\}\s*\}""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
     // Strip [Tools: tool_name → args] bracket format
     cleaned = Regex("""\[Tools?:\s*[a-z_]+\s*→\s*.+?\]""").replace(cleaned, "")
+    // Strip DSML markers (DeepSeek)
+    cleaned = Regex("""<[｜|]DSML[｜|]function_calls.*""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
+    cleaned = Regex("""(?:DSML[｜|]function_calls).*""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
     // Collapse multiple blank lines
     cleaned = Regex("""\n{3,}""").replace(cleaned, "\n\n")
     return cleaned.trim()

@@ -82,5 +82,6 @@ dependencies {
   // BouncyCastle for self-signed cert generation (file server HTTPS)
   implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
 
+  // Testing — junit lives in the version catalog so the version isn't pinned per module
   testImplementation(libs.junit)
 }
