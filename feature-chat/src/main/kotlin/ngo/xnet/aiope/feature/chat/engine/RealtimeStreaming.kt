@@ -90,7 +90,7 @@ class RealtimeStreaming(
                 return
               }
               if (text.length < 200) android.util.Log.d("VoiceLive", "msg: $text")
-              parseGoogleMessage(text)?.let { trySend(it) }
+              parseGoogleMessages(text).forEach { trySend(it) }
             } else {
               parseGatewayMessage(text)?.let { trySend(it) }
             }
@@ -116,7 +116,7 @@ class RealtimeStreaming(
               if (!text.contains("inlineData")) {
                 android.util.Log.i("VoiceLive", "recv: ${text.take(400)}")
               }
-              parseGoogleMessage(text)?.let { trySend(it) }
+              parseGoogleMessages(text).forEach { trySend(it) }
             } catch (e: Exception) {
               android.util.Log.e("VoiceLive", "Binary parse error: ${e.message}")
             }
@@ -293,7 +293,8 @@ class RealtimeStreaming(
     return null
   }
 
-  private fun parseGoogleMessage(text: String): StreamEvent? {
+  private fun parseGoogleMessages(text: String): List<StreamEvent> {
+    val events = mutableListOf<StreamEvent>()
     val json = JSONObject(text)
 
     // Google Live API response format
@@ -303,6 +304,7 @@ class RealtimeStreaming(
       if (modelTurn != null) {
         val parts = modelTurn.optJSONArray("parts")
         if (parts != null) {
+          // Gemini 3.1: process ALL parts (audio + transcript can be in same event)
           for (i in 0 until parts.length()) {
             val part = parts.getJSONObject(i)
 
@@ -312,14 +314,14 @@ class RealtimeStreaming(
               if (mimeType.startsWith("audio/")) {
                 val b64 = inline.optString("data", "")
                 if (b64.isNotBlank()) {
-                  return StreamEvent.AudioChunk(Base64.getDecoder().decode(b64))
+                  events.add(StreamEvent.AudioChunk(Base64.getDecoder().decode(b64)))
                 }
               }
             }
 
-            // Text content
+            // Text content (transcript inline with audio for 3.1)
             part.optString("text", "").let {
-              if (it.isNotBlank()) return StreamEvent.TextDelta(it)
+              if (it.isNotBlank()) events.add(StreamEvent.TextDelta(it))
             }
 
             // Function call
@@ -328,7 +330,7 @@ class RealtimeStreaming(
               val id = fc.optString("id", "call_${System.nanoTime()}")
               val args = mutableMapOf<String, String>()
               fc.optJSONObject("args")?.let { a -> a.keys().forEach { k -> args[k] = a.optString(k, "") } }
-              return StreamEvent.ToolCallEvent(listOf(FunctionCall(name, id, args)))
+              events.add(StreamEvent.ToolCallEvent(listOf(FunctionCall(name, id, args))))
             }
           }
         }
@@ -336,29 +338,45 @@ class RealtimeStreaming(
 
       // Turn complete
       if (serverContent.optBoolean("turnComplete", false)) {
-        return StreamEvent.TurnComplete
+        events.add(StreamEvent.TurnComplete)
       }
 
       // Input transcription
       serverContent.optJSONObject("inputTranscription")?.optString("text")?.let {
-        if (it.isNotBlank()) return StreamEvent.InputTranscription(it)
+        if (it.isNotBlank()) events.add(StreamEvent.InputTranscription(it))
       }
 
       // Output transcription
       serverContent.optJSONObject("outputTranscription")?.optString("text")?.let {
-        if (it.isNotBlank()) return StreamEvent.OutputTranscription(it)
+        if (it.isNotBlank()) events.add(StreamEvent.OutputTranscription(it))
       }
     }
 
-    // Setup complete is handled in onMessage directly
-    // Check for transcription at top level (some versions send it here)
+    // Check for transcription at top level (some API versions)
     json.optJSONObject("outputTranscription")?.optString("text")?.let {
-      if (it.isNotBlank()) return StreamEvent.OutputTranscription(it)
+      if (it.isNotBlank()) events.add(StreamEvent.OutputTranscription(it))
     }
     json.optJSONObject("inputTranscription")?.optString("text")?.let {
-      if (it.isNotBlank()) return StreamEvent.InputTranscription(it)
+      if (it.isNotBlank()) events.add(StreamEvent.InputTranscription(it))
     }
-    return null
+
+    // Tool call (top-level message type per API spec)
+    json.optJSONObject("toolCall")?.let { tc ->
+      val fcs = tc.optJSONArray("functionCalls")
+      if (fcs != null) {
+        val calls = (0 until fcs.length()).map { i ->
+          val fc = fcs.getJSONObject(i)
+          val name = fc.getString("name")
+          val id = fc.optString("id", "call_${System.nanoTime()}")
+          val args = mutableMapOf<String, String>()
+          fc.optJSONObject("args")?.let { a -> a.keys().forEach { k -> args[k] = a.optString(k, "") } }
+          FunctionCall(name, id, args)
+        }
+        events.add(StreamEvent.ToolCallEvent(calls))
+      }
+    }
+
+    return events
   }
 
   // ══════════════════════════════════════════════════════════════
