@@ -39,6 +39,18 @@ class RealtimeStreaming(
   private val isGoogleDirect: Boolean
     get() = provider.effectiveApiBase().contains("generativelanguage.googleapis.com")
 
+  /** Extract the actual Google model name from potentially prefixed IDs */
+  private fun googleModelId(): String {
+    val id = modelDef.id
+    // Strip provider prefix like "google-ai-studio/"
+    val stripped = if (id.contains("/") && !id.startsWith("models/") && !id.startsWith("@")) {
+      id.substringAfter("/")
+    } else {
+      id
+    }
+    return if (stripped.startsWith("models/")) stripped else "models/$stripped"
+  }
+
   fun createStream(): Flow<StreamEvent> = callbackFlow {
     val (wsUrl, request) = if (isGoogleDirect) {
       buildGoogleConnection()
@@ -53,18 +65,27 @@ class RealtimeStreaming(
           if (isGoogleDirect) {
             sendGoogleSetup(ws)
             audioManager.googleDirect = true
+            // Don't start capture yet — wait for setupComplete
+            audioManager.setWebSocket(ws)
           } else {
             sendGatewaySetup(ws)
             audioManager.googleDirect = false
+            audioManager.setWebSocket(ws)
+            audioManager.startCapture()
+            trySend(StreamEvent.Connected)
           }
-          trySend(StreamEvent.Connected)
-          audioManager.setWebSocket(ws)
-          audioManager.startCapture()
         }
 
         override fun onMessage(ws: WebSocket, text: String) {
           try {
             if (isGoogleDirect) {
+              val json = JSONObject(text)
+              // Start capture only after setup is acknowledged
+              if (json.has("setupComplete")) {
+                audioManager.startCapture()
+                trySend(StreamEvent.Connected)
+                return
+              }
               parseGoogleMessage(text)?.let { trySend(it) }
             } else {
               parseGatewayMessage(text)?.let { trySend(it) }
@@ -137,7 +158,7 @@ class RealtimeStreaming(
       put(
         "setup",
         JSONObject().apply {
-          put("model", "models/${modelDef.id.removePrefix("models/")}")
+          put("model", googleModelId())
           put(
             "generationConfig",
             JSONObject().apply {
@@ -277,9 +298,7 @@ class RealtimeStreaming(
       }
     }
 
-    // Setup complete acknowledgment
-    if (json.has("setupComplete")) return StreamEvent.Connected
-
+    // Setup complete is handled in onMessage directly
     return null
   }
 
