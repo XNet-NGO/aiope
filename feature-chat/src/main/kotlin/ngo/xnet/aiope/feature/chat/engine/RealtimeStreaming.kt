@@ -32,6 +32,7 @@ class RealtimeStreaming(
   private val audioManager: RealtimeAudioManager,
   private val systemPrompt: String = "",
   private val voiceName: String = "Aoede",
+  private val tools: List<StreamingOrchestrator.ToolDef> = emptyList(),
   private val gatewayUrl: String = "wss://inf.xnet.ngo/ws/voice",
 ) {
   private var webSocket: WebSocket? = null
@@ -217,6 +218,14 @@ class RealtimeStreaming(
           }
           put("outputAudioTranscription", JSONObject())
           put("inputAudioTranscription", JSONObject())
+          put(
+            "tools",
+            JSONArray().put(
+              JSONObject().apply {
+                put("functionDeclarations", buildGoogleToolDeclarations())
+              },
+            ),
+          )
         },
       )
     }
@@ -225,9 +234,17 @@ class RealtimeStreaming(
   }
 
   private fun buildGoogleToolDeclarations(): JSONArray {
-    // Minimal — the actual tool defs are handled by the orchestrator
-    // For live voice, we just need to declare them so Google knows about them
-    return JSONArray()
+    val decls = JSONArray()
+    for (t in tools) {
+      decls.put(
+        JSONObject().apply {
+          put("name", t.name)
+          put("description", t.description)
+          put("parameters", t.parameters)
+        },
+      )
+    }
+    return decls
   }
 
   // ══════════════════════════════════════════════════════════════
