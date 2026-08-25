@@ -123,6 +123,38 @@ class StreamingOrchestrator(
         }
       }
 
+      // Sanitize for Gemini: remove assistant tool_calls without thought_signature
+      // and their corresponding tool result messages (orphaned from pre-fix history)
+      val toRemove = mutableSetOf<Int>()
+      for (i in rawMessages.indices) {
+        val msg = rawMessages[i]
+        if (msg.optString("role") == "assistant" && msg.has("tool_calls")) {
+          val tcs = msg.optJSONArray("tool_calls")
+          if (tcs != null && tcs.length() > 0) {
+            val firstTc = tcs.optJSONObject(0)
+            val hasSignature = firstTc?.optJSONObject("extra_content")?.optJSONObject("google")?.has("thought_signature") == true
+            if (!hasSignature) {
+              // Collect tool_call IDs to also remove matching tool results
+              val ids = mutableSetOf<String>()
+              for (j in 0 until tcs.length()) {
+                tcs.optJSONObject(j)?.optString("id")?.let { ids.add(it) }
+              }
+              toRemove.add(i)
+              // Find matching tool result messages
+              for (k in (i + 1) until rawMessages.size) {
+                val r = rawMessages[k]
+                if (r.optString("role") == "tool" && r.optString("tool_call_id") in ids) {
+                  toRemove.add(k)
+                }
+              }
+            }
+          }
+        }
+      }
+      if (toRemove.isNotEmpty()) {
+        toRemove.sortedDescending().forEach { rawMessages.removeAt(it) }
+      }
+
       val body = buildRequestBody(rawMessages)
 
       var toolAcc = mutableMapOf<Int, MutableMap<String, String>>()
