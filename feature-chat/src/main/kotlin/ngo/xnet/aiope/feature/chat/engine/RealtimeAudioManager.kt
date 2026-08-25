@@ -87,20 +87,24 @@ class RealtimeAudioManager(
     }
 
     audioRecord?.startRecording()
+    android.util.Log.i("VoiceLive", "startCapture: googleDirect=$googleDirect sampleRate=${config.sampleRate} ws=${webSocket != null}")
 
     captureJob = CoroutineScope(Dispatchers.IO).launch {
       val buf = ByteArray(bufSize)
+      var chunksSent = 0
       while (isActive) {
         val read = audioRecord?.read(buf, 0, buf.size) ?: break
         if (read > 0) {
           val encoded = android.util.Base64.encodeToString(buf.copyOf(read), android.util.Base64.NO_WRAP)
           if (googleDirect) {
-            webSocket?.send("""{"realtimeInput":{"audio":{"mimeType":"audio/pcm;rate=${config.sampleRate}","data":"$encoded"}}}""")
+            val sent = webSocket?.send("""{"realtimeInput":{"audio":{"mimeType":"audio/pcm;rate=${config.sampleRate}","data":"$encoded"}}}""")
+            if (chunksSent++ < 3 || chunksSent % 50 == 0) android.util.Log.d("VoiceLive", "audio chunk #$chunksSent sent=$sent bytes=$read")
           } else {
             webSocket?.send("""{"audio":{"pcm":"$encoded","sampleRate":${config.sampleRate}}}""")
           }
         }
       }
+      android.util.Log.w("VoiceLive", "capture loop ended, chunksSent=$chunksSent")
     }
   }
 
