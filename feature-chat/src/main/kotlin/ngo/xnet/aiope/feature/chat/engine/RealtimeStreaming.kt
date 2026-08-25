@@ -241,13 +241,11 @@ class RealtimeStreaming(
     val decls = JSONArray()
     for (t in tools) {
       try {
-        val paramStr = t.parameters.toString()
-        if (paramStr.contains("\"enum\"") || paramStr.length > 500) continue
         decls.put(
           JSONObject().apply {
             put("name", t.name)
-            put("description", t.description.take(200))
-            put("parameters", t.parameters)
+            put("description", t.description)
+            put("parameters", JSONObject(t.parameters.toString()))
           },
         )
       } catch (_: Exception) {}
