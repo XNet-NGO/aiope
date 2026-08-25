@@ -15,9 +15,10 @@ object KeyGen {
   /** Returns (privateKeyPem, publicKeyOpenSsh) */
   fun generate(): Pair<String, String> = try {
     generateEd25519()
-  } catch (e: java.security.NoSuchAlgorithmException) {
-    android.util.Log.w("KeyGen", "Ed25519 not available, using RSA: ${e.message}")
+  } catch (e: Exception) {
+    android.util.Log.w("KeyGen", "Ed25519 failed (${e.javaClass.simpleName}): ${e.message}")
     generateRsa()
+  }
   }
 
   private fun generateEd25519(): Pair<String, String> {
