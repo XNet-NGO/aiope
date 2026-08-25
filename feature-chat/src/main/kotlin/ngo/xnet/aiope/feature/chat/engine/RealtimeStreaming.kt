@@ -316,6 +316,13 @@ class RealtimeStreaming(
     }
 
     // Setup complete is handled in onMessage directly
+    // Check for transcription at top level (some versions send it here)
+    json.optJSONObject("outputTranscription")?.optString("text")?.let {
+      if (it.isNotBlank()) return StreamEvent.OutputTranscription(it)
+    }
+    json.optJSONObject("inputTranscription")?.optString("text")?.let {
+      if (it.isNotBlank()) return StreamEvent.InputTranscription(it)
+    }
     return null
   }
 
