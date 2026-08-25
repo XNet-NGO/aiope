@@ -50,7 +50,7 @@ class StreamingOrchestrator(
       "fetch_url", "memory_recall", "get_location", "browser_content", "browser_elements",
       "search_location", "read_calendar", "read_contacts", "read_sms", "clipboard_read",
       "device_info", "analyze_image", "image_generate", "ssh_exec",
-      "search_files", "http_request", "datetime_now", "todo_read", "list_schedules", "rag_search", "search_messages", "goal_list",
+      "search_files", "http_request", "datetime_now", "todo_read", "list_schedules", "rag_search", "search_messages", "skill_list", "skill_view", "goal_list",
     )
 
     private fun isTransientReset(msg: String): Boolean {

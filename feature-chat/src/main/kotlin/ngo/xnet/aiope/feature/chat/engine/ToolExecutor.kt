@@ -107,6 +107,10 @@ class ToolExecutor(
     td("todo_write", "Write your persistent task list. Call BEFORE starting any multi-step task to plan it, then UPDATE it as you work (status 'in_progress' when starting an item, 'completed' when done). Replaces the whole list unless merge=true, which updates matching ids and appends new ones while keeping the rest.", """{"type":"object","properties":{"todos":{"type":"array","description":"Todo items","items":{"type":"object","properties":{"id":{"type":"string","description":"Short stable id, e.g. '1' or 'setup'"},"content":{"type":"string"},"status":{"type":"string","enum":["pending","in_progress","completed","cancelled"]}},"required":["id","content"]}},"merge":{"type":"boolean","description":"true = upsert by id keeping others; omit/false = full replace"}},"required":["todos"]}"""),
     td("todo_read", "Read your current persistent todo list grouped by status, with counts.", """{"type":"object","properties":{}}"""),
     td("goal_set", "Create or update a persistent goal that survives across conversations. Args: title (required), detail, progress 0-100, status active|done|dropped; pass id (from goal_list) to update.", """{"type":"object","properties":{"id":{"type":"string","description":"Existing goal id to update"},"title":{"type":"string"},"detail":{"type":"string"},"progress":{"type":"integer","minimum":0,"maximum":100},"status":{"type":"string","enum":["active","done","dropped"]}},"required":["title"]}"""),
+    td("skill_list", "List the agent skills installed on this device (reusable .md playbooks). Enabled skills have their names+descriptions in your system prompt; call skill_view to read one before following it.", """{"type":"object","properties":{}}"""),
+    td("skill_view", "Read the full markdown body of an installed skill. Do this BEFORE performing a task the skill covers, then follow its steps.", """{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}"""),
+    td("skill_save", "Create or overwrite a skill: a reusable markdown playbook for a recurring task. Write it after solving something non-trivial so the procedure survives. Include trigger conditions, numbered steps with exact commands, and pitfalls.", """{"type":"object","properties":{"name":{"type":"string","description":"kebab-case identifier"},"description":{"type":"string","description":"One line: when to use this skill"},"content":{"type":"string","description":"Markdown body: steps, commands, pitfalls"}},"required":["name","description","content"]}"""),
+    td("skill_delete", "Delete an installed skill by name.", """{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}"""),
     td("search_messages", "Full-text search across ALL past conversations. Returns matching snippets with conversation titles and timestamps. Use before answering 'what did we say about X'.", """{"type":"object","properties":{"query":{"type":"string","description":"Text to search for"},"limit":{"type":"integer","description":"Max results (default 10)"}},"required":["query"]}"""),
     td("goal_list", "List persistent goals (active first). Use at session start and when the user mentions long-term objectives.", """{"type":"object","properties":{}}"""),
     td("curator_run", "Curate persistent memory: merge duplicate lessons, drop stale entries older than 30 days that were never recalled, keep the rest. Returns a summary of changes.", """{"type":"object","properties":{}}"""),
@@ -658,6 +662,40 @@ class ToolExecutor(
         goals.sortedWith(compareBy({ it.status != "active" }, { -it.updatedAt })).joinToString("\n") { g ->
           "[${g.id.take(8)}] ${g.title} — ${g.status} @${g.progress}%" + g.detail.take(120).let { if (it.isNotBlank()) "\n    $it" else "" }
         }
+      }
+
+      "skill_list" -> {
+        val skills = chatDao.getSkills()
+        if (skills.isEmpty()) {
+          "No skills installed. Use skill_save to write one after solving a non-trivial task."
+        } else {
+          skills.joinToString("\n") { "${if (it.enabled) "[on] " else "[off]"} ${it.name} — ${it.description}" }
+        }
+      }
+
+      "skill_view" -> {
+        val name = args["name"]?.toString()?.trim() ?: return@execute "Error: name required"
+        val skill = chatDao.getSkill(name) ?: return@execute "Skill '$name' not found. Use skill_list."
+        "# ${skill.name}\n${skill.description}\n\n${skill.content}"
+      }
+
+      "skill_save" -> {
+        val name = args["name"]?.toString()?.trim()?.lowercase()?.replace(Regex("[^a-z0-9-]+"), "-")?.trim('-')
+        if (name.isNullOrEmpty()) return@execute "Error: name required"
+        val desc = args["description"]?.toString()?.trim() ?: return@execute "Error: description required"
+        val body = args["content"]?.toString() ?: return@execute "Error: content required"
+        val existed = chatDao.getSkill(name) != null
+        chatDao.upsertSkill(
+          ngo.xnet.aiope.feature.chat.db.SkillEntity(name = name, description = desc.take(200), content = body.take(20000), updatedAt = System.currentTimeMillis()),
+        )
+        if (existed) "Skill '$name' updated." else "Skill '$name' saved. It is now listed in your system prompt."
+      }
+
+      "skill_delete" -> {
+        val name = args["name"]?.toString()?.trim() ?: return@execute "Error: name required"
+        if (chatDao.getSkill(name) == null) return@execute "Skill '$name' not found."
+        chatDao.deleteSkill(name)
+        "Skill '$name' deleted."
       }
 
       "search_messages" -> {

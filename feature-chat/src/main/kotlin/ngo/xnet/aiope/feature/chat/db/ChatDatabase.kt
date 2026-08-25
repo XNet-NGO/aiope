@@ -28,6 +28,16 @@ data class MemoryEntity(
   val updatedAt: Long = System.currentTimeMillis(),
 )
 
+@Entity(tableName = "skills")
+data class SkillEntity(
+  @PrimaryKey val name: String,
+  val description: String = "",
+  val content: String = "",
+  val enabled: Boolean = true,
+  val source: String = "local",
+  val updatedAt: Long = System.currentTimeMillis(),
+)
+
 @Entity(tableName = "goals")
 data class GoalEntity(
   @PrimaryKey val id: String = java.util.UUID.randomUUID().toString(),
@@ -339,6 +349,24 @@ interface ChatDao {
   @Query("SELECT * FROM goals WHERE status = 'active' ORDER BY updatedAt DESC")
   suspend fun getActiveGoals(): List<GoalEntity>
 
+  @Query("SELECT * FROM skills ORDER BY name")
+  suspend fun getSkills(): List<SkillEntity>
+
+  @Query("SELECT * FROM skills WHERE enabled = 1 ORDER BY name")
+  suspend fun getEnabledSkills(): List<SkillEntity>
+
+  @Query("SELECT * FROM skills WHERE name = :name")
+  suspend fun getSkill(name: String): SkillEntity?
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun upsertSkill(skill: SkillEntity)
+
+  @Query("DELETE FROM skills WHERE name = :name")
+  suspend fun deleteSkill(name: String)
+
+  @Query("UPDATE skills SET enabled = :enabled WHERE name = :name")
+  suspend fun setSkillEnabled(name: String, enabled: Boolean)
+
   @Query("SELECT * FROM goals ORDER BY updatedAt DESC")
   suspend fun getAllGoals(): List<GoalEntity>
 
@@ -355,9 +383,9 @@ interface ChatDao {
     ProviderEntity::class, ToolToggleEntity::class, McpServerEntity::class,
     ModelCacheEntity::class, SettingsKvEntity::class,
     AgentEntity::class, AgentTaskEntity::class, ScheduledTaskEntity::class, TaskRunEntity::class,
-    GoalEntity::class,
+    GoalEntity::class, SkillEntity::class,
   ],
-  version = 10,
+  version = 11,
 )
 abstract class ChatDatabase : RoomDatabase() {
   abstract fun chatDao(): ChatDao

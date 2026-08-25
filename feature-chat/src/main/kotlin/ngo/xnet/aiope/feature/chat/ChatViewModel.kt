@@ -1359,9 +1359,23 @@ $remoteCtx"""
       ""
     }
 
+    val skillsBlock = try {
+      val skills = chatDao.getEnabledSkills()
+      if (skills.isEmpty()) {
+        ""
+      } else {
+        "## Skills\nReusable playbooks stored on this device. If one matches the task, call skill_view(name) and " +
+          "follow it instead of improvising:\n" +
+          skills.joinToString("\n") { sk -> "- ${sk.name}: ${sk.description}" }
+      }
+    } catch (_: Exception) {
+      ""
+    }
+
     val parts = listOfNotNull(
       modePrefix.takeIf { it.isNotBlank() },
       prompt.takeIf { it.isNotBlank() },
+      skillsBlock.takeIf { it.isNotBlank() },
       goalsBlock.takeIf { it.isNotBlank() },
       memoryBlock.takeIf { it.isNotBlank() },
       dateTime,
