@@ -95,7 +95,7 @@ class RealtimeAudioManager(
         if (read > 0) {
           val encoded = android.util.Base64.encodeToString(buf.copyOf(read), android.util.Base64.NO_WRAP)
           if (googleDirect) {
-            webSocket?.send("""{"realtimeInput":{"mediaChunks":[{"mimeType":"audio/pcm;rate=${config.sampleRate}","data":"$encoded"}]}}""")
+            webSocket?.send("""{"realtimeInput":{"audio":{"mimeType":"audio/pcm;rate=${config.sampleRate}","data":"$encoded"}}}""")
           } else {
             webSocket?.send("""{"audio":{"pcm":"$encoded","sampleRate":${config.sampleRate}}}""")
           }
