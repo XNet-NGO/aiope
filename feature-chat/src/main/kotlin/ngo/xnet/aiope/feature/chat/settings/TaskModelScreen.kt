@@ -256,6 +256,12 @@ private fun TaskCard(
 internal suspend fun fetchModels(baseUrl: String, apiKey: String): List<ModelDef> = withContext(Dispatchers.IO) {
   try {
     var base = baseUrl.trimEnd('/')
+
+    // Cloudflare Workers AI: use their models/search endpoint
+    if (base.contains("api.cloudflare.com") && base.contains("/ai/")) {
+      return@withContext fetchCloudflareModels(base, apiKey)
+    }
+
     val url = when {
       base.endsWith("/v1") || base.endsWith("/openai") -> "$base/models"
       else -> "$base/v1/models"
@@ -318,6 +324,35 @@ internal suspend fun fetchModels(baseUrl: String, apiKey: String): List<ModelDef
     }.sortedBy { it.id }
   } catch (e: Exception) {
     android.util.Log.e("FetchModels", "Failed: ${e.message}")
+    emptyList()
+  }
+}
+
+private suspend fun fetchCloudflareModels(baseUrl: String, apiKey: String): List<ModelDef> = withContext(Dispatchers.IO) {
+  try {
+    // Extract account ID from URL: .../accounts/{id}/ai/v1 → .../accounts/{id}/ai/models/search
+    val modelsUrl = baseUrl.replace(Regex("/ai/v1$"), "/ai/models/search")
+      .replace(Regex("/ai$"), "/ai/models/search")
+    val conn = java.net.URL(modelsUrl).openConnection() as java.net.HttpURLConnection
+    if (apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
+    conn.connectTimeout = 15_000
+    conn.readTimeout = 15_000
+    if (conn.responseCode !in 200..299) return@withContext emptyList()
+    val body = conn.inputStream.bufferedReader().readText()
+    val result = org.json.JSONObject(body).optJSONArray("result") ?: return@withContext emptyList()
+    val textModels = mutableListOf<ModelDef>()
+    for (i in 0 until result.length()) {
+      val m = result.getJSONObject(i)
+      val name = m.optString("name", "")
+      val task = m.optJSONObject("task")?.optString("name", "") ?: ""
+      // Only include text generation models
+      if (task == "Text Generation" && name.isNotBlank()) {
+        textModels.add(ModelDef(name, name.removePrefix("@cf/").replace("/", " "), contextWindow = 131_072))
+      }
+    }
+    textModels.sortedBy { it.id }
+  } catch (e: Exception) {
+    android.util.Log.e("FetchModels", "Cloudflare failed: ${e.message}")
     emptyList()
   }
 }
