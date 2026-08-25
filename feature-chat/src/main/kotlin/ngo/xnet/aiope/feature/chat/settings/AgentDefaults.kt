@@ -182,4 +182,44 @@ Example:
       ),
     ),
   ),
+
+  // ── 6. Self-Improvement (Hermes-style skill/memory loop) ──
+  AgentSection(
+    key = "self_improvement",
+    title = "Self-Improvement",
+    description = "How the agent learns from its own runs and keeps lessons across sessions.",
+    subsections = listOf(
+      AgentSubsection(
+        key = "learning_rules",
+        label = "Learning Rules",
+        hint = "When to write a lesson into long-term memory",
+        default = (
+          "After every notably successful or failed multi-step task, write ONE concise lesson with memory_store under a key like 'lesson:<topic>'. " +
+            "A lesson states what you tried, what happened, and what to do differently next time — never raw logs. " +
+            "Before starting a similar task, check memory_recall for related lessons and apply them. " +
+            "If a stored lesson turns out wrong, overwrite it instead of adding a duplicate. " +
+            "Keep total lessons focused: merge overlapping ones when you notice them."
+          ),
+      ),
+      AgentSubsection(
+        key = "skill_review",
+        label = "Periodic Self-Review",
+        hint = "What recurring review tasks should check",
+        default = (
+          "When asked to review yourself (or in scheduled review tasks): read your recent todo lists, memories, and task-run outcomes. " +
+            "Identify repeated mistakes, stale memories, or missing context, then fix them: update your agent sections here via suggestions to the user, " +
+            "prune bad memories, and store improved strategies as new lessons."
+          ),
+      ),
+      AgentSubsection(
+        key = "improvement_scope",
+        label = "Boundaries",
+        hint = "What self-improvement must not do",
+        default = (
+          "Never change security-relevant behavior (permission prompts, destructive-tool gating) through self-written lessons. " +
+            "Never store secrets or personal data in lessons. Lessons are strategy, not state dumps."
+          ),
+      ),
+    ),
+  ),
 )

@@ -1328,9 +1328,26 @@ $remoteCtx"""
     val remoteCtx = remoteToolBridge.buildSystemContext()
     val dateTime = "## Current Date & Time\n${java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z"))}"
     val ragInstruction = "## Knowledge Base\nYou have a local knowledge base via `rag_search`. ALWAYS search it FIRST before using search_web or fetch_url when the user asks a question that might be answered by indexed documents. Only use web search if RAG returns no relevant results."
+
+    // Hermes-style persistent memory: lessons and facts are injected into every request, so the
+    // agent benefits from what it learned in previous sessions without calling memory_recall.
+    val memoryBlock = try {
+      val memories = chatDao.getAllMemories()
+      if (memories.isEmpty()) {
+        ""
+      } else {
+        val lines = memories.take(40).joinToString("\n") { "- ${it.key}: ${it.content.take(200)}" }
+        "## Persistent Memory (lessons & facts from previous sessions)\n$lines\n" +
+          "Apply these automatically; refresh them with memory_store when they prove wrong or stale."
+      }
+    } catch (_: Exception) {
+      ""
+    }
+
     val parts = listOfNotNull(
       modePrefix.takeIf { it.isNotBlank() },
       prompt.takeIf { it.isNotBlank() },
+      memoryBlock.takeIf { it.isNotBlank() },
       dateTime,
       ragInstruction,
       remoteCtx.takeIf { it.isNotBlank() },
