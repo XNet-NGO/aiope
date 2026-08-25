@@ -124,6 +124,7 @@ class FileServerService : Service() {
     try {
       socket.keepAlive = true
       socket.tcpNoDelay = true
+      socket.sendBufferSize = 262144
       socket.use { s ->
         val input = s.getInputStream()
 
@@ -162,7 +163,7 @@ class FileServerService : Service() {
           if (colonIdx > 0) headers[lines[i].substring(0, colonIdx).trim().lowercase()] = lines[i].substring(colonIdx + 1).trim()
         }
 
-        val out = BufferedOutputStream(s.getOutputStream())
+        val out = BufferedOutputStream(s.getOutputStream(), 262144)
 
         // PIN authentication check
         if (pin != null) {
@@ -311,7 +312,7 @@ class FileServerService : Service() {
     val bytes = file.length()
     out.write("HTTP/1.1 200 OK\r\nContent-Type: $mime\r\nContent-Length: $bytes\r\nContent-Disposition: inline; filename=\"${file.name}\"\r\nConnection: close\r\n\r\n".toByteArray())
     out.flush()
-    file.inputStream().use { it.copyTo(out, 65536) }
+    file.inputStream().use { it.copyTo(out, 262144) }
   }
 
   private fun sendPinPrompt(out: BufferedOutputStream) {
