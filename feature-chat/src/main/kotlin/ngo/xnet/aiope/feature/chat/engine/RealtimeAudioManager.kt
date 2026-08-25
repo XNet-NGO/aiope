@@ -29,6 +29,7 @@ class RealtimeAudioManager(
   private var aec: AcousticEchoCanceler? = null
   private val playbackQueue = java.util.concurrent.LinkedBlockingQueue<ByteArray>()
   private var sharedSessionId: Int = 0
+  var googleDirect: Boolean = false
 
   fun setWebSocket(ws: WebSocket) {
     webSocket = ws
@@ -93,7 +94,11 @@ class RealtimeAudioManager(
         val read = audioRecord?.read(buf, 0, buf.size) ?: break
         if (read > 0) {
           val encoded = android.util.Base64.encodeToString(buf.copyOf(read), android.util.Base64.NO_WRAP)
-          webSocket?.send("""{"audio":{"pcm":"$encoded","sampleRate":${config.sampleRate}}}""")
+          if (googleDirect) {
+            webSocket?.send("""{"realtimeInput":{"mediaChunks":[{"mimeType":"audio/pcm;rate=${config.sampleRate}","data":"$encoded"}]}}""")
+          } else {
+            webSocket?.send("""{"audio":{"pcm":"$encoded","sampleRate":${config.sampleRate}}}""")
+          }
         }
       }
     }
