@@ -144,6 +144,14 @@ fun ThemeProvider(content: @Composable () -> Unit) {
   )
 
   CompositionLocalProvider(LocalThemeState provides state) {
-    MaterialTheme(colorScheme = finalScheme, content = content)
+    // Re-entering MaterialTheme with only a colorScheme resets typography and shapes to the
+    // Material defaults, which silently discarded the app-level Inter type scale for every
+    // screen under this provider. Carry the outer values through.
+    MaterialTheme(
+      colorScheme = finalScheme,
+      typography = MaterialTheme.typography,
+      shapes = MaterialTheme.shapes,
+      content = content,
+    )
   }
 }
