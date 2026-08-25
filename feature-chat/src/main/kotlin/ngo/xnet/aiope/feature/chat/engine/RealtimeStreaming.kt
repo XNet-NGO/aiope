@@ -241,11 +241,18 @@ class RealtimeStreaming(
     val decls = JSONArray()
     for (t in tools) {
       try {
+        val params = JSONObject(t.parameters.toString())
+        // Google Live API requires properties to be non-empty object
+        // Remove empty properties/required to avoid rejection
+        if (params.optJSONObject("properties")?.length() == 0) {
+          params.remove("properties")
+          params.remove("required")
+        }
         decls.put(
           JSONObject().apply {
             put("name", t.name)
             put("description", t.description)
-            put("parameters", JSONObject(t.parameters.toString()))
+            put("parameters", params)
           },
         )
       } catch (_: Exception) {}
