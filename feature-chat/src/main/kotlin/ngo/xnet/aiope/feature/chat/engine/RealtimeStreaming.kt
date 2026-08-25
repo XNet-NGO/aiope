@@ -111,6 +111,10 @@ class RealtimeStreaming(
                 trySend(StreamEvent.Connected)
                 return
               }
+              // Log non-audio messages for debugging transcription
+              if (!text.contains("inlineData")) {
+                android.util.Log.i("VoiceLive", "recv: ${text.take(400)}")
+              }
               parseGoogleMessage(text)?.let { trySend(it) }
             } catch (e: Exception) {
               android.util.Log.e("VoiceLive", "Binary parse error: ${e.message}")
