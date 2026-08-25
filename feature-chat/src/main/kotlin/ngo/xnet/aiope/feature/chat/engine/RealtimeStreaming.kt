@@ -218,14 +218,18 @@ class RealtimeStreaming(
           }
           put("outputAudioTranscription", JSONObject())
           put("inputAudioTranscription", JSONObject())
-          put(
-            "tools",
-            JSONArray().put(
-              JSONObject().apply {
-                put("functionDeclarations", buildGoogleToolDeclarations())
-              },
-            ),
-          )
+          val toolDecls = buildGoogleToolDeclarations()
+          android.util.Log.i("VoiceLive", "tool declarations: ${toolDecls.length()}")
+          if (toolDecls.length() > 0) {
+            put(
+              "tools",
+              JSONArray().put(
+                JSONObject().apply {
+                  put("functionDeclarations", toolDecls)
+                },
+              ),
+            )
+          }
         },
       )
     }
@@ -236,13 +240,17 @@ class RealtimeStreaming(
   private fun buildGoogleToolDeclarations(): JSONArray {
     val decls = JSONArray()
     for (t in tools) {
-      decls.put(
-        JSONObject().apply {
-          put("name", t.name)
-          put("description", t.description)
-          put("parameters", t.parameters)
-        },
-      )
+      try {
+        val paramStr = t.parameters.toString()
+        if (paramStr.contains("\"enum\"") || paramStr.length > 500) continue
+        decls.put(
+          JSONObject().apply {
+            put("name", t.name)
+            put("description", t.description.take(200))
+            put("parameters", t.parameters)
+          },
+        )
+      } catch (_: Exception) {}
     }
     return decls
   }
