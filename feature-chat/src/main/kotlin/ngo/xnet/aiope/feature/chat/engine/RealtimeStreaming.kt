@@ -217,6 +217,8 @@ class RealtimeStreaming(
             )
           }
           // No outputAudioTranscription/inputAudioTranscription — gateway works without them
+          put("outputAudioTranscription", JSONObject())
+          put("inputAudioTranscription", JSONObject())
           val toolDecls = buildGoogleToolDeclarations()
           android.util.Log.i("VoiceLive", "tool declarations: ${toolDecls.length()}")
           if (toolDecls.length() > 0) {
