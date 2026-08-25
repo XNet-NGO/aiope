@@ -342,13 +342,11 @@ class RealtimeStreaming(
           "realtimeInput",
           JSONObject().apply {
             put(
-              "mediaChunks",
-              JSONArray().put(
-                JSONObject().apply {
-                  put("mimeType", "audio/pcm;rate=16000")
-                  put("data", pcmBase64)
-                },
-              ),
+              "audio",
+              JSONObject().apply {
+                put("mimeType", "audio/pcm;rate=16000")
+                put("data", pcmBase64)
+              },
             )
           },
         )
