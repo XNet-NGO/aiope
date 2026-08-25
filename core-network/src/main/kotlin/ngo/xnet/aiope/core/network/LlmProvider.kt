@@ -221,6 +221,22 @@ object ProviderTemplates {
       ),
     ),
     BuiltinProvider("custom", "Custom", "", apiKeyHint = "API key", requiresApiKey = false),
+    BuiltinProvider(
+      "cloudflare_ai",
+      "Cloudflare Workers AI",
+      "",
+      "https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/v1",
+      apiKeyHint = "Cloudflare API token",
+      defaultModels = listOf(
+        ModelDef("@cf/meta/llama-4-scout-17b-16e-instruct", "Llama 4 Scout 17B", 131_072),
+        ModelDef("@cf/meta/llama-3.3-70b-instruct-fp8-fast", "Llama 3.3 70B", 131_072),
+        ModelDef("@cf/meta/llama-3.1-8b-instruct", "Llama 3.1 8B", 131_072),
+        ModelDef("@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", "DeepSeek R1 32B", 131_072),
+        ModelDef("@cf/qwen/qwen2.5-coder-32b-instruct", "Qwen 2.5 Coder 32B", 131_072),
+        ModelDef("@cf/google/gemma-7b-it-lora", "Gemma 7B", 8192),
+        ModelDef("@cf/mistralai/mistral-7b-instruct-v0.2-lora", "Mistral 7B", 32_768),
+      ),
+    ),
   )
   val byId = ALL.associateBy { it.id }
 }
