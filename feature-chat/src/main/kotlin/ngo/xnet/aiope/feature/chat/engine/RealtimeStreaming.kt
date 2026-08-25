@@ -240,11 +240,9 @@ class RealtimeStreaming(
 
   private fun buildGoogleToolDeclarations(): JSONArray {
     val decls = JSONArray()
-    for (t in tools) {
+    for (t in tools.take(50)) {
       try {
         val params = JSONObject(t.parameters.toString())
-        // Google Live API requires properties to be non-empty object
-        // Remove empty properties/required to avoid rejection
         if (params.optJSONObject("properties")?.length() == 0) {
           params.remove("properties")
           params.remove("required")
