@@ -32,6 +32,7 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import ngo.xnet.aiope.feature.chat.ui.CuORadius
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -422,7 +423,7 @@ private fun ChatContent(
       }
       ngo.xnet.aiope.feature.chat.ui.GlassSurface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(CuORadius.xl),
       ) {
         ChatInput(onSend = onSend, onStop = onStop, isStreaming = isStreaming, editText = editText, onEditTextChange = onEditTextChange, autoRun = autoRun, onAutoRunChange = onAutoRunChange, supportsRealtimeVoice = supportsRealtimeVoice, isInRealtimeVoice = isInRealtimeVoice, isVoiceListening = isVoiceListening, isVoiceSpeaking = isVoiceSpeaking, onToggleVoice = onToggleVoice)
       }
@@ -453,8 +454,17 @@ private fun MessageList(
     LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 60.dp)) {
       items(messages.size, key = { messages[it].id }) { idx ->
         val msg = messages[idx]
+        // Context indicator: number the user turns 1..n so each answer's provenance is visible.
+        val contextIndex = if (msg.role == Role.USER) {
+          var n = 0
+          for (j in 0..idx) if (messages[j].role == Role.USER) n++
+          n
+        } else {
+          null
+        }
         MessageBubble(
           message = msg,
+          contextIndex = contextIndex,
           isLastStreaming = isStreaming && idx == messages.lastIndex && msg.role == Role.ASSISTANT,
           onEdit = if (msg.role == Role.USER) {
             { onEdit?.invoke(idx) }

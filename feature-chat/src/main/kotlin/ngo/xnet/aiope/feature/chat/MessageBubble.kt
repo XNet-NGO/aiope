@@ -9,6 +9,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.fluid.compose.MarkdownTheme
 import com.fluid.compose.UniversalMarkdown
+import ngo.xnet.aiope.feature.chat.ui.CuORadius
 
 @Composable
 fun MessageBubble(
@@ -63,6 +65,8 @@ fun MessageBubble(
   onUiCallback: ((String, Map<String, String>) -> Unit)? = null,
   onRunCode: ((code: String, language: String) -> Unit)? = null,
   subagentTasks: List<ngo.xnet.aiope.feature.chat.engine.AgentExecutor.RunningTask> = emptyList(),
+  /** 1-based position of the triggering user turn; null hides the context indicator. */
+  contextIndex: Int? = null,
 ) {
   val isUser = message.role == Role.USER
   val ctx = LocalContext.current
@@ -72,7 +76,7 @@ fun MessageBubble(
 
   CompositionLocalProvider(LocalTextSelectionColors provides selection) {
     if (isUser) {
-      UserBubble(message, ctx, showMenu, { showMenu = it }, onEdit, onRetry, onCompact, onFork)
+      UserBubble(message, ctx, showMenu, { showMenu = it }, onEdit, onRetry, onCompact, onFork, contextIndex)
     } else if (message.role == Role.AGENT_REPORT) {
       AgentReportBubble(message)
     } else {
@@ -93,15 +97,35 @@ private fun UserBubble(
   onRetry: (() -> Unit)?,
   onCompact: (() -> Unit)?,
   onFork: (() -> Unit)?,
+  contextIndex: Int? = null,
 ) {
   val cs = MaterialTheme.colorScheme
   val theme = ngo.xnet.aiope.feature.chat.theme.LocalThemeState.current
   val bubbleColor = if (theme.useCustomBubbles && theme.userBubbleColor != null) theme.userBubbleColor.copy(alpha = theme.userBubbleOpacity) else cs.primaryContainer
   val textColor = if (theme.useCustomBubbles && theme.userTextColor != null) theme.userTextColor else cs.onPrimaryContainer
   val screenW = LocalConfiguration.current.screenWidthDp.dp
-  Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), horizontalArrangement = Arrangement.End) {
+  // Context indicator: a small numbered circle left of the bubble, marking this prompt's turn.
+  // Concentric radii per CuORadius: bubble md(16) with 12dp padding -> inner chips sm(12)-1.
+  Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.Bottom) {
+    contextIndex?.let { idx ->
+      Box(
+        Modifier
+          .padding(end = 6.dp)
+          .size(22.dp)
+          .background(cs.primary.copy(alpha = 0.14f), RoundedCornerShape(CuORadius.xs))
+          .border(0.7.dp, cs.primary.copy(alpha = 0.35f), RoundedCornerShape(CuORadius.xs)),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          "$idx",
+          fontSize = 11.sp,
+          fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+          color = cs.primary,
+        )
+      }
+    }
     Surface(
-      shape = RoundedCornerShape(16.dp),
+      shape = RoundedCornerShape(CuORadius.md),
       color = bubbleColor,
       modifier = Modifier.widthIn(max = screenW * 0.75f),
     ) {

@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun GlassSurface(
   modifier: Modifier = Modifier,
-  shape: Shape = RoundedCornerShape(28.dp),
+  shape: Shape = RoundedCornerShape(CuORadius.xl),
   tintAlpha: Float = 0.72f,
   borderAlpha: Float = 0.35f,
   content: @Composable BoxScope.() -> Unit,

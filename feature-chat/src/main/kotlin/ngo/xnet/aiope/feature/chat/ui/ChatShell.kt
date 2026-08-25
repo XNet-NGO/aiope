@@ -97,7 +97,7 @@ fun ChatTopBar(
 
   GlassSurface(
     modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-    shape = RoundedCornerShape(22.dp),
+    shape = RoundedCornerShape(CuORadius.xl),
   ) {
     Row(
       Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
@@ -111,7 +111,7 @@ fun ChatTopBar(
       Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
         Row(
           Modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(CuORadius.sm))
             .clickable { showModels = true }
             .padding(horizontal = 10.dp, vertical = 6.dp),
           verticalAlignment = Alignment.CenterVertically,
@@ -312,7 +312,7 @@ fun ModeSelector(
   modifier: Modifier = Modifier,
 ) {
   val cs = MaterialTheme.colorScheme
-  GlassSurface(modifier = modifier, shape = RoundedCornerShape(14.dp), tintAlpha = 0.55f) {
+  GlassSurface(modifier = modifier, shape = RoundedCornerShape(CuORadius.sm + 2.dp), tintAlpha = 0.55f) {
     Row(Modifier.padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
       AgentMode.entries.forEach { mode ->
         val selected = mode == agentMode
@@ -322,7 +322,7 @@ fun ModeSelector(
           fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
           color = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant,
           modifier = Modifier
-            .clip(RoundedCornerShape(11.dp))
+            .clip(RoundedCornerShape(CuORadius.sm - 1.dp))
             .background(if (selected) cs.primaryContainer else androidx.compose.ui.graphics.Color.Transparent)
             .clickable { onModeChange(mode) }
             .padding(horizontal = 12.dp, vertical = 5.dp),
@@ -360,7 +360,7 @@ fun ChatEmptyState(
     suggestions.forEach { (title, prompt) ->
       GlassSurface(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(CuORadius.md),
         tintAlpha = 0.55f,
       ) {
         Text(
@@ -386,7 +386,7 @@ fun ScrollRail(
   modifier: Modifier = Modifier,
 ) {
   val cs = MaterialTheme.colorScheme
-  GlassSurface(modifier = modifier, shape = RoundedCornerShape(18.dp), tintAlpha = 0.6f) {
+  GlassSurface(modifier = modifier, shape = RoundedCornerShape(CuORadius.lg), tintAlpha = 0.6f) {
     Column(Modifier.padding(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
       IconButton(onClick = onTop, modifier = Modifier.size(30.dp)) {
         Text("\u25B2", fontSize = 11.sp, color = cs.onSurfaceVariant)
