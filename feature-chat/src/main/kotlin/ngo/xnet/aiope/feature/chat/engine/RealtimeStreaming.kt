@@ -100,7 +100,24 @@ class RealtimeStreaming(
         }
 
         override fun onMessage(ws: WebSocket, bytes: ByteString) {
-          trySend(StreamEvent.AudioChunk(bytes.toByteArray()))
+          // Google Live API sends all responses as binary frames
+          if (isGoogleDirect) {
+            val text = bytes.utf8()
+            try {
+              val json = JSONObject(text)
+              if (json.has("setupComplete")) {
+                android.util.Log.i("VoiceLive", "setupComplete received (binary), starting capture")
+                audioManager.startCapture()
+                trySend(StreamEvent.Connected)
+                return
+              }
+              parseGoogleMessage(text)?.let { trySend(it) }
+            } catch (e: Exception) {
+              android.util.Log.e("VoiceLive", "Binary parse error: ${e.message}")
+            }
+          } else {
+            trySend(StreamEvent.AudioChunk(bytes.toByteArray()))
+          }
         }
 
         override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
@@ -163,6 +180,7 @@ class RealtimeStreaming(
         "setup",
         JSONObject().apply {
           put("model", googleModelId())
+          android.util.Log.i("VoiceLive", "setup model=${googleModelId()}")
           put(
             "generationConfig",
             JSONObject().apply {
@@ -193,17 +211,12 @@ class RealtimeStreaming(
               },
             )
           }
-          put(
-            "tools",
-            JSONArray().put(
-              JSONObject().apply {
-                put("functionDeclarations", buildGoogleToolDeclarations())
-              },
-            ),
-          )
+          put("outputAudioTranscription", JSONObject())
+          put("inputAudioTranscription", JSONObject())
         },
       )
     }
+    android.util.Log.i("VoiceLive", "sendGoogleSetup: ${setup.toString().take(500)}")
     ws.send(setup.toString())
   }
 
