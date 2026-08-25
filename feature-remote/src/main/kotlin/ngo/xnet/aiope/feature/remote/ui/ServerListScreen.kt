@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.launch
 import ngo.xnet.aiope.feature.remote.db.RemoteServerEntity
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -333,10 +335,19 @@ private fun ServerEditSheet(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
 
+      val scope = rememberCoroutineScope()
       OutlinedButton(onClick = {
-        val kp = ngo.xnet.aiope.feature.remote.ssh.KeyGen.generate()
-        privateKey = kp.first
-        publicKey = kp.second
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+          try {
+            val kp = ngo.xnet.aiope.feature.remote.ssh.KeyGen.generate()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+              privateKey = kp.first
+              publicKey = kp.second
+            }
+          } catch (e: Exception) {
+            android.util.Log.e("KeyGen", "Failed: ${e.message}", e)
+          }
+        }
       }) { Text("Generate Keypair") }
 
       OutlinedTextField(
