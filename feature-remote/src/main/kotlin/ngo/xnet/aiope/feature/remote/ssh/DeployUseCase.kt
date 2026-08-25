@@ -114,7 +114,7 @@ class DeployUseCase @Inject constructor(
       homeCmd.join(5, TimeUnit.SECONDS)
       val homeOut = IOUtils.readFully(homeCmd.inputStream).toString(Charsets.UTF_8).trim()
       homeSession.close()
-      val remoteDir = "$homeOut/.aiope"
+      val remoteDir = homeOut.replace("\\", "/").trimEnd('/') + "/.aiope"
 
       // Create staging dir on remote
       val mkdirSession = client.startSession()
@@ -129,8 +129,10 @@ class DeployUseCase @Inject constructor(
       val payloadFile = File(context.cacheDir, "payload.tar.gz")
       payloadFile.outputStream().use { it.write(installerBytes, markerIdx + marker.size, installerBytes.size - markerIdx - marker.size) }
 
-      // Upload payload.tar.gz and installer-windows.ps1 to remote
-      client.newSCPFileTransfer().upload(FileSystemFile(payloadFile), "$remoteDir/payload.tar.gz")
+      // Upload payload.tar.gz via SFTP (SCP has path issues on Windows)
+      val sftp = client.newSFTPClient()
+      sftp.put(FileSystemFile(payloadFile), "$remoteDir/payload.tar.gz")
+      sftp.close()
 
       // Extract the ps1 from the payload (it's inside the tar.gz)
       // Run: extract tar.gz on remote, then run the ps1

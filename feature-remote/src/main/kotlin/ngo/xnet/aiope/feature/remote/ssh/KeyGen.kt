@@ -4,18 +4,37 @@ import android.util.Base64
 import java.io.ByteArrayOutputStream
 import java.security.KeyPairGenerator
 import java.security.interfaces.EdECPublicKey
+import java.security.interfaces.RSAPublicKey
 
 /**
- * Generates Ed25519 SSH keypairs for daemon authentication.
+ * Generates SSH keypairs for daemon authentication.
+ * Tries Ed25519 first (API 33+), falls back to RSA 4096.
  */
 object KeyGen {
 
   /** Returns (privateKeyPem, publicKeyOpenSsh) */
-  fun generate(): Pair<String, String> {
+  fun generate(): Pair<String, String> = try {
+    generateEd25519()
+  } catch (_: Exception) {
+    generateRsa()
+  }
+
+  private fun generateEd25519(): Pair<String, String> {
     val kpg = KeyPairGenerator.getInstance("Ed25519")
     val kp = kpg.generateKeyPair()
     val privPem = encodePkcs8Pem(kp.private.encoded)
-    val pubSsh = encodeOpenSshPublic(kp.public as EdECPublicKey)
+    val pub = kp.public as EdECPublicKey
+    val pubSsh = encodeOpenSshEd25519(pub)
+    return privPem to pubSsh
+  }
+
+  private fun generateRsa(): Pair<String, String> {
+    val kpg = KeyPairGenerator.getInstance("RSA")
+    kpg.initialize(4096)
+    val kp = kpg.generateKeyPair()
+    val privPem = encodePkcs8Pem(kp.private.encoded)
+    val pub = kp.public as RSAPublicKey
+    val pubSsh = encodeOpenSshRsa(pub)
     return privPem to pubSsh
   }
 
@@ -28,7 +47,7 @@ object KeyGen {
     return sb.toString()
   }
 
-  private fun encodeOpenSshPublic(pub: EdECPublicKey): String {
+  private fun encodeOpenSshEd25519(pub: EdECPublicKey): String {
     val point = pub.point
     val yBytes = point.y.toByteArray()
     val keyBytes = ByteArray(32)
@@ -43,6 +62,20 @@ object KeyGen {
     blob.write(typeStr.toByteArray())
     blob.write(intToBytes(keyBytes.size))
     blob.write(keyBytes)
+    return "$typeStr ${Base64.encodeToString(blob.toByteArray(), Base64.NO_WRAP)} aiope@device"
+  }
+
+  private fun encodeOpenSshRsa(pub: RSAPublicKey): String {
+    val typeStr = "ssh-rsa"
+    val e = pub.publicExponent.toByteArray()
+    val n = pub.modulus.toByteArray()
+    val blob = ByteArrayOutputStream()
+    blob.write(intToBytes(typeStr.length))
+    blob.write(typeStr.toByteArray())
+    blob.write(intToBytes(e.size))
+    blob.write(e)
+    blob.write(intToBytes(n.size))
+    blob.write(n)
     return "$typeStr ${Base64.encodeToString(blob.toByteArray(), Base64.NO_WRAP)} aiope@device"
   }
 
