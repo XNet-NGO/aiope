@@ -340,17 +340,23 @@ private suspend fun fetchCloudflareModels(baseUrl: String, apiKey: String): List
     if (conn.responseCode !in 200..299) return@withContext emptyList()
     val body = conn.inputStream.bufferedReader().readText()
     val result = org.json.JSONObject(body).optJSONArray("result") ?: return@withContext emptyList()
-    val textModels = mutableListOf<ModelDef>()
+    val models = mutableListOf<ModelDef>()
     for (i in 0 until result.length()) {
       val m = result.getJSONObject(i)
       val name = m.optString("name", "")
       val task = m.optJSONObject("task")?.optString("name", "") ?: ""
-      // Only include text generation models
-      if (task == "Text Generation" && name.isNotBlank()) {
-        textModels.add(ModelDef(name, name.removePrefix("@cf/").replace("/", " "), contextWindow = 131_072))
+      if (name.isBlank()) continue
+      when (task) {
+        "Text Generation" -> {
+          models.add(ModelDef(name, name.removePrefix("@cf/").replace("/", " "), contextWindow = 131_072))
+        }
+
+        "Text-to-Image" -> {
+          models.add(ModelDef(name, name.removePrefix("@cf/").replace("/", " "), contextWindow = 0, outputModality = "image", supportsTools = false))
+        }
       }
     }
-    textModels.sortedBy { it.id }
+    models.sortedBy { it.id }
   } catch (e: Exception) {
     android.util.Log.e("FetchModels", "Cloudflare failed: ${e.message}")
     emptyList()

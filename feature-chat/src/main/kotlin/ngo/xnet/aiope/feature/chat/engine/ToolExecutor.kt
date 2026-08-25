@@ -876,13 +876,23 @@ class ToolExecutor(
       val (profile, modelId) = resolveTaskModel(ModelTask.IMAGE_GENERATION)
       val p = profile.copy(selectedModelId = modelId)
       val base = p.effectiveApiBase().trimEnd('/')
-      val jsonBody = org.json.JSONObject().apply {
-        put("model", modelId)
-        put("prompt", prompt)
-        put("response_format", "b64_json")
-        put("seed", System.currentTimeMillis())
-      }.toString()
-      val req = okhttp3.Request.Builder().url("$base/images/generations")
+
+      // Cloudflare uses /ai/run/{model} instead of /images/generations
+      val (url, jsonBody) = if (base.contains("api.cloudflare.com") && base.contains("/ai/")) {
+        val cfBase = base.replace(Regex("/ai/v1$"), "/ai").replace(Regex("/v1$"), "")
+        "$cfBase/run/$modelId" to org.json.JSONObject().apply {
+          put("prompt", prompt)
+        }.toString()
+      } else {
+        "$base/images/generations" to org.json.JSONObject().apply {
+          put("model", modelId)
+          put("prompt", prompt)
+          put("response_format", "b64_json")
+          put("seed", System.currentTimeMillis())
+        }.toString()
+      }
+
+      val req = okhttp3.Request.Builder().url(url)
         .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), jsonBody))
         .apply { if (p.apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${p.apiKey}") }.build()
       val imgClient = httpClient.newBuilder().readTimeout(300, java.util.concurrent.TimeUnit.SECONDS).build()
