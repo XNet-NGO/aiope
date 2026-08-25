@@ -57,6 +57,7 @@ class FileServerService : Service() {
   private var port: Int = DEFAULT_PORT
   private var useHttps: Boolean = false
   private var pin: String? = null
+  private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
   var serverUrl: String? = null
     private set
 
@@ -64,6 +65,9 @@ class FileServerService : Service() {
     super.onCreate()
     instance = this
     createChannel()
+    // Acquire WiFi lock to prevent WiFi from sleeping when screen is off
+    val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+    wifiLock = wm.createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "aiope:fileserver").apply { acquire() }
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -91,6 +95,8 @@ class FileServerService : Service() {
     serverUrl = null
     serverSocket?.close()
     serverThread?.interrupt()
+    wifiLock?.let { if (it.isHeld) it.release() }
+    wifiLock = null
     super.onDestroy()
   }
 
@@ -116,6 +122,8 @@ class FileServerService : Service() {
 
   private fun handleClient(socket: Socket) {
     try {
+      socket.keepAlive = true
+      socket.tcpNoDelay = true
       socket.use { s ->
         val input = s.getInputStream()
 
@@ -302,7 +310,8 @@ class FileServerService : Service() {
     val mime = guessMime(file.name)
     val bytes = file.length()
     out.write("HTTP/1.1 200 OK\r\nContent-Type: $mime\r\nContent-Length: $bytes\r\nContent-Disposition: inline; filename=\"${file.name}\"\r\nConnection: close\r\n\r\n".toByteArray())
-    file.inputStream().use { it.copyTo(out, 8192) }
+    out.flush()
+    file.inputStream().use { it.copyTo(out, 65536) }
   }
 
   private fun sendPinPrompt(out: BufferedOutputStream) {
