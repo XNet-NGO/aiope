@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Home
@@ -38,6 +39,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -240,6 +242,7 @@ fun ChatDrawerContent(
   onDeleteConversation: (String) -> Unit,
   onOpenHome: () -> Unit,
   onOpenSettings: () -> Unit,
+  onSearch: (String) -> Unit = {},
 ) {
   val cs = MaterialTheme.colorScheme
   Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
@@ -256,6 +259,29 @@ fun ChatDrawerContent(
       selected = false,
       onClick = onNewChat,
       colors = NavigationDrawerItemDefaults.colors(),
+    )
+    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+    var searchQuery by remember { mutableStateOf("") }
+    OutlinedTextField(
+      value = searchQuery,
+      onValueChange = {
+        searchQuery = it
+        if (it.length >= 2) onSearch(it)
+      },
+      placeholder = { Text("Search all chats…", fontSize = 13.sp) },
+      singleLine = true,
+      shape = RoundedCornerShape(CuORadius.sm),
+      modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+      trailingIcon = {
+        if (searchQuery.isNotEmpty()) {
+          IconButton(onClick = {
+            searchQuery = ""
+            onSearch("")
+          }) {
+            Icon(Icons.Default.Close, "Clear", modifier = Modifier.size(16.dp))
+          }
+        }
+      },
     )
     HorizontalDivider(Modifier.padding(vertical = 8.dp))
     Text(

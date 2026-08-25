@@ -394,6 +394,8 @@ class ChatViewModel @Inject constructor(
     }
   }
 
+  suspend fun searchAllMessages(query: String): List<ngo.xnet.aiope.feature.chat.db.MessageSearchResult> = chatDao.searchMessages(query, 20)
+
   fun loadConversation(id: String) {
     conversationId = id
     toolExecutor.lastLocationData = null
@@ -1344,9 +1346,23 @@ $remoteCtx"""
       ""
     }
 
+    val goalsBlock = try {
+      val goals = chatDao.getActiveGoals()
+      if (goals.isEmpty()) {
+        ""
+      } else {
+        "## Persistent Goals (long-term objectives across sessions)\n" +
+          goals.joinToString("\n") { g -> "- [${g.id.take(8)}] ${g.title} @${g.progress}%" + g.detail.take(150).let { d -> if (d.isNotBlank()) ": $d" else "" } } +
+          "\nKeep these in mind; update progress with goal_set when work advances them."
+      }
+    } catch (_: Exception) {
+      ""
+    }
+
     val parts = listOfNotNull(
       modePrefix.takeIf { it.isNotBlank() },
       prompt.takeIf { it.isNotBlank() },
+      goalsBlock.takeIf { it.isNotBlank() },
       memoryBlock.takeIf { it.isNotBlank() },
       dateTime,
       ragInstruction,

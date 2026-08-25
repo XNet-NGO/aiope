@@ -106,6 +106,11 @@ class ToolExecutor(
     td("orchestrate", "Execute a multi-agent pipeline (DAG). Each stage dispatches a named agent from the roster with its configured tools. Stages without depends_on run in parallel. Results from completed stages are passed as context to dependent stages.", """{"type":"object","properties":{"task":{"type":"string","description":"Overall task description"},"stages":{"type":"array","description":"Pipeline stages","items":{"type":"object","properties":{"name":{"type":"string","description":"Unique stage name"},"agent":{"type":"string","description":"Agent from roster: Architect, Coder, Researcher, QA, DevOps, Security, Writer, or Reviewer"},"prompt":{"type":"string","description":"Detailed task for this stage"},"depends_on":{"type":"array","items":{"type":"string"},"description":"Names of stages this depends on"}},"required":["name","agent","prompt"]}}},"required":["task","stages"]}"""),
     td("todo_write", "Write your persistent task list. Call BEFORE starting any multi-step task to plan it, then UPDATE it as you work (status 'in_progress' when starting an item, 'completed' when done). Replaces the whole list unless merge=true, which updates matching ids and appends new ones while keeping the rest.", """{"type":"object","properties":{"todos":{"type":"array","description":"Todo items","items":{"type":"object","properties":{"id":{"type":"string","description":"Short stable id, e.g. '1' or 'setup'"},"content":{"type":"string"},"status":{"type":"string","enum":["pending","in_progress","completed","cancelled"]}},"required":["id","content"]}},"merge":{"type":"boolean","description":"true = upsert by id keeping others; omit/false = full replace"}},"required":["todos"]}"""),
     td("todo_read", "Read your current persistent todo list grouped by status, with counts.", """{"type":"object","properties":{}}"""),
+    td("goal_set", "Create or update a persistent goal that survives across conversations. Args: title (required), detail, progress 0-100, status active|done|dropped; pass id (from goal_list) to update.", """{"type":"object","properties":{"id":{"type":"string","description":"Existing goal id to update"},"title":{"type":"string"},"detail":{"type":"string"},"progress":{"type":"integer","minimum":0,"maximum":100},"status":{"type":"string","enum":["active","done","dropped"]}},"required":["title"]}"""),
+    td("search_messages", "Full-text search across ALL past conversations. Returns matching snippets with conversation titles and timestamps. Use before answering 'what did we say about X'.", """{"type":"object","properties":{"query":{"type":"string","description":"Text to search for"},"limit":{"type":"integer","description":"Max results (default 10)"}},"required":["query"]}"""),
+    td("goal_list", "List persistent goals (active first). Use at session start and when the user mentions long-term objectives.", """{"type":"object","properties":{}}"""),
+    td("curator_run", "Curate persistent memory: merge duplicate lessons, drop stale entries older than 30 days that were never recalled, keep the rest. Returns a summary of changes.", """{"type":"object","properties":{}}"""),
+
     td("edit_file", "Targeted find/replace inside a text file. Prefer over write_file for small changes: pass exact old_string copied from the file (including indentation). Errors clearly when old_string is not found or matches multiple times unless replace_all=true.", """{"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string","description":"Exact text to find"},"new_string":{"type":"string","description":"Replacement text (empty string deletes)"},"replace_all":{"type":"boolean","description":"Replace every occurrence instead of requiring uniqueness"}},"required":["path","old_string","new_string"]}"""),
     td("search_files", "Search a directory tree without shelling out. target='content' (default) greps file contents with regex returning path:line:text matches; target='files' matches file NAMES against the pattern. Optional glob narrows which files are searched (e.g. '*.kt'). Skips .git, node_modules, build dirs.", """{"type":"object","properties":{"path":{"type":"string","description":"Directory to search"},"pattern":{"type":"string","description":"Regex pattern"},"target":{"type":"string","enum":["content","files"],"description":"'content' greps file contents, 'files' matches names"},"glob":{"type":"string","description":"Optional path/filename glob filter like '*.md'"},"limit":{"type":"integer","description":"Max results (default 50)"}},"required":["path","pattern"]}"""),
     td("http_request", "Generic HTTP client for calling APIs directly: choose method, headers, body and timeout. Returns HTTP status, key response headers, and the body truncated to ~20KB. Prefer fetch_url for simply reading web pages.", """{"type":"object","properties":{"url":{"type":"string"},"method":{"type":"string","enum":["GET","POST","PUT","PATCH","DELETE"],"description":"Default GET"},"headers":{"type":"object","description":"e.g. {'Content-Type':'application/json','Authorization':'Bearer ...'}"},"body":{"type":"string","description":"Request body string (POST/PUT/PATCH/DELETE)"},"timeout_seconds":{"type":"integer","description":"Default 30, max 300"}},"required":["url"]}"""),
@@ -626,6 +631,84 @@ class ToolExecutor(
       "todo_write" -> executeTodoWrite(args)
 
       "todo_read" -> formatTodos(loadTodos())
+
+      "goal_set" -> {
+        val id = args["id"]?.toString()
+        val title = args["title"]?.toString() ?: return@execute "Error: title required"
+        val now = System.currentTimeMillis()
+        val existing = id?.let { runCatching { chatDao.getAllGoals().firstOrNull { g -> g.id == it } }.getOrNull() }
+        val goal = (existing ?: ngo.xnet.aiope.feature.chat.db.GoalEntity(title = title)).copy(
+          title = title,
+          detail = args["detail"]?.toString() ?: existing?.detail.orEmpty(),
+          progress = ((args["progress"] as? Number)?.toInt() ?: existing?.progress ?: 0).coerceIn(0, 100),
+          status = when ((args["status"]?.toString() ?: existing?.status ?: "active").lowercase()) {
+            "done" -> "done"
+            "dropped" -> "dropped"
+            else -> "active"
+          },
+          updatedAt = now,
+        )
+        chatDao.upsertGoal(goal)
+        "Goal saved [${goal.id.take(8)}] ${goal.title} — ${goal.status} @${goal.progress}%"
+      }
+
+      "goal_list" -> {
+        val goals = chatDao.getAllGoals()
+        if (goals.isEmpty()) return@execute "No persistent goals yet."
+        goals.sortedWith(compareBy({ it.status != "active" }, { -it.updatedAt })).joinToString("\n") { g ->
+          "[${g.id.take(8)}] ${g.title} — ${g.status} @${g.progress}%" + g.detail.take(120).let { if (it.isNotBlank()) "\n    $it" else "" }
+        }
+      }
+
+      "search_messages" -> {
+        val q = args["query"]?.toString()?.trim() ?: return@execute "Error: query required"
+        if (q.isEmpty()) return@execute "Error: query required"
+        val limit = (args["limit"] as? Number)?.toInt()?.coerceIn(1, 50) ?: 10
+        val rows = chatDao.searchMessages(q, limit)
+        if (rows.isEmpty()) return@execute "No conversations mention '$q'."
+        buildString {
+          appendLine("Found ${rows.size} match(es) for '$q':")
+          for (r in rows) {
+            val at = java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.US).format(java.util.Date(r.ts))
+            val i = r.snippet.indexOf(q, ignoreCase = true).coerceAtLeast(0)
+            val from = (i - 60).coerceAtLeast(0)
+            val snip = r.snippet.substring(from, (from + 200).coerceAtMost(r.snippet.length)).replace("\n", " ")
+            appendLine("- [${r.title}] $at: …$snip…")
+          }
+        }
+      }
+
+      "curator_run" -> {
+        val memories = chatDao.getAllMemories()
+        if (memories.size < 2) return@execute "Nothing to curate (${memories.size} memor${if (memories.size == 1) "y" else "ies"})."
+        val byKey = memories.groupBy { normalizeKey(it.key) }
+        var merged = 0
+        var kept = 0
+        for ((_, group) in byKey) {
+          if (group.size == 1) {
+            kept += 1
+          } else {
+            // Keep the newest of each duplicate cluster; fold contents of the rest into it.
+            val newest = group.maxBy { it.updatedAt }
+            val folded = group.filter { it.key != newest.key }
+            chatDao.upsertMemory(
+              newest.copy(content = (listOf(newest.content) + folded.map { it.content.take(150) }).joinToString(" | ").take(2000), updatedAt = System.currentTimeMillis()),
+            )
+            for (dup in folded) chatDao.deleteMemory(dup.key)
+            merged += folded.size
+          }
+        }
+        val staleCutoff = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
+        val staleNeverUsed = memories.filter { it.createdAt < staleCutoff && it.updatedAt < staleCutoff && it.category == "general" && !it.key.startsWith("lesson:") }
+        // Conservative: report candidates instead of deleting outright.
+        buildString {
+          appendLine("Curation done: $merged duplicate(s) merged, $kept unique kept.")
+          if (staleNeverUsed.isNotEmpty()) {
+            appendLine("Stale candidates (not deleted — review):")
+            staleNeverUsed.take(10).forEach { appendLine("- ${it.key}") }
+          }
+        }
+      }
 
       "datetime_now" -> {
         val now = java.time.ZonedDateTime.now()
@@ -1161,6 +1244,8 @@ class ToolExecutor(
   } catch (e: Exception) {
     "Error: ${e.message}"
   }
+
+  private fun normalizeKey(key: String): String = key.lowercase().replace(Regex("^(lesson|fact|pref|note)[:_]?"), "").trim().ifBlank { key.lowercase() }
 
   private fun formatTodos(arr: org.json.JSONArray): String {
     if (arr.length() == 0) return "No todos. Use todo_write to plan multi-step work."

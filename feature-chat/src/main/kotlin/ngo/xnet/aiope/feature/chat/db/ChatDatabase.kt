@@ -28,6 +28,17 @@ data class MemoryEntity(
   val updatedAt: Long = System.currentTimeMillis(),
 )
 
+@Entity(tableName = "goals")
+data class GoalEntity(
+  @PrimaryKey val id: String = java.util.UUID.randomUUID().toString(),
+  val title: String,
+  val detail: String = "",
+  val status: String = "active", // active | done | dropped
+  val progress: Int = 0, // 0..100
+  val createdAt: Long = System.currentTimeMillis(),
+  val updatedAt: Long = System.currentTimeMillis(),
+)
+
 @Entity(tableName = "providers")
 data class ProviderEntity(
   @PrimaryKey val id: String,
@@ -89,6 +100,13 @@ data class AgentTaskEntity(
   val finishedAt: Long? = null,
   val conversationId: String? = null,
   val scheduledTaskId: String? = null,
+)
+
+data class MessageSearchResult(
+  val conversationId: String,
+  val title: String,
+  val snippet: String,
+  val ts: Long,
 )
 
 @Entity(tableName = "scheduled_tasks")
@@ -287,6 +305,14 @@ interface ChatDao {
     status: String,
   )
 
+  @Query(
+    "SELECT m.conversationId AS conversationId, c.title AS title, m.content AS snippet, m.timestamp AS ts " +
+      "FROM messages m JOIN conversations c ON c.id = m.conversationId " +
+      "WHERE m.content LIKE '%' || :query || '%' " +
+      "ORDER BY m.timestamp DESC LIMIT :limit",
+  )
+  suspend fun searchMessages(query: String, limit: Int): List<MessageSearchResult>
+
   @Query("DELETE FROM scheduled_tasks WHERE id = :id")
   suspend fun deleteScheduledTask(id: String)
 
@@ -305,6 +331,22 @@ interface ChatDao {
 
   @Query("DELETE FROM task_runs WHERE scheduledTaskId = :taskId")
   suspend fun deleteTaskRuns(taskId: String)
+
+  // ── Persistent goals ──
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun upsertGoal(goal: GoalEntity)
+
+  @Query("SELECT * FROM goals WHERE status = 'active' ORDER BY updatedAt DESC")
+  suspend fun getActiveGoals(): List<GoalEntity>
+
+  @Query("SELECT * FROM goals ORDER BY updatedAt DESC")
+  suspend fun getAllGoals(): List<GoalEntity>
+
+  @Query("UPDATE goals SET status = :status, progress = :progress, updatedAt = :now WHERE id = :id")
+  suspend fun updateGoalStatus(id: String, status: String, progress: Int, now: Long)
+
+  @Query("DELETE FROM goals WHERE id = :id")
+  suspend fun deleteGoal(id: String)
 }
 
 @Database(
@@ -313,8 +355,9 @@ interface ChatDao {
     ProviderEntity::class, ToolToggleEntity::class, McpServerEntity::class,
     ModelCacheEntity::class, SettingsKvEntity::class,
     AgentEntity::class, AgentTaskEntity::class, ScheduledTaskEntity::class, TaskRunEntity::class,
+    GoalEntity::class,
   ],
-  version = 9,
+  version = 10,
 )
 abstract class ChatDatabase : RoomDatabase() {
   abstract fun chatDao(): ChatDao

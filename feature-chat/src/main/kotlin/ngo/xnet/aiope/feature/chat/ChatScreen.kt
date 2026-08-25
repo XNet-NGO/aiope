@@ -70,6 +70,9 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), startNewConversation:
   val context = androidx.compose.ui.platform.LocalContext.current
   val drawerState = rememberDrawerState(DrawerValue.Closed)
   val drawerScope = rememberCoroutineScope()
+  var searchJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+  var showSearchResults by remember { mutableStateOf(false) }
+  var searchResults by remember { mutableStateOf<List<ngo.xnet.aiope.feature.chat.db.MessageSearchResult>>(emptyList()) }
 
   @OptIn(ExperimentalLayoutApi::class)
   val imeVisible = WindowInsets.isImeVisible
@@ -101,6 +104,18 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), startNewConversation:
           onOpenSettings = {
             closeDrawer()
             onOpenSettings()
+          },
+          onSearch = { q ->
+            if (q.isBlank()) {
+              showSearchResults = false
+            } else {
+              closeDrawer()
+              searchJob?.cancel()
+              searchJob = drawerScope.launch {
+                searchResults = viewModel.searchAllMessages(q)
+                showSearchResults = true
+              }
+            }
           },
         )
       }
@@ -137,6 +152,32 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), startNewConversation:
       onFileServer = { showFileServer = true },
       onScanner = { showScanner = true },
     )
+  }
+
+  if (showSearchResults) {
+    ModalBottomSheet(onDismissRequest = { showSearchResults = false }) {
+      Text(
+        "Search results",
+        style = MaterialTheme.typography.titleSmall,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+      )
+      if (searchResults.isEmpty()) {
+        Text("No matches.", Modifier.padding(16.dp))
+      }
+      searchResults.forEach { r ->
+        val at = java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.US).format(java.util.Date(r.ts))
+        ListItem(
+          headlineContent = { Text(r.title.ifBlank { "Conversation" }, maxLines = 1) },
+          supportingContent = { Text(r.snippet.take(140), maxLines = 2) },
+          trailingContent = { Text(at, style = MaterialTheme.typography.labelSmall) },
+          modifier = Modifier.clickable {
+            showSearchResults = false
+            viewModel.loadConversation(r.conversationId)
+          },
+        )
+      }
+      Spacer(Modifier.height(24.dp))
+    }
   }
 
   if (showShareSheet) {

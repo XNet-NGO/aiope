@@ -34,6 +34,9 @@ private val workerToolCatalog: Map<String, String> = mapOf(
   "set_alarm" to "Set an alarm on this device. Args: hour: Number, minutes: Number, message: String (optional)",
   "memory_store" to "Store a fact in persistent memory. Args: key: String, content: String, category: String (optional)",
   "memory_recall" to "Recall stored memories. Args: query: String (optional)",
+  "goal_set" to "Create/update a persistent goal. Args: title, detail (opt), progress 0-100 (opt), status active|done|dropped (opt), id (opt)",
+  "goal_list" to "List persistent goals. Args: none",
+  "curator_run" to "Curate persistent memory: merge duplicates, flag stale entries. Args: none",
   "read_file" to "Read a text file from this device. Args: path: String",
   "write_file" to "Write a text file on this device. Args: path: String, content: String",
   "list_directory" to "List a directory on this device. Args: path: String",
@@ -317,6 +320,54 @@ class AgentRunWorker(
           val memories = dao.getAllMemories()
           val matches = memories.filter { it.key.contains(query, true) || it.content.contains(query, true) }
           if (matches.isEmpty()) "No memories matching '$query'" else matches.joinToString("\n") { "${it.key}: ${it.content.take(200)}" }
+        }
+
+        "goal_set" -> {
+          val id = args["id"]?.toString()
+          val title = args["title"]?.toString() ?: return "Error: no title"
+          val now = System.currentTimeMillis()
+          val existing = id?.let { gid -> dao.getAllGoals().firstOrNull { it.id == gid } }
+          val goal = (existing ?: ngo.xnet.aiope.feature.chat.db.GoalEntity(title = title)).copy(
+            title = title,
+            detail = args["detail"]?.toString() ?: existing?.detail.orEmpty(),
+            progress = ((args["progress"] as? Number)?.toInt() ?: existing?.progress ?: 0).coerceIn(0, 100),
+            status = when ((args["status"]?.toString() ?: existing?.status ?: "active").lowercase()) {
+              "done" -> "done"
+              "dropped" -> "dropped"
+              else -> "active"
+            },
+            updatedAt = now,
+          )
+          dao.upsertGoal(goal)
+          "Goal saved [${goal.id.take(8)}] ${goal.title} — ${goal.status} @${goal.progress}%"
+        }
+
+        "goal_list" -> {
+          val goals = dao.getAllGoals()
+          if (goals.isEmpty()) {
+            "No persistent goals."
+          } else {
+            goals.sortedWith(compareBy({ it.status != "active" }, { -it.updatedAt }))
+              .joinToString("\n") { "[${it.id.take(8)}] ${it.title} — ${it.status} @${it.progress}%" }
+          }
+        }
+
+        "curator_run" -> {
+          val memories = dao.getAllMemories()
+          if (memories.size < 2) {
+            "Nothing to curate."
+          } else {
+            var merged = 0
+            for ((_, group) in memories.groupBy { it.key.lowercase().trim() }) {
+              if (group.size < 2) continue
+              val newest = group.maxBy { it.updatedAt }
+              for (dup in group.filter { it.key != newest.key }) {
+                dao.deleteMemory(dup.key)
+                merged++
+              }
+            }
+            "Curation done: $merged duplicate(s) removed, ${memories.size - merged} kept."
+          }
         }
 
         "http_request" -> {

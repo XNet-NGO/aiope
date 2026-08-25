@@ -78,7 +78,11 @@ private val toolCatalog: List<Pair<String, List<Pair<String, String>>>> = listOf
     "memory_store" to "Store persistent memories",
     "memory_recall" to "Recall memories",
     "memory_forget" to "Delete memories",
+    "search_messages" to "Search across all past conversations",
     "rag_search" to "Search your on-device knowledge base",
+    "goal_set" to "Create & update persistent long-term goals",
+    "goal_list" to "List persistent goals",
+    "curator_run" to "Curate & clean up persistent memory",
     "rag_index" to "Add a document to the knowledge base",
   ),
   "Media & vision" to listOf(
