@@ -81,4 +81,7 @@ dependencies {
 
   // BouncyCastle for self-signed cert generation (file server HTTPS)
   implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
+
+  // Testing
+  testImplementation("junit:junit:4.13.2")
 }

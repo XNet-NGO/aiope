@@ -461,11 +461,13 @@ class StreamingOrchestrator(
         }
         send(ChatStreamChunk(toolResults = results))
 
-        // Append assistant tool_calls + tool results for next round
+        // Append assistant tool_calls + tool results for next round.
+        // Keep any pre-tool commentary the model streamed (e.g. "Let me check...")
+        val preToolText = contentSoFar.toString().trim()
         rawMessages.add(
           JSONObject().apply {
             put("role", "assistant")
-            put("content", "")
+            put("content", preToolText.ifEmpty { "" })
             put(
               "tool_calls",
               JSONArray().apply {
@@ -756,10 +758,10 @@ class StreamingOrchestrator(
   /** Infer the primary argument key for a tool based on its name */
   private fun inferArgKey(toolName: String): String = when (toolName) {
     "run_sh", "run_proot" -> "command"
-    "read_file", "write_file" -> "path"
-    "list_directory" -> "path"
+    "read_file", "write_file", "edit_file" -> "path"
+    "list_directory", "search_files" -> "path"
     "search_web", "search_images" -> "query"
-    "fetch_url" -> "url"
+    "fetch_url", "http_request" -> "url"
     "memory_store", "memory_recall", "memory_forget" -> "key"
     "send_sms" -> "message"
     "send_notification" -> "text"
@@ -772,6 +774,10 @@ class StreamingOrchestrator(
     "analyze_image" -> "prompt"
     "search_location" -> "query"
     "query_data" -> "source"
+    "schedule_task" -> "prompt"
+    "cancel_schedule" -> "task_id"
+    "rag_search" -> "query"
+    "create_event" -> "title"
     else -> "input"
   }
 
