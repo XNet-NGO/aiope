@@ -278,7 +278,6 @@ class ChatViewModel @Inject constructor(
     }
   }
 
-  /** Stop realtime voice conversation */
   /** Route text/images/docs through the active live voice session */
   private fun sendToLiveVoice(text: String, imageUris: List<String>) {
     val userMsg = ChatMessage(role = Role.USER, content = text, imageUris = imageUris)
@@ -328,6 +327,7 @@ class ChatViewModel @Inject constructor(
               bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, baos)
               bitmap.recycle()
               val b64 = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+              android.util.Log.i("VoiceLive", "sending image: ${baos.size()} bytes, b64 len=${b64.length}")
               parts.add(org.json.JSONObject().put("inlineData", org.json.JSONObject().put("mimeType", "image/jpeg").put("data", b64)))
             }
           } catch (_: Exception) {}

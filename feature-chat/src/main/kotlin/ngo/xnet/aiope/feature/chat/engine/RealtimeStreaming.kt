@@ -481,6 +481,8 @@ class RealtimeStreaming(
       for (part in parts) {
         if (part.has("inlineData")) {
           val inline = part.getJSONObject("inlineData")
+          val dataLen = inline.optString("data", "").length
+          android.util.Log.i("VoiceLive", "sending video frame: mime=${inline.optString("mimeType")} dataLen=$dataLen")
           webSocket?.send(
             JSONObject().apply {
               put(
