@@ -117,11 +117,15 @@ class ChatViewModel @Inject constructor(
 
     realtimeStreamingJob = viewModelScope.launch(Dispatchers.IO) {
       try {
-        val sysPrompt = (
-          buildSystemMessages(ModelConfig(modelId = resolvedModelId))
-            .firstOrNull { it.first == "system" }?.second ?: ""
-          ) +
-          "\n\nYou are in a live voice session with full tool access. Execute all tools directly and autonomously — never tell the user to do something manually. You can browse, click, fill forms, run commands, send messages, and perform any action yourself."
+        // Build a trimmed system prompt for voice (skip Dynamic UI docs, formatting rules)
+        val fullPrompt = buildSystemMessages(ModelConfig(modelId = resolvedModelId))
+          .firstOrNull { it.first == "system" }?.second ?: ""
+        // Keep only up to "## Tools" section or first 2000 chars for low latency
+        val sysPrompt = fullPrompt.let { p ->
+          val toolsIdx = p.indexOf("## Tools")
+          val trimmed = if (toolsIdx > 0) p.substring(0, toolsIdx) else p.take(2000)
+          trimmed.trim()
+        } + "\n\nYou are in a live voice session. Be concise. Execute tools directly when needed."
         val realtimeStream = RealtimeStreaming(
           okHttp = okHttp,
           modelDef = modelDef,
