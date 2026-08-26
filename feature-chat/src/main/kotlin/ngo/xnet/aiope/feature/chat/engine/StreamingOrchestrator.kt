@@ -28,6 +28,7 @@ class StreamingOrchestrator(
   private val tools: List<ToolDef> = emptyList(),
   private val onToolCall: suspend (String, Map<String, Any?>) -> String = { _, _ -> "" },
   private val temperature: Float = 0.7f,
+  private val reasoningEffort: String? = null,
 ) {
   data class ToolDef(val name: String, val description: String, val parameters: JSONObject)
 
@@ -585,6 +586,9 @@ class StreamingOrchestrator(
     body.put("model", model)
     body.put("stream", true)
     body.put("temperature", temperature.toDouble())
+    if (reasoningEffort != null && reasoningEffort != "auto") {
+      body.put("reasoning_effort", reasoningEffort)
+    }
     body.put("messages", JSONArray().apply { for (m in messages) put(m) })
     android.util.Log.e("AIOPE2", "Request: model=$model tools=${tools.size} msgs=${messages.size}")
     if (tools.isNotEmpty()) {
