@@ -212,6 +212,11 @@ class ChatViewModel @Inject constructor(
 
             is StreamEvent.Connected -> {}
 
+            is StreamEvent.Interrupted -> {
+              // User barged in — clear playback queue immediately
+              realtimeAudioManager?.clearPlayback()
+            }
+
             is StreamEvent.InputTranscription -> {
               val msgId = java.util.UUID.randomUUID().toString()
               viewModelScope.launch(Dispatchers.Main) {
