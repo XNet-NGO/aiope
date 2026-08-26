@@ -812,6 +812,8 @@ class ChatViewModel @Inject constructor(
           model = sendModelId,
           tools = sendTools,
           onToolCall = { name, args -> toolExecutor.execute(name, args) },
+          temperature = mc.temperature ?: 0.7f,
+          reasoningEffort = mc.reasoningEffort,
         )
 
         // Encode images to base64 — use saved disk paths (content URIs may expire)
