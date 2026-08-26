@@ -1,0 +1,75 @@
+{
+  "buildFiles": [
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/CMakeLists.txt",
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/CMakeLists.txt",
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/cmake/build-info.cmake",
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/cmake/common.cmake",
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/cmake/license.cmake",
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/cmake/llama-config.cmake.in",
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/ggml/CMakeLists.txt",
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/ggml/cmake/common.cmake",
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/ggml/cmake/ggml-config.cmake.in",
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/ggml/src/CMakeLists.txt",
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/ggml/src/ggml-cpu/CMakeLists.txt",
+    "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/src/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/user-x/android-sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/user-x/projects/aiope/core-inference/.cxx/Release/5k3x261b/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/user-x/android-sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/user-x/projects/aiope/core-inference/.cxx/Release/5k3x261b/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "aiope-inference::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "aiope-inference",
+      "output": "/home/user-x/projects/aiope/core-inference/build/intermediates/cxx/Release/5k3x261b/obj/arm64-v8a/libaiope-inference.so",
+      "runtimeFiles": []
+    },
+    "ggml::@94de48a0d5830e0c5d2f": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ggml",
+      "output": "/home/user-x/projects/aiope/core-inference/.cxx/Release/5k3x261b/arm64-v8a/llama.cpp/ggml/src/libggml.a"
+    },
+    "ggml-base::@94de48a0d5830e0c5d2f": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ggml-base",
+      "output": "/home/user-x/projects/aiope/core-inference/.cxx/Release/5k3x261b/arm64-v8a/llama.cpp/ggml/src/libggml-base.a"
+    },
+    "ggml-cpu::@94de48a0d5830e0c5d2f": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "ggml-cpu",
+      "output": "/home/user-x/projects/aiope/core-inference/.cxx/Release/5k3x261b/arm64-v8a/llama.cpp/ggml/src/libggml-cpu.a"
+    },
+    "llama::@fb8c1886b26de7beabc1": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "llama",
+      "output": "/home/user-x/projects/aiope/core-inference/.cxx/Release/5k3x261b/arm64-v8a/llama.cpp/src/libllama.a"
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "/home/user-x/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/clang.lld",
+      "cppCompilerExecutable": "/home/user-x/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++.lld"
+    }
+  },
+  "cFileExtensions": [
+    "c"
+  ],
+  "cppFileExtensions": [
+    "cpp"
+  ]
+}

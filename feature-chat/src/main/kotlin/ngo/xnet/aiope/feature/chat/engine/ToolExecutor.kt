@@ -1,0 +1,1282 @@
+package ngo.xnet.aiope.feature.chat.engine
+
+import android.app.Application
+import ngo.xnet.aiope.core.model.RemoteToolBridge
+import ngo.xnet.aiope.core.network.ModelTask
+import ngo.xnet.aiope.core.network.ProviderProfile
+import ngo.xnet.aiope.core.network.TaskModelStore
+import ngo.xnet.aiope.feature.chat.LocationData
+import ngo.xnet.aiope.feature.chat.db.ChatDao
+import ngo.xnet.aiope.feature.chat.location.LocationProvider
+import ngo.xnet.aiope.feature.chat.settings.McpManager
+import ngo.xnet.aiope.feature.chat.settings.ProviderStore
+import ngo.xnet.aiope.feature.chat.settings.ToolStore
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+
+class ToolExecutor(
+  private val app: Application,
+  private val providerStore: ProviderStore,
+  private val toolStore: ToolStore,
+  private val chatDao: ChatDao,
+  val mcpManager: McpManager,
+  val locationProvider: LocationProvider,
+  private val getBrowser: () -> ngo.xnet.aiope.feature.chat.browser.WebBrowser,
+  private val onBrowserVisible: (Boolean) -> Unit,
+  private val onBrowserMaximized: (Boolean) -> Unit,
+  private val resolveTaskModel: (ModelTask) -> Pair<ProviderProfile, String>,
+  private val getAgentMode: () -> AgentMode = { AgentMode.CHAT },
+  var subagentManager: AgentExecutor? = null,
+  var remoteToolBridge: RemoteToolBridge? = null,
+) {
+  var lastLocationData: LocationData? = null
+  var locationUsedThisTurn = false
+  private var cachedDataCategories: String? = null
+  var shellOutputLimit = 12000
+  var fetchLimit = 30000
+  var fileReadLimit = 50000
+
+  private val httpClient = ngo.xnet.aiope.feature.chat.engine.SafeOkHttp.builder()
+    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+    .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+    .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+    .followRedirects(true)
+    .build()
+
+  private var ragEngine: org.xnet.aiope.inference.RagEngine? = null
+  private fun getRagEngine(): org.xnet.aiope.inference.RagEngine {
+    if (ragEngine == null) {
+      val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.RAG)
+      val effectiveModel = modelId.ifBlank { "google-ai-studio/models-gemini-embedding-2" }
+      val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
+        baseUrl = profile.effectiveApiBase(),
+        apiKey = profile.apiKey,
+        model = effectiveModel,
+      )
+      val embedFn: (String) -> FloatArray? = { text -> cloudEmbed.embed(text) }
+      ragEngine = org.xnet.aiope.inference.RagEngine(app, embedFn)
+    }
+    return ragEngine!!
+  }
+
+  fun buildToolDefs() = listOf(
+    td("run_sh", "Execute Android shell command. Set timeout appropriately: 10-30s for simple commands (ls, cat, echo), 60-120s for network operations, 300-600s for builds/installs.", """{"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute"},"timeout":{"type":"integer","description":"Timeout in seconds. Default 300. Use 10-30 for quick commands, 300-600 for builds."}},"required":["command"]}"""),
+    td("run_proot", "Execute a command in the Alpine Linux proot environment. Use for apk, python, gcc, etc. Set timeout appropriately for the command.", """{"type":"object","properties":{"command":{"type":"string","description":"Command to execute in Alpine"},"timeout":{"type":"integer","description":"Timeout in seconds. Default 300. Use 60 for apk, 600 for builds."}},"required":["command"]}"""),
+    td("read_file", "Read file contents", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
+    td("write_file", "Write file", """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}"""),
+    td("list_directory", "List directory", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
+    td("get_location", "Get the device's current GPS location. Call this FIRST when the user asks about nearby places or 'closest' anything, then use the coordinates with search_location.", """{"type":"object","properties":{}}"""),
+    td("open_intent", "Open a URL, app, or navigation intent from the device. Use for opening maps, web pages, dialing, etc. Examples: 'https://google.com', 'geo:43.6,-116.3', 'google.navigation:q=123+Main+St', 'tel:5551234567'", """{"type":"object","properties":{"uri":{"type":"string","description":"URI to open. Supports https://, geo:, google.navigation:q=, tel:, mailto:, etc."}},"required":["uri"]}"""),
+    td("fetch_url", "Fetch a URL. Returns extracted text and any images found as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them to the user.", """{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text+images from HTML"},"offset":{"type":"integer","description":"Character offset to start reading from for pagination"},"limit":{"type":"integer","description":"Maximum number of characters to return"}},"required":["url"]}"""),
+    td("query_data", "Query live real-time data. Returns JSON and any images as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them. Automatically uses device GPS for location-based queries. Pass 'extra' for searches (nasa_media, nasa_tech) or station IDs (tides, ocean_temp) or breed IDs (cat_breed). Available categories: ${fetchDataCategories()}", """{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query, station ID, or breed ID depending on category"}},"required":["category"]}"""),
+    td("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", """{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}"""),
+    td("search_web", "Search the web for current information, news, answers, or any topic. Returns results with titles, URLs, and snippets. Use when the user asks about recent events, facts you're unsure of, or anything requiring up-to-date information.", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}"""),
+    td("search_images", "Search for images on the web. Returns image URLs with titles. Use when the user asks to find photos, pictures, or images of something.", """{"type":"object","properties":{"query":{"type":"string","description":"Image search query"}},"required":["query"]}"""),
+    td("browser_navigate", "Navigate the in-app browser to a URL. Opens a real WebView you can then interact with via browser_click, browser_fill, browser_eval, browser_content, browser_elements.", """{"type":"object","properties":{"url":{"type":"string","description":"URL to navigate to"}},"required":["url"]}"""),
+    td("browser_content", "Get the current page text content, URL, and title from the in-app browser.", """{"type":"object","properties":{"offset":{"type":"integer","description":"Character offset to start reading from for pagination"},"limit":{"type":"integer","description":"Maximum number of characters to return"}},"required":[]}"""),
+    td("browser_elements", "List all interactive elements (links, buttons, inputs) on the current browser page with their selectors.", """{"type":"object","properties":{}}"""),
+    td("browser_click", "Click an element in the browser by CSS selector. IMPORTANT: Call browser_elements first to discover available selectors before clicking.", """{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of element to click"}},"required":["selector"]}"""),
+    td("browser_fill", "Fill an input field in the browser by CSS selector. IMPORTANT: Call browser_elements first to discover available selectors before filling.", """{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of input element"},"value":{"type":"string","description":"Text to fill"}},"required":["selector","value"]}"""),
+    td("browser_eval", "Execute JavaScript in the browser and return the result.", """{"type":"object","properties":{"script":{"type":"string","description":"JavaScript code to evaluate"}},"required":["script"]}"""),
+    td("browser_back", "Go back in the browser history.", """{"type":"object","properties":{}}"""),
+    td("browser_scroll", "Scroll the browser page up or down.", """{"type":"object","properties":{"direction":{"type":"string","description":"'up' or 'down'"},"amount":{"type":"integer","description":"Pixels to scroll (default 500)"}},"required":["direction"]}"""),
+    td("browser_open", "Open the browser panel so the user can see it.", """{"type":"object","properties":{}}"""),
+    td("browser_close", "Close the browser panel.", """{"type":"object","properties":{}}"""),
+    td("browser_maximize", "Maximize or restore the browser panel. Pass maximize=true for fullscreen, false to restore split view.", """{"type":"object","properties":{"maximize":{"type":"boolean","description":"true to maximize, false to restore"}},"required":["maximize"]}"""),
+    td("memory_store", "Store a fact or preference the user wants you to remember across conversations. Use a short descriptive key.", """{"type":"object","properties":{"key":{"type":"string","description":"Short key like 'user_name' or 'preferred_language'"},"content":{"type":"string","description":"The fact to remember"},"category":{"type":"string","description":"Optional: general, preference, learning, error"}},"required":["key","content"]}"""),
+    td("memory_recall", "Search your persistent memory for stored facts. Call with empty query to list all memories.", """{"type":"object","properties":{"query":{"type":"string","description":"Search term, or empty to list all"}},"required":["query"]}"""),
+    td("memory_forget", "Delete a specific memory by its key.", """{"type":"object","properties":{"key":{"type":"string","description":"Key of the memory to delete"}},"required":["key"]}"""),
+    td("image_generate", "Generate an image from a text prompt. Use when the user asks you to draw, create, generate, or make an image/picture/illustration.", """{"type":"object","properties":{"prompt":{"type":"string","description":"Detailed image generation prompt"}},"required":["prompt"]}"""),
+    td("analyze_image", "Analyze an image from a URL or local file path using vision. Supports JPEG, PNG, WebP, GIF, BMP, SVG. Use for browser screenshots, fetched images, generated images, or any image the user wants described.", """{"type":"object","properties":{"url":{"type":"string","description":"URL or file:// path of the image to analyze"},"question":{"type":"string","description":"What to look for or ask about the image"}},"required":["url"]}"""),
+    td("read_calendar", "Read upcoming calendar events from the device.", """{"type":"object","properties":{"days":{"type":"integer","description":"Number of days ahead to look (default 7)"}},"required":[]}"""),
+    td("create_event", "Create a calendar event. Opens the calendar app with pre-filled details.", """{"type":"object","properties":{"title":{"type":"string"},"start_time":{"type":"string","description":"Start time, e.g. '2025-04-20T14:00' or '2:00 PM'"},"end_time":{"type":"string","description":"End time"},"location":{"type":"string"},"description":{"type":"string"}},"required":["title"]}"""),
+    td("delete_event", "Delete a calendar event by its ID (from read_calendar).", """{"type":"object","properties":{"event_id":{"type":"integer","description":"Event ID from read_calendar"}},"required":["event_id"]}"""),
+    td("set_alarm", "Set an alarm on the device.", """{"type":"object","properties":{"hour":{"type":"integer","description":"Hour (0-23)"},"minutes":{"type":"integer","description":"Minutes (0-59)"},"message":{"type":"string","description":"Alarm label"},"skip_ui":{"type":"boolean","description":"Set silently without opening clock app"}},"required":["hour","minutes"]}"""),
+    td("dismiss_alarm", "Dismiss/cancel an alarm by its label.", """{"type":"object","properties":{"message":{"type":"string","description":"Alarm label to dismiss"}},"required":["message"]}"""),
+    td("read_contacts", "Search or list contacts from the device.", """{"type":"object","properties":{"query":{"type":"string","description":"Name to search for, or empty to list all"}},"required":[]}"""),
+    td("send_notification", "Post a notification on the device. Use for reminders.", """{"type":"object","properties":{"title":{"type":"string"},"body":{"type":"string","description":"Notification text"}},"required":["body"]}"""),
+    td("clipboard_copy", "Copy text to the device clipboard.", """{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"""),
+    td("clipboard_read", "Read the current clipboard contents.", """{"type":"object","properties":{}}"""),
+    td("read_sms", "Read recent SMS messages from the device.", """{"type":"object","properties":{"limit":{"type":"integer","description":"Number of messages to read (default 10)"}},"required":[]}"""),
+    td("send_sms", "Send an SMS text message.", """{"type":"object","properties":{"to":{"type":"string","description":"Phone number"},"body":{"type":"string","description":"Message text"}},"required":["to","body"]}"""),
+    td("delete_sms", "Delete an SMS message by its ID (from read_sms).", """{"type":"object","properties":{"sms_id":{"type":"integer","description":"SMS ID from read_sms"}},"required":["sms_id"]}"""),
+    td("device_info", "Get device info: battery, storage, RAM, network, model.", """{"type":"object","properties":{}}"""),
+    td("media_control", "Control media playback (play/pause, next, previous, stop).", """{"type":"object","properties":{"action":{"type":"string","description":"One of: play_pause, next, previous, stop"}},"required":["action"]}"""),
+    td("rag_search", "Search the local on-device knowledge base using semantic similarity. Returns relevant document chunks with scores.", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"},"top_k":{"type":"integer","description":"Number of results (default 5)"}},"required":["query"]}"""),
+    td("rag_index", "Index a document into the local knowledge base for semantic search.", """{"type":"object","properties":{"title":{"type":"string","description":"Document title"},"content":{"type":"string","description":"Text content to index"}},"required":["title","content"]}"""),
+    td("orchestrate", "Execute a multi-agent pipeline (DAG). Each stage dispatches a named agent from the roster with its configured tools. Stages without depends_on run in parallel. Results from completed stages are passed as context to dependent stages.", """{"type":"object","properties":{"task":{"type":"string","description":"Overall task description"},"stages":{"type":"array","description":"Pipeline stages","items":{"type":"object","properties":{"name":{"type":"string","description":"Unique stage name"},"agent":{"type":"string","description":"Agent from roster: Architect, Coder, Researcher, QA, DevOps, Security, Writer, or Reviewer"},"prompt":{"type":"string","description":"Detailed task for this stage"},"depends_on":{"type":"array","items":{"type":"string"},"description":"Names of stages this depends on"}},"required":["name","agent","prompt"]}}},"required":["task","stages"]}"""),
+    td("todo_write", "Write your persistent task list. Call BEFORE starting any multi-step task to plan it, then UPDATE it as you work (status 'in_progress' when starting an item, 'completed' when done). Replaces the whole list unless merge=true, which updates matching ids and appends new ones while keeping the rest.", """{"type":"object","properties":{"todos":{"type":"array","description":"Todo items","items":{"type":"object","properties":{"id":{"type":"string","description":"Short stable id, e.g. '1' or 'setup'"},"content":{"type":"string"},"status":{"type":"string","enum":["pending","in_progress","completed","cancelled"]}},"required":["id","content"]}},"merge":{"type":"boolean","description":"true = upsert by id keeping others; omit/false = full replace"}},"required":["todos"]}"""),
+    td("todo_read", "Read your current persistent todo list grouped by status, with counts.", """{"type":"object","properties":{}}"""),
+    td("edit_file", "Targeted find/replace inside a text file. Prefer over write_file for small changes: pass exact old_string copied from the file (including indentation). Errors clearly when old_string is not found or matches multiple times unless replace_all=true.", """{"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string","description":"Exact text to find"},"new_string":{"type":"string","description":"Replacement text (empty string deletes)"},"replace_all":{"type":"boolean","description":"Replace every occurrence instead of requiring uniqueness"}},"required":["path","old_string","new_string"]}"""),
+    td("search_files", "Search a directory tree without shelling out. target='content' (default) greps file contents with regex returning path:line:text matches; target='files' matches file NAMES against the pattern. Optional glob narrows which files are searched (e.g. '*.kt'). Skips .git, node_modules, build dirs.", """{"type":"object","properties":{"path":{"type":"string","description":"Directory to search"},"pattern":{"type":"string","description":"Regex pattern"},"target":{"type":"string","enum":["content","files"],"description":"'content' greps file contents, 'files' matches names"},"glob":{"type":"string","description":"Optional path/filename glob filter like '*.md'"},"limit":{"type":"integer","description":"Max results (default 50)"}},"required":["path","pattern"]}"""),
+    td("http_request", "Generic HTTP client for calling APIs directly: choose method, headers, body and timeout. Returns HTTP status, key response headers, and the body truncated to ~20KB. Prefer fetch_url for simply reading web pages.", """{"type":"object","properties":{"url":{"type":"string"},"method":{"type":"string","enum":["GET","POST","PUT","PATCH","DELETE"],"description":"Default GET"},"headers":{"type":"object","description":"e.g. {'Content-Type':'application/json','Authorization':'Bearer ...'}"},"body":{"type":"string","description":"Request body string (POST/PUT/PATCH/DELETE)"},"timeout_seconds":{"type":"integer","description":"Default 30, max 300"}},"required":["url"]}"""),
+    td("schedule_task", "Schedule this device's agent to run a prompt automatically in the background (recurring monitoring, reminders-with-action, daily digests). schedule_type: 'interval' every interval_value interval_unit (min|hour|day); 'daily'/'weekly'/'monthly' fire at time_hour:time_minute ('weekly' also days_of_week like '2,3,4,5,6' where 1=Sunday; 'monthly' uses day_of_month 1-28); 'once' fires ~60 seconds later. max_runs caps executions (0=unlimited). tools: comma-separated subset of search_web, fetch_url, http_request, run_sh, ssh_exec, send_notification, set_alarm, memory_store, memory_recall, read_file, write_file, list_directory, datetime_now. Each run reports via notification.", """{"type":"object","properties":{"prompt":{"type":"string","description":"What the scheduled agent should do each run"},"schedule_type":{"type":"string","enum":["once","interval","daily","weekly","monthly"],"description":"Recurrence model"},"interval_value":{"type":"integer","description":"Every N units (interval type, default 30)"},"interval_unit":{"type":"string","enum":["min","hour","day"]},"time_hour":{"type":"integer","description":"Hour 0-23 (daily/weekly/monthly)"},"time_minute":{"type":"integer","description":"Minute 0-59"},"days_of_week":{"type":"string","description":"Weekly: comma list 1=Sun..7=Sat, e.g. '1,4'"},"day_of_month":{"type":"integer","description":"Monthly: day 1-28"},"max_runs":{"type":"integer","description":"Stop after N runs (0 = unlimited)"},"tools":{"type":"string","description":"Comma-separated tool subset allowed during background runs"}},"required":["prompt","schedule_type"]}"""),
+    td("cancel_schedule", "Cancel and delete a scheduled agent task by its id (get ids from list_schedules). Also cancels its pending alarm.", """{"type":"object","properties":{"task_id":{"type":"string","description":"Task id from list_schedules"}},"required":["task_id"]}"""),
+    td("list_schedules", "List all scheduled agent tasks with their recurrence description, next run time, and run progress.", """{"type":"object","properties":{}}"""),
+    td("datetime_now", "Get the current date and time: local timestamp, timezone with UTC offset, day of week, and epoch ms. Use for any time-related question or time math.", """{"type":"object","properties":{}}"""),
+  ) + (remoteToolBridge?.buildToolDefs()?.map { td(it.name, it.description, it.parameters) } ?: emptyList()).filter { toolStore.isToolEnabled(it.name) && it.name !in getAgentMode().disabledTools } + toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
+    var defs = mcpManager.getToolDefs(server.id)
+    if (defs.isEmpty()) {
+      // Auto-discover on first use (cache is in-memory, lost on restart)
+      try {
+        mcpManager.discoverTools(server)
+      } catch (e: Exception) {
+        android.util.Log.w("ToolExec", "op failed: ${e.message}")
+      }
+      defs = mcpManager.getToolDefs(server.id)
+    }
+    defs
+  }.filter { toolStore.isToolEnabled(it.name) }
+
+  private fun td(name: String, desc: String, params: String) = StreamingOrchestrator.ToolDef(name, desc, org.json.JSONObject(params))
+
+  /**
+   * Explains an inaccessible path in terms of Android's storage rules so the model can recover
+   * instead of retrying blindly. Scoped storage (Android 10+) hides other apps' data, and shared
+   * storage outside the app sandbox needs All-Files access on Android 11+.
+   */
+  private fun storageHint(f: java.io.File): String {
+    val path = f.absolutePath
+    val sandbox = app.filesDir.absolutePath
+    val extSandbox = app.getExternalFilesDir(null)?.absolutePath
+    val inSandbox = path.startsWith(sandbox) || (extSandbox != null && path.startsWith(extSandbox))
+    if (inSandbox) return ""
+    val hasAllFiles = android.os.Build.VERSION.SDK_INT < 30 || android.os.Environment.isExternalStorageManager()
+    val shared = path.startsWith("/sdcard") || path.startsWith("/storage/emulated")
+    return when {
+      shared && !hasAllFiles ->
+        " — shared storage needs All-Files access (Android 11+): grant it in Settings > Apps > AIOPE > Permissions, or use the app sandbox at $sandbox."
+
+      path.startsWith("/data/data") || path.startsWith("/data/user") ->
+        " — scoped storage (Android 10+) blocks other apps' private data on non-rooted devices. Use $sandbox instead."
+
+      else -> " — path is outside AIOPE's sandbox ($sandbox); Android may deny access."
+    }
+  }
+
+  private fun fetchDataCategories(): String {
+    cachedDataCategories?.let { return it }
+    return try {
+      val p = providerStore.getActive()
+      val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
+      val req = okhttp3.Request.Builder().url("$gwBase/v1/data")
+        .apply { if (p.apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${p.apiKey}") }.build()
+      val body = httpClient.newCall(req).execute().use { it.body?.string() ?: "" }
+      val cats = org.json.JSONObject(body).getJSONArray("categories")
+      val list = (0 until cats.length()).map { cats.getString(it) }.filter { it != "search_web" && it != "image_search" }.joinToString(", ")
+      cachedDataCategories = list
+      list
+    } catch (e: Exception) {
+      android.util.Log.w("ToolExec", "op failed: ${e.message}")
+      "air_quality, alerts, apod, asteroids, astronauts, cat, cat_breed, cat_breeds, cme, earth_events, earth_image, earthquakes, earthquakes_significant, epic, fires, geomagnetic, impact_risk, ip_location, iss, nasa_media, nasa_tech, ocean_temp, solar, solar_flares, sunrise_sunset, tides, time, uv, weather, weather_hourly"
+    }
+  }
+
+  private val destructiveTools = setOf(
+    "run_sh", "run_proot", "write_file", "send_sms", "delete_sms",
+    "delete_event", "ssh_exec", "browser_eval", "browser_click", "browser_fill",
+    "edit_file", "schedule_task", "cancel_schedule",
+  )
+
+  suspend fun execute(name: String, args: Map<String, Any?>): String {
+    if (!toolStore.isToolEnabled(name)) return "Tool '$name' is disabled."
+    if (name in destructiveTools && getAgentMode() == AgentMode.CHAT) {
+      return "⚠️ Tool '$name' is destructive and blocked in Chat mode. The user must switch to Build mode to allow this action."
+    }
+    return when (name) {
+      "run_sh" -> {
+        val timeout = ((args["timeout"] as? Number)?.toLong() ?: 300) * 1000
+        ToolProgressBus.update("run_sh", message = args["command"]?.toString()?.take(60) ?: "")
+        val result = ngo.xnet.aiope.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+        ToolProgressBus.clear()
+        result
+      }
+
+      "run_proot" -> if (android.os.Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) {
+        "The proot/Alpine environment ships arm64-v8a native binaries only; this device is ${android.os.Build.SUPPORTED_ABIS.joinToString()}. Use run_sh instead."
+      } else if (!ngo.xnet.aiope.core.terminal.shell.ProotBootstrap.isInstalled(app)) {
+        "Alpine not installed. Set up proot in Settings first."
+      } else {
+        val timeout = ((args["timeout"] as? Number)?.toLong() ?: 300) * 1000
+        ToolProgressBus.update("run_proot", message = args["command"]?.toString()?.take(60) ?: "")
+        val result = ngo.xnet.aiope.core.terminal.shell.ProotExecutor.exec(app, args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+        ToolProgressBus.clear()
+        result
+      }
+
+      "read_file" -> try {
+        val f = java.io.File(args["path"].toString())
+        when {
+          f.isDirectory -> "Error: '${f.path}' is a directory — use list_directory."
+          !f.exists() -> "Error: file not found: ${f.path}${storageHint(f)}"
+          !f.canRead() -> "Error: cannot read ${f.path}${storageHint(f)}"
+          else -> f.readText().let { if (it.length > fileReadLimit) "File too large" else it }
+        }
+      } catch (e: Exception) {
+        "Error: ${e.message}${storageHint(java.io.File(args["path"].toString()))}"
+      }
+
+      "write_file" -> try {
+        val f = java.io.File(args["path"].toString())
+        f.parentFile?.mkdirs()
+        f.writeText(args["content"].toString())
+        "OK: Written ${args["content"].toString().length} bytes to ${f.absolutePath}"
+      } catch (e: Exception) {
+        "FAILED write_file: ${args["path"]} — ${e.message}${storageHint(java.io.File(args["path"].toString()))}"
+      }
+
+      "list_directory" -> try {
+        val d = java.io.File(args["path"].toString())
+        when {
+          !d.exists() -> "Error: path not found: ${d.path}${storageHint(d)}"
+
+          !d.isDirectory -> "Error: '${d.path}' is a file — use read_file."
+
+          else -> d.listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" }
+            ?: "Error: cannot list ${d.path}${storageHint(d)}"
+        }
+      } catch (e: Exception) {
+        "Error: ${e.message}${storageHint(java.io.File(args["path"].toString()))}"
+      }
+
+      "open_intent" -> try {
+        val uri = android.net.Uri.parse(args["uri"].toString())
+        app.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        "Opened: $uri"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      "get_location" -> {
+        if (!PermissionHelper.hasPermission(app, android.Manifest.permission.ACCESS_FINE_LOCATION) &&
+          !PermissionHelper.hasPermission(app, android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        ) {
+          if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.ACCESS_FINE_LOCATION)) {
+            return@execute "Location permission denied. Grant location access to AIOPE in Android Settings."
+          }
+        }
+        val loc = locationProvider.getFreshLocation() ?: locationProvider.getLastLocation()
+        if (loc != null) {
+          lastLocationData = LocationData(loc.latitude, loc.longitude, if (loc.hasAltitude()) loc.altitude else null, if (loc.hasSpeed()) loc.speed.toDouble() else null, if (loc.hasBearing()) loc.bearing.toDouble() else null, loc.accuracy.toDouble())
+          locationUsedThisTurn = true
+          val base = locationProvider.formatLocation(loc)
+          val address = locationProvider.reverseGeocode(loc)
+          if (address != null) "$base\n$address" else base
+        } else {
+          "Location unavailable -- check permissions or GPS"
+        }
+      }
+
+      "search_location" -> executeSearchLocation(args["query"]?.toString() ?: "")
+
+      "search_web" -> executeSearchWeb(args["query"]?.toString() ?: "")
+
+      "search_images" -> executeSearchImages(args["query"]?.toString() ?: "")
+
+      "fetch_url" -> executeFetchUrl(args)
+
+      "query_data" -> executeQueryData(args)
+
+      "browser_navigate" -> getBrowser().navigate(args["url"]?.toString() ?: "")
+
+      "browser_content" -> getBrowser().getPageContent((args["offset"] as? Number)?.toInt() ?: 0, (args["limit"] as? Number)?.toInt())
+
+      "browser_elements" -> getBrowser().getElements()
+
+      "browser_click" -> getBrowser().click(args["selector"]?.toString() ?: "")
+
+      "browser_fill" -> getBrowser().fill(args["selector"]?.toString() ?: "", args["value"]?.toString() ?: "")
+
+      "browser_eval" -> getBrowser().evaluateJs(args["script"]?.toString() ?: "")
+
+      "browser_back" -> if (getBrowser().goBack()) "Navigated back" else "No history to go back"
+
+      "browser_scroll" -> getBrowser().scroll(args["direction"]?.toString() ?: "down", (args["amount"] as? Number)?.toInt() ?: 500)
+
+      "browser_open" -> {
+        onBrowserVisible(true)
+        "Browser opened"
+      }
+
+      "browser_close" -> {
+        onBrowserVisible(false)
+        onBrowserMaximized(false)
+        "Browser closed"
+      }
+
+      "browser_maximize" -> {
+        val max = args["maximize"] as? Boolean ?: true
+        onBrowserVisible(true)
+        onBrowserMaximized(max)
+        if (max) "Browser maximized" else "Browser restored"
+      }
+
+      "memory_store" -> {
+        val key = args["key"]?.toString() ?: return "Error: key required"
+        chatDao.upsertMemory(ngo.xnet.aiope.feature.chat.db.MemoryEntity(key = key, content = args["content"]?.toString() ?: return "Error: content required", category = args["category"]?.toString() ?: "general"))
+        "Stored memory: $key"
+      }
+
+      "memory_recall" -> {
+        val q = args["query"]?.toString() ?: ""
+        val m = if (q.isBlank()) chatDao.getAllMemories() else chatDao.searchMemories(q)
+        if (m.isEmpty()) "No memories found." else m.joinToString("\n") { "- ${it.key}: ${it.content} [${it.category}]" }
+      }
+
+      "memory_forget" -> {
+        val key = args["key"]?.toString() ?: return "Error: key required"
+        chatDao.deleteMemory(key)
+        "Deleted memory: $key"
+      }
+
+      "image_generate" -> executeImageGenerate(args)
+
+      "analyze_image" -> executeAnalyzeImage(args)
+
+      // Calendar
+      "read_calendar" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_CALENDAR)) return@execute "Calendar permission denied."
+        val days = (args["days"] as? Number)?.toInt() ?: 7
+        val now = System.currentTimeMillis()
+        val end = now + days * 86400000L
+        val cursor = app.contentResolver.query(android.provider.CalendarContract.Events.CONTENT_URI, arrayOf("_id", "title", "dtstart", "dtend", "eventLocation", "description"), "dtstart >= ? AND dtstart <= ?", arrayOf(now.toString(), end.toString()), "dtstart ASC")
+        val events = mutableListOf<String>()
+        cursor?.use {
+          while (it.moveToNext()) {
+            val id = it.getLong(0)
+            val t = it.getString(1) ?: "Untitled"
+            val s = java.text.SimpleDateFormat("EEE MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(2)))
+            val loc = it.getString(4)?.takeIf { l -> l.isNotBlank() }
+            events.add("- [id:$id] $t @ $s${loc?.let { " ($it)" } ?: ""}")
+          }
+        }
+        if (events.isEmpty()) "No events in the next $days days." else "Events (next $days days):\n${events.joinToString("\n")}"
+      } catch (e: Exception) {
+        "Error: ${e.message}. Calendar permission may be needed."
+      }
+
+      "create_event" -> try {
+        val title = args["title"]?.toString() ?: return@execute "Error: title required"
+        val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
+          data = android.provider.CalendarContract.Events.CONTENT_URI
+          putExtra(android.provider.CalendarContract.Events.TITLE, title)
+          args["description"]?.toString()?.let { putExtra(android.provider.CalendarContract.Events.DESCRIPTION, it) }
+          args["location"]?.toString()?.let { putExtra(android.provider.CalendarContract.Events.EVENT_LOCATION, it) }
+          args["start_time"]?.toString()?.let { putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, parseTime(it)) }
+          args["end_time"]?.toString()?.let { putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, parseTime(it)) }
+          addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        app.startActivity(intent)
+        "Calendar event creation opened: $title"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      "delete_event" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.WRITE_CALENDAR)) return@execute "Calendar permission denied."
+        val id = (args["event_id"] as? Number)?.toLong() ?: args["event_id"]?.toString()?.toLongOrNull() ?: return@execute "Error: event_id required"
+        val uri = android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, id)
+        val rows = app.contentResolver.delete(uri, null, null)
+        if (rows > 0) "Deleted calendar event (id: $id)" else "Event not found (id: $id)"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      // Alarms
+      "set_alarm" -> try {
+        val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
+          args["hour"]?.let { putExtra(android.provider.AlarmClock.EXTRA_HOUR, (it as Number).toInt()) }
+          args["minutes"]?.let { putExtra(android.provider.AlarmClock.EXTRA_MINUTES, (it as Number).toInt()) }
+          args["message"]?.toString()?.let { putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, it) }
+          putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, args["skip_ui"] as? Boolean ?: false)
+          addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (intent.resolveActivity(app.packageManager) != null) {
+          app.startActivity(intent)
+        } else {
+          // Fallback: use AlarmManager for a one-shot alarm
+          val h = (args["hour"] as? Number)?.toInt() ?: 0
+          val m = (args["minutes"] as? Number)?.toInt() ?: 0
+          val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, h)
+            set(java.util.Calendar.MINUTE, m)
+            set(java.util.Calendar.SECOND, 0)
+          }
+          if (cal.timeInMillis <= System.currentTimeMillis()) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
+          val am = app.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+          val pi = android.app.PendingIntent.getBroadcast(app, h * 100 + m, android.content.Intent("ngo.xnet.aiope.ALARM").setPackage(app.packageName), android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+          am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
+        }
+        val h = (args["hour"] as? Number)?.toInt()
+        val m = (args["minutes"] as? Number)?.toInt()
+        if (h != null && m != null) "Alarm set for ${"%d:%02d".format(h, m)}" else "Alarm creation opened"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      "dismiss_alarm" -> try {
+        val intent = android.content.Intent(android.provider.AlarmClock.ACTION_DISMISS_ALARM).apply {
+          args["message"]?.toString()?.let {
+            putExtra(android.provider.AlarmClock.EXTRA_ALARM_SEARCH_MODE, android.provider.AlarmClock.ALARM_SEARCH_MODE_LABEL)
+            putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, it)
+          }
+          addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (intent.resolveActivity(app.packageManager) != null) {
+          app.startActivity(intent)
+          "Alarm dismiss requested"
+        } else {
+          "No clock app available to dismiss alarms"
+        }
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      // Contacts
+      "read_contacts" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_CONTACTS)) return@execute "Contacts permission denied."
+        val query = args["query"]?.toString() ?: ""
+        val sel = if (query.isNotBlank()) "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?" else null
+        val selArgs = if (query.isNotBlank()) arrayOf("%$query%") else null
+        val cursor = app.contentResolver.query(android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI, arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER), sel, selArgs, "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC")
+        val contacts = mutableListOf<String>()
+        cursor?.use {
+          while (it.moveToNext() && contacts.size < 20) {
+            contacts.add("${it.getString(0)}: ${it.getString(1)}")
+          }
+        }
+        if (contacts.isEmpty()) "No contacts found${if (query.isNotBlank()) " matching '$query'" else ""}." else contacts.joinToString("\n")
+      } catch (e: Exception) {
+        "Error: ${e.message}. Contacts permission may be needed."
+      }
+
+      // Notifications
+      "send_notification" -> try {
+        val title = args["title"]?.toString() ?: "AIOPE"
+        val body = args["body"]?.toString() ?: return@execute "Error: body required"
+        val channelId = "aiope_tools"
+        val nm = app.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        if (android.os.Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(android.app.NotificationChannel(channelId, "Tool Notifications", android.app.NotificationManager.IMPORTANCE_DEFAULT))
+        val n = android.app.Notification.Builder(app, channelId).setContentTitle(title).setContentText(body).setSmallIcon(android.R.drawable.ic_dialog_info).setAutoCancel(true).build()
+        nm.notify(System.currentTimeMillis().toInt(), n)
+        "Notification sent: $title"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      // Clipboard
+      "clipboard_copy" -> try {
+        val text = args["text"]?.toString() ?: return@execute "Error: text required"
+        val cm = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        android.os.Handler(android.os.Looper.getMainLooper()).post { cm.setPrimaryClip(android.content.ClipData.newPlainText("AIOPE", text)) }
+        "Copied to clipboard (${text.length} chars)"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      "clipboard_read" -> try {
+        val cm = app.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        var result = ""
+        val latch = java.util.concurrent.CountDownLatch(1)
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+          result = cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+          latch.countDown()
+        }
+        latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+        if (result.isBlank()) "Clipboard is empty" else result
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      // SMS
+      "read_sms" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_SMS)) return@execute "SMS permission denied."
+        val limit = (args["limit"] as? Number)?.toInt() ?: 10
+        val cursor = app.contentResolver.query(android.provider.Telephony.Sms.CONTENT_URI, arrayOf("_id", "address", "body", "date", "type"), null, null, "date DESC LIMIT $limit")
+        val msgs = mutableListOf<String>()
+        cursor?.use {
+          while (it.moveToNext()) {
+            val id = it.getLong(0)
+            val dir = if (it.getInt(4) == 1) "←" else "→"
+            val time = java.text.SimpleDateFormat("MMM d h:mm a", java.util.Locale.US).format(java.util.Date(it.getLong(3)))
+            msgs.add("[id:$id] $dir ${it.getString(1)} ($time): ${it.getString(2).take(200)}")
+          }
+        }
+        if (msgs.isEmpty()) "No SMS messages found." else msgs.joinToString("\n")
+      } catch (e: Exception) {
+        "Error: ${e.message}. SMS permission may be needed."
+      }
+
+      "send_sms" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.SEND_SMS)) return@execute "SMS permission denied."
+        val to = args["to"]?.toString() ?: return@execute "Error: 'to' phone number required"
+        val body = args["body"]?.toString() ?: return@execute "Error: 'body' required"
+        android.telephony.SmsManager.getDefault().sendTextMessage(to, null, body, null, null)
+        "SMS sent to $to"
+      } catch (e: Exception) {
+        "Error: ${e.message}. SMS permission may be needed."
+      }
+
+      "delete_sms" -> try {
+        if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.READ_SMS)) return@execute "SMS permission denied."
+        val id = (args["sms_id"] as? Number)?.toLong() ?: args["sms_id"]?.toString()?.toLongOrNull() ?: return@execute "Error: sms_id required"
+        val uri = android.content.ContentUris.withAppendedId(android.provider.Telephony.Sms.CONTENT_URI, id)
+        val rows = app.contentResolver.delete(uri, null, null)
+        if (rows > 0) "Deleted SMS (id: $id)" else "SMS not found (id: $id)"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      // Device info
+      "device_info" -> try {
+        val bm = app.getSystemService(android.content.Context.BATTERY_SERVICE) as android.os.BatteryManager
+        val battery = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        val charging = bm.isCharging
+        val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+        val freeGb = "%.1f".format(stat.availableBytes / 1073741824.0)
+        val totalGb = "%.1f".format(stat.totalBytes / 1073741824.0)
+        val cm = app.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val net = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) }
+        val conn = when {
+          net == null -> "Offline"
+          net.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "WiFi"
+          net.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular"
+          else -> "Connected"
+        }
+        val am = app.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val mem = android.app.ActivityManager.MemoryInfo()
+        am.getMemoryInfo(mem)
+        val ramFree = "%.1f".format(mem.availMem / 1073741824.0)
+        val ramTotal = "%.1f".format(mem.totalMem / 1073741824.0)
+        "Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\nAndroid: ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})\nBattery: $battery%${if (charging) " ⚡charging" else ""}\nStorage: $freeGb / $totalGb GB free\nRAM: $ramFree / $ramTotal GB free\nNetwork: $conn"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      // Media control
+      "media_control" -> try {
+        val action = args["action"]?.toString() ?: "play_pause"
+        val keyCode = when (action) {
+          "play", "pause", "play_pause" -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+          "next" -> android.view.KeyEvent.KEYCODE_MEDIA_NEXT
+          "previous", "prev" -> android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS
+          "stop" -> android.view.KeyEvent.KEYCODE_MEDIA_STOP
+          else -> return@execute "Unknown action: $action. Use play_pause, next, previous, stop."
+        }
+        val am = app.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+        am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyCode))
+        am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, keyCode))
+        "Media: $action"
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      "rag_search" -> {
+        val query = args["query"]?.toString() ?: return "Error: query required"
+        val topK = (args["top_k"] as? Number)?.toInt() ?: 5
+        try {
+          val results = getRagEngine().search(query, topK)
+          if (results.isEmpty()) {
+            "No results found in knowledge base."
+          } else {
+            results.joinToString("\n\n") { "[${String.format("%.2f", it.score)}] ${it.title}\n${it.text}" }
+          }
+        } catch (e: Exception) {
+          "RAG error: ${e.message}"
+        }
+      }
+
+      "rag_index" -> {
+        val title = args["title"]?.toString() ?: return "Error: title required"
+        val content = args["content"]?.toString() ?: return "Error: content required"
+        try {
+          val docId = getRagEngine().indexDocument(title, content)
+          "Indexed document '$title' (id: $docId)"
+        } catch (e: Exception) {
+          "RAG index error: ${e.message}"
+        }
+      }
+
+      "orchestrate" -> {
+        val mgr = subagentManager ?: return@execute "Tool 'orchestrate' not available"
+        val (task, stages) = PipelineExecutor.parseStages(args)
+        if (stages.isEmpty()) return@execute "Error: no valid stages provided"
+        val pipeline = PipelineExecutor(agentExecutor = mgr) { progress ->
+          android.util.Log.i("AIOPE2", "Pipeline: $progress")
+        }
+        pipeline.runPipeline(task, stages)
+      }
+
+      "ssh_start", "ssh_exec", "ssh_exit" -> {
+        val rtp = remoteToolBridge ?: return@execute "Remote tools not available. feature-remote not initialized."
+        if (name == "ssh_exec") ToolProgressBus.update("ssh_exec", message = args["command"]?.toString()?.take(60) ?: "")
+        val result = rtp.execute(name, args)
+        if (name == "ssh_exec") ToolProgressBus.clear()
+        result
+      }
+
+      "todo_write" -> executeTodoWrite(args)
+
+      "todo_read" -> formatTodos(loadTodos())
+
+      "datetime_now" -> {
+        val now = java.time.ZonedDateTime.now()
+        "Now: ${now.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss"))}\nTimezone: ${now.zone.id} (${now.offset})\nDay of week: ${now.dayOfWeek}\nEpoch ms: ${System.currentTimeMillis()}"
+      }
+
+      "edit_file" -> try {
+        val path = args["path"]?.toString() ?: return@execute "Error: path required"
+        val oldStr = args["old_string"]?.toString() ?: return@execute "Error: old_string required"
+        val newStr = args["new_string"]?.toString() ?: ""
+        if (oldStr.isEmpty()) return@execute "Error: old_string cannot be empty"
+        val replaceAll = args["replace_all"] as? Boolean ?: false
+        val f = java.io.File(path)
+        if (!f.isFile) return@execute "Error: file not found: $path${storageHint(f)}"
+        if (!f.canWrite()) return@execute "Error: cannot write $path${storageHint(f)}"
+        val text = f.readText()
+        val count = text.split(oldStr).size - 1
+        if (count == 0) return@execute "Error: old_string not found in $path. read_file first and copy the exact text including whitespace."
+        if (count > 1 && !replaceAll) return@execute "Error: old_string matches $count times in $path. Include more surrounding context to make it unique, or pass replace_all=true."
+        val updated = if (replaceAll) text.replace(oldStr, newStr) else text.replaceFirst(oldStr, newStr)
+        f.writeText(updated)
+        "OK: Replaced $count occurrence(s) in $path (${updated.length} bytes written)"
+      } catch (e: Exception) {
+        "FAILED edit_file: ${args["path"]} — ${e.message}"
+      }
+
+      "search_files" -> try {
+        executeSearchFiles(args)
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      "http_request" -> executeHttpRequest(args)
+
+      "schedule_task" -> {
+        val prompt = args["prompt"]?.toString() ?: return@execute "Error: prompt required"
+        val type = (args["schedule_type"]?.toString() ?: "interval").lowercase()
+        if (type !in setOf("once", "interval", "daily", "weekly", "monthly")) {
+          return@execute "Error: invalid schedule_type '$type'. Use once, interval, daily, weekly, or monthly."
+        }
+        val unit = when ((args["interval_unit"]?.toString() ?: "min").lowercase()) {
+          "hour" -> "hour"
+          "day" -> "day"
+          else -> "min"
+        }
+        // Keep in sync with workerToolCatalog in AgentRunWorker.kt (file-private there).
+        val allowedTools = setOf(
+          "search_web", "fetch_url", "http_request", "run_sh", "ssh_exec", "send_notification",
+          "set_alarm", "memory_store", "memory_recall", "read_file", "write_file", "list_directory", "datetime_now",
+        )
+        val tools = (args["tools"]?.toString() ?: "").split(",").map { it.trim() }.filter { it in allowedTools }.joinToString(",")
+        val task = ngo.xnet.aiope.feature.chat.db.ScheduledTaskEntity(
+          prompt = prompt,
+          tools = tools,
+          scheduleType = type,
+          intervalValue = (args["interval_value"] as? Number)?.toInt() ?: 30,
+          intervalUnit = unit,
+          timeHour = (args["time_hour"] as? Number)?.toInt() ?: 0,
+          timeMinute = (args["time_minute"] as? Number)?.toInt() ?: 0,
+          daysOfWeek = args["days_of_week"]?.toString() ?: "",
+          dayOfMonth = (args["day_of_month"] as? Number)?.toInt() ?: 1,
+          maxRuns = (args["max_runs"] as? Number)?.toInt() ?: 0,
+        )
+        try {
+          val armed = AgentScheduler.schedule(app, task)
+          chatDao.insertScheduledTask(armed)
+          val exactNote = if (!AgentScheduler.canScheduleExact(app)) {
+            "\nNote: exact alarms are not permitted on this device, so runs use inexact timing and may be delayed by Doze. Enable \"Alarms & reminders\" for AIOPE in Android Settings for precise timing."
+          } else {
+            ""
+          }
+          if (!armed.enabled) {
+            "Error: schedule produced no next run. Check max_runs and schedule parameters."
+          } else {
+            "Scheduled task created.\nID: ${armed.id}\nPrompt: ${prompt.take(120)}\nSchedule: ${AgentScheduler.describe(armed)}\nNext run: ${AgentScheduler.formatTime(armed.nextRun)}\nTools: ${tools.ifBlank { "(none - reasoning only)" }}\nRuns report via notification.$exactNote"
+          }
+        } catch (e: Exception) {
+          "Error: ${e.message}"
+        }
+      }
+
+      "cancel_schedule" -> {
+        val id = args["task_id"]?.toString() ?: return@execute "Error: task_id required"
+        val task = chatDao.getScheduledTaskById(id)
+        if (task == null) {
+          "No scheduled task with id: $id. Use list_schedules to see ids."
+        } else {
+          AgentScheduler.cancel(app, id)
+          chatDao.deleteScheduledTask(id)
+          "Cancelled scheduled task '$id': ${task.prompt.take(80)}"
+        }
+      }
+
+      "list_schedules" -> {
+        val tasks = chatDao.getScheduledTasks()
+        if (tasks.isEmpty()) {
+          "No scheduled agent tasks."
+        } else {
+          tasks.joinToString("\n\n") { t ->
+            "- [${t.id}] \"${t.prompt.take(80)}\"\n  Schedule: ${AgentScheduler.describe(t)} | status: ${t.status} | ${if (t.enabled) "enabled" else "disabled"}\n  Next: ${AgentScheduler.formatTime(t.nextRun)} | Last: ${AgentScheduler.formatTime(t.lastRun)} | Runs: ${t.runsCompleted}${if (t.maxRuns > 0) "/${t.maxRuns}" else ""}${if (t.tools.isNotBlank()) "\n  Tools: ${t.tools}" else ""}"
+          }
+        }
+      }
+
+      else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"
+    }
+  }
+
+  private fun executeFetchUrl(args: Map<String, Any?>): String = try {
+    val fetchUrl = java.net.URL(args["url"].toString())
+    ToolProgressBus.update("fetch_url", message = fetchUrl.host)
+    val mode = args["mode"]?.toString() ?: "text"
+    val req = okhttp3.Request.Builder().url(fetchUrl)
+      .header("User-Agent", "Mozilla/5.0 (Linux; Android) AIOPE/2.0").build()
+    val resp = httpClient.newCall(req).execute()
+    val ct = resp.header("Content-Type") ?: ""
+    val body = resp.use { it.body?.string() ?: "" }
+    val result = if (mode == "raw" || !ct.contains("html")) {
+      body
+    } else {
+      val base = "${fetchUrl.protocol}://${fetchUrl.host}"
+      val imgs = mutableListOf<String>()
+      Regex("""<img[^>]+src=["']([^"']+)["'][^>]*(?:alt=["']([^"']*)["'])?""", RegexOption.IGNORE_CASE).findAll(body).forEach { m ->
+        val src = m.groupValues[1].let {
+          if (it.startsWith("http")) {
+            it
+          } else if (it.startsWith("/")) {
+            "$base$it"
+          } else {
+            "$base/$it"
+          }
+        }
+        if (src.matches(Regex(".*\\.(jpg|jpeg|png|gif|webp|svg)(\\?.*)?$", RegexOption.IGNORE_CASE)) || !src.contains(".js")) imgs.add("![${m.groupValues.getOrElse(2) { "" }.take(80).ifEmpty { "image" }}]($src)")
+      }
+      Regex("""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']""", RegexOption.IGNORE_CASE).findAll(body).forEach { m ->
+        val src = m.groupValues[1].let { if (it.startsWith("http")) it else "$base$it" }
+        if (imgs.none { it.contains(src) }) imgs.add("![og:image]($src)")
+      }
+      val cleaned = body.replace(Regex("<(script|style|nav|footer|header)[^>]*>[\\s\\S]*?</\\1>", RegexOption.IGNORE_CASE), "")
+      val text = android.text.Html.fromHtml(cleaned, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
+      (if (imgs.isNotEmpty()) imgs.distinct().take(20).joinToString("\n") + "\n\n" else "") + text
+    }
+    val offset = (args["offset"] as? Number)?.toInt() ?: 0
+    val limit = (args["limit"] as? Number)?.toInt()
+
+    val safeOffset = offset.coerceIn(0, result.length)
+    val actualLimit = limit ?: result.length
+    val end = (safeOffset + actualLimit).coerceAtMost(result.length)
+
+    var trimmed = result.substring(safeOffset, end)
+    if (end < result.length) {
+      trimmed += "\n...(truncated. Use offset=$end to read more)"
+    }
+    "Content Length: ${result.length}\nShowing: $safeOffset to $end\n\n$trimmed"
+  } catch (e: Exception) {
+    "Error: ${e.message}"
+  }.also { ToolProgressBus.clear() }
+
+  private suspend fun searxQuery(query: String, categories: String = ""): String {
+    if (query.isBlank()) return "Error: query required"
+    val u = "https://search.xnet.ngo/search?q=${java.net.URLEncoder.encode(query, "UTF-8")}&format=json" +
+      if (categories.isNotBlank()) "&categories=${java.net.URLEncoder.encode(categories, "UTF-8")}" else ""
+    val req = okhttp3.Request.Builder().url(u)
+      .header("Accept", "application/json")
+      .header("Accept-Encoding", "identity")
+      .header("User-Agent", "aiope/1.0")
+      .build()
+    val body = try {
+      httpClient.newCall(req).execute().use { if (it.isSuccessful) it.body?.string() ?: "" else "" }
+    } catch (_: Exception) {
+      ""
+    }
+    if (body.isBlank()) return ddgFallback(query, categories)
+    val json = org.json.JSONObject(body)
+    val results = json.optJSONArray("results") ?: return ddgFallback(query, categories)
+    val limit = if (categories == "images") 20 else 10
+    val sb = StringBuilder()
+    for (i in 0 until minOf(results.length(), limit)) {
+      val r = results.getJSONObject(i)
+      if (categories == "images") {
+        val img = r.optString("img_src", "").ifBlank { r.optString("thumbnail_src", "") }
+        if (img.isNotBlank()) sb.append("- ${r.optString("title")}\n  $img\n  ${r.optString("url")}\n")
+      } else {
+        sb.append("- ${r.optString("title")}\n  ${r.optString("url")}\n  ${r.optString("content")}\n")
+      }
+    }
+    return sb.toString().ifBlank { ddgFallback(query, categories) }
+  }
+
+  private fun ddgFallback(query: String, categories: String): String {
+    val u = "https://html.duckduckgo.com/html/?q=${java.net.URLEncoder.encode(query, "UTF-8")}"
+    val req = okhttp3.Request.Builder().url(u)
+      .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+      .build()
+    val html = try {
+      httpClient.newCall(req).execute().use { it.body?.string() ?: "" }
+    } catch (_: Exception) {
+      return "Error: search unavailable"
+    }
+    val pattern = Regex("""<a rel="nofollow" class="result__a" href="[^"]*uddg=([^&"]+)[^"]*">(.+?)</a>""")
+    val snippetPattern = Regex("""<a class="result__snippet"[^>]*>(.+?)</a>""")
+    val links = pattern.findAll(html).take(10).toList()
+    val snippets = snippetPattern.findAll(html).take(10).toList()
+    if (links.isEmpty()) return "No results found."
+    val sb = StringBuilder()
+    links.forEachIndexed { i, m ->
+      val url = java.net.URLDecoder.decode(m.groupValues[1], "UTF-8")
+      val title = m.groupValues[2].replace(Regex("<[^>]+>"), "")
+      val snippet = snippets.getOrNull(i)?.groupValues?.get(1)?.replace(Regex("<[^>]+>"), "") ?: ""
+      sb.append("- $title\n  $url\n  $snippet\n")
+    }
+    return sb.toString()
+  }
+
+  private suspend fun executeSearchWeb(query: String): String = try {
+    searxQuery(query)
+  } catch (e: Exception) {
+    "Error: ${e.message}"
+  }
+
+  private suspend fun executeSearchImages(query: String): String = try {
+    searxQuery(query, "images")
+  } catch (e: Exception) {
+    "Error: ${e.message}"
+  }
+
+  private suspend fun executeQueryData(args: Map<String, Any?>): String = try {
+    val cat = args["category"]?.toString() ?: ""
+    val extra = args["extra"]?.toString() ?: ""
+    val needsLoc = cat in setOf("weather", "weather_hourly", "alerts", "air_quality", "uv", "solar", "sunrise_sunset", "time")
+    val (lat, lon) = if (needsLoc) {
+      val loc = lastLocationData
+        ?: locationProvider.getLastLocation()?.let { l ->
+          lastLocationData = LocationData(l.latitude, l.longitude, null, null, null, l.accuracy.toDouble())
+          lastLocationData
+        }
+      (loc?.latitude?.toString() ?: "") to (loc?.longitude?.toString() ?: "")
+    } else {
+      "" to ""
+    }
+    val p = providerStore.getActive()
+    val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
+    val enc = java.net.URLEncoder.encode(extra, "UTF-8")
+    val req = okhttp3.Request.Builder().url("$gwBase/v1/data?q=$cat&lat=$lat&lon=$lon&extra=$enc")
+      .apply { if (p.apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${p.apiKey}") }.build()
+    val resp = httpClient.newCall(req).execute()
+    val body = resp.use { if (it.isSuccessful) it.body?.string() ?: "" else "Error: HTTP ${it.code}" }
+    val enriched = resolveDataImages(body)
+    if (enriched.length > fetchLimit) enriched.take(fetchLimit) + "\n...(truncated)" else enriched
+  } catch (e: Exception) {
+    "Error: ${e.message}"
+  }
+
+  private suspend fun executeImageGenerate(args: Map<String, Any?>): String {
+    val prompt = args["prompt"]?.toString() ?: return "Error: prompt required"
+    return try {
+      val (profile, modelId) = resolveTaskModel(ModelTask.IMAGE_GENERATION)
+      val p = profile.copy(selectedModelId = modelId)
+      val base = p.effectiveApiBase().trimEnd('/')
+
+      // Cloudflare uses /ai/run/{model} instead of /images/generations
+      val (url, jsonBody) = if (base.contains("api.cloudflare.com") && base.contains("/ai/")) {
+        val cfBase = base.replace(Regex("/ai/v1$"), "/ai").replace(Regex("/v1$"), "")
+        "$cfBase/run/$modelId" to org.json.JSONObject().apply {
+          put("prompt", prompt)
+        }.toString()
+      } else {
+        "$base/images/generations" to org.json.JSONObject().apply {
+          put("model", modelId)
+          put("prompt", prompt)
+          put("response_format", "b64_json")
+          put("seed", System.currentTimeMillis())
+        }.toString()
+      }
+
+      val req = okhttp3.Request.Builder().url(url)
+        .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), jsonBody))
+        .apply { if (p.apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${p.apiKey}") }.build()
+      val imgClient = httpClient.newBuilder().readTimeout(300, java.util.concurrent.TimeUnit.SECONDS).build()
+      val resp = imgClient.newCall(req).execute()
+      val body = resp.use { it.body?.string() ?: "" }
+      if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}: ${body.take(200)}")
+      val json = org.json.JSONObject(body)
+      val b64 = json.optJSONObject("result")?.optString("image") ?: json.optJSONArray("data")?.optJSONObject(0)?.optString("b64_json") ?: ""
+      val imageUrl = json.optJSONArray("data")?.optJSONObject(0)?.optString("url") ?: ""
+      val bytes = if (b64.isNotBlank()) {
+        android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+      } else if (imageUrl.isNotBlank()) {
+        java.net.URL(imageUrl).readBytes()
+      } else {
+        throw Exception("No image in response")
+      }
+      val dir = java.io.File(app.filesDir, "generated")
+      dir.mkdirs()
+      val file = java.io.File(dir, "img_${System.currentTimeMillis()}.png")
+      file.writeBytes(bytes)
+      "Image generated successfully.\nFile: file://${file.absolutePath}\nDisplay: ![generated image](file://${file.absolutePath})"
+    } catch (e: Exception) {
+      "Image generation FAILED.\nError: ${e.message}"
+    }
+  }
+
+  private suspend fun executeAnalyzeImage(args: Map<String, Any?>): String {
+    val url = args["url"]?.toString() ?: return "Error: url required"
+    val question = args["question"]?.toString() ?: "Describe this image in detail."
+    return try {
+      val (profile, modelId) = resolveTaskModel(ModelTask.IMAGE_RECOGNITION)
+      val imgData = if (url.startsWith("file://")) {
+        java.io.File(url.removePrefix("file://")).readBytes()
+      } else {
+        java.net.URL(url).readBytes()
+      }
+      val normalized = normalizeForVision(imgData, url)
+      val b64 = android.util.Base64.encodeToString(normalized, android.util.Base64.NO_WRAP)
+      val sb = StringBuilder()
+      StreamingOrchestrator(baseUrl = profile.effectiveApiBase(), apiKey = profile.apiKey, model = modelId).stream(listOf("user" to question), listOf(b64)).collect { if (it.content.isNotEmpty()) sb.append(it.content) }
+      "Image analysis complete.\nSource: $url\nResult: ${sb.toString().ifBlank { "No description returned." }}"
+    } catch (e: Exception) {
+      "Image analysis FAILED.\nError: ${e.message}"
+    }
+  }
+
+  private fun normalizeForVision(data: ByteArray, url: String): ByteArray {
+    // SVG detection: starts with '<' or UTF-8 BOM, or .svg extension
+    val isSvg = url.lowercase().endsWith(".svg") ||
+      (data.isNotEmpty() && (data[0] == '<'.code.toByte() || (data.size > 3 && data[0] == 0xEF.toByte() && data[1] == 0xBB.toByte() && data[2] == 0xBF.toByte())))
+    if (isSvg) {
+      try {
+        val svg = com.caverock.androidsvg.SVG.getFromInputStream(data.inputStream())
+        val w = svg.documentWidth.takeIf { it > 0 } ?: 1024f
+        val h = svg.documentHeight.takeIf { it > 0 } ?: 1024f
+        val scale = 1024f / maxOf(w, h)
+        val bw = (w * scale).toInt()
+        val bh = (h * scale).toInt()
+        val bmp = android.graphics.Bitmap.createBitmap(bw, bh, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        canvas.drawColor(android.graphics.Color.WHITE)
+        svg.documentWidth = bw.toFloat()
+        svg.documentHeight = bh.toFloat()
+        svg.renderToCanvas(canvas)
+        return bitmapToJpeg(bmp)
+      } catch (e: Exception) {
+        android.util.Log.w("ToolExec", "SVG rasterize failed: ${e.message}")
+      }
+    }
+    // Decode any format Android supports (JPEG, PNG, WebP, GIF, BMP, HEIF)
+    val bmp = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.size) ?: return data
+    val maxDim = 1024
+    val scale = if (bmp.width > maxDim || bmp.height > maxDim) maxDim.toFloat() / maxOf(bmp.width, bmp.height) else 1f
+    val scaled = if (scale < 1f) android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true) else bmp
+    val result = bitmapToJpeg(scaled)
+    if (scaled != bmp) bmp.recycle()
+    return result
+  }
+
+  private fun bitmapToJpeg(bmp: android.graphics.Bitmap): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
+    bmp.recycle()
+    return out.toByteArray()
+  }
+
+  private suspend fun executeSearchLocation(query: String): String {
+    locationUsedThisTurn = true
+    val q = query.lowercase()
+    val businessTerms = listOf("near", "closest", "nearest", "nearby", "restaurant", "food", "eat", "coffee", "cafe", "pizza", "burger", "gas", "fuel", "pharmacy", "hotel", "grocery", "bar", "pub", "gym", "bank", "atm", "parking", "hospital", "mcdonald", "starbucks", "walmart", "target", "costco", "wendy", "subway", "taco bell", "burger king", "chick-fil", "dunkin")
+    val isBusiness = businessTerms.any { q.contains(it) }
+    return try {
+      if (!isBusiness) {
+        val geocoder = android.location.Geocoder(app, java.util.Locale.US)
+        val results = geocoder.getFromLocationName(query, 5)
+        if (!results.isNullOrEmpty()) {
+          lastLocationData = LocationData(results[0].latitude, results[0].longitude)
+          results.mapIndexed { i, addr -> "${i + 1}. ${addr.getAddressLine(0) ?: "${addr.locality}, ${addr.adminArea}"}\n   Lat: ${addr.latitude}, Lng: ${addr.longitude}" }.joinToString("\n")
+        } else {
+          searchPlaces(query)
+        }
+      } else {
+        searchPlaces(query)
+      }
+    } catch (e: Exception) {
+      android.util.Log.w("ToolExec", "op failed: ${e.message}")
+      try {
+        searchPlaces(query)
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+    }
+  }
+
+  private suspend fun searchPlaces(query: String): String {
+    var lat = lastLocationData?.latitude
+    var lng = lastLocationData?.longitude
+    if (lat == null || lng == null) {
+      val loc = locationProvider.getFreshLocation() ?: locationProvider.getLastLocation()
+      if (loc != null) {
+        lastLocationData = LocationData(loc.latitude, loc.longitude)
+        lat = loc.latitude
+        lng = loc.longitude
+      } else {
+        return "Location unavailable. Enable GPS and try again."
+      }
+    }
+    val q = query.trim().replace(Regex("\\s*(near|in|around|close to|closest to|nearest to)\\s+.*$", RegexOption.IGNORE_CASE), "").trim()
+    val encoded = java.net.URLEncoder.encode(q, "UTF-8")
+    try {
+      val p = providerStore.getActive()
+      val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
+      val req = okhttp3.Request.Builder().url("$gwBase/v1/data?q=places&query=$encoded&lat=$lat&lon=$lng")
+        .apply { if (p.apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${p.apiKey}") }.build()
+      val resp = httpClient.newCall(req).execute()
+      if (resp.isSuccessful) {
+        val raw = resp.use { it.body?.string() ?: "" }
+        val json = org.json.JSONObject(raw)
+        val body = json.optJSONObject("data")?.toString() ?: raw
+        if (body.contains("features")) return parseGeoapifyResults(body, query)
+      }
+    } catch (e: Exception) {
+      android.util.Log.w("ToolExec", "op failed: ${e.message}")
+    }
+    val apiKey = providerStore.getGeoapifyKey()
+    if (apiKey.isBlank()) return "Place search unavailable. Configure location search on the gateway or set a Geoapify key in Settings."
+    val conn = httpClient.newCall(okhttp3.Request.Builder().url("https://api.geoapify.com/v2/places?categories=commercial,catering,service,entertainment,leisure,sport,tourism,accommodation,education,healthcare&conditions=named&filter=circle:$lng,$lat,5000&bias=proximity:$lng,$lat&limit=5&name=$encoded&apiKey=$apiKey").build()).execute()
+    if (!conn.isSuccessful) {
+      val conn2 = httpClient.newCall(okhttp3.Request.Builder().url("https://api.geoapify.com/v1/geocode/search?text=${java.net.URLEncoder.encode(query, "UTF-8")}&bias=proximity:$lng,$lat&limit=5&apiKey=$apiKey").build()).execute()
+      if (!conn2.isSuccessful) return "Search error: HTTP ${conn2.code}"
+      return parseGeoapifyResults(conn2.use { it.body?.string() ?: "" }, query)
+    }
+    return parseGeoapifyResults(conn.use { it.body?.string() ?: "" }, query)
+  }
+
+  private fun parseGeoapifyResults(body: String, query: String): String {
+    val json = org.json.JSONObject(body)
+    val features = json.optJSONArray("features")
+    if (features == null || features.length() == 0) return "No results found for: $query"
+    val userLat = lastLocationData?.latitude
+    val userLng = lastLocationData?.longitude
+    val results = (0 until minOf(features.length(), 5)).map { i ->
+      val props = features.getJSONObject(i).getJSONObject("properties")
+      val name = props.optString("name", "").ifBlank { props.optString("formatted", "Unnamed") }
+      val addr = props.optString("formatted", "").ifBlank { null }
+      val phone = props.optString("contact:phone", "").ifBlank { props.optString("phone", "").ifBlank { null } }
+      val hours = props.optString("opening_hours", "").ifBlank { null }
+      val pLat = props.optDouble("lat", 0.0)
+      val pLng = props.optDouble("lon", 0.0)
+      val dist = if (userLat != null && userLng != null) haversineKm(userLat, userLng, pLat, pLng) else null
+      buildString {
+        append("${i + 1}. $name")
+        dist?.let { append(" (${"%.1f".format(it)} km)") }
+        if (addr != null && addr != name) append("\n   Address: $addr")
+        phone?.let { append("\n   Phone: $it") }
+        hours?.let { append("\n   Hours: $it") }
+        append("\n   Lat: $pLat, Lng: $pLng")
+      }
+    }
+    val fp = features.getJSONObject(0).getJSONObject("properties")
+    lastLocationData = LocationData(fp.optDouble("lat", 0.0), fp.optDouble("lon", 0.0))
+    return results.joinToString("\n")
+  }
+
+  private fun resolveDataImages(json: String): String = try {
+    val imgs = mutableListOf<String>()
+    extractImageUrls(org.json.JSONTokener(json).nextValue(), imgs)
+    if (imgs.isNotEmpty()) imgs.distinct().take(20).joinToString("\n") + "\n\n" + json else json
+  } catch (e: Exception) {
+    android.util.Log.w("ToolExec", "op failed: ${e.message}")
+    json
+  }
+
+  private fun extractImageUrls(obj: Any?, out: MutableList<String>) {
+    when (obj) {
+      is org.json.JSONObject -> {
+        val imgKeys = setOf("url", "hdurl", "href", "image_url", "img_src", "thumbnail", "preview", "media_url", "src", "image")
+        for (key in obj.keys()) {
+          val v = obj.opt(key)
+          if (v is String && key in imgKeys && v.matches(Regex("^https?://.*\\.(jpg|jpeg|png|gif|webp)(\\?.*)?$", RegexOption.IGNORE_CASE))) out.add("![${obj.optString("title", key)}]($v)") else extractImageUrls(v, out)
+        }
+      }
+
+      is org.json.JSONArray -> for (i in 0 until minOf(obj.length(), 20)) extractImageUrls(obj.opt(i), out)
+    }
+  }
+
+  private fun parseTime(s: String): Long = try {
+    val fmts = listOf("yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm", "MM/dd/yyyy HH:mm", "MMM d yyyy h:mm a", "h:mm a")
+    fmts.firstNotNullOfOrNull { fmt -> runCatching { java.text.SimpleDateFormat(fmt, java.util.Locale.US).parse(s)?.time }.getOrNull() } ?: s.toLong()
+  } catch (e: Exception) {
+    android.util.Log.w("ToolExec", "op failed: ${e.message}")
+    System.currentTimeMillis() + 3600000
+  }
+
+  private fun haversineKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val r = 6371.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = Math.sin(dLat / 2).let { it * it } + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.sin(dLon / 2).let { it * it }
+    return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  }
+
+  // ---- Agent todo list (todo_write / todo_read) ----
+  // Uses its own prefs file: ToolStore wipes "aiope_tools" during migration.
+
+  private val todoPrefs by lazy { app.getSharedPreferences("aiope_agent_state", android.content.Context.MODE_PRIVATE) }
+
+  private fun loadTodos(): org.json.JSONArray = try {
+    org.json.JSONArray(todoPrefs.getString("cuo_todos", "[]"))
+  } catch (_: Exception) {
+    org.json.JSONArray()
+  }
+
+  private fun executeTodoWrite(args: Map<String, Any?>): String = try {
+    val incoming = when (val raw = args["todos"]) {
+      is org.json.JSONArray -> raw
+      is String -> org.json.JSONArray(raw)
+      else -> return "Error: 'todos' array required"
+    }
+    if (incoming.length() == 0 && args["merge"] != true) {
+      todoPrefs.edit().remove("cuo_todos").apply()
+      return "OK: Todo list cleared."
+    }
+    val validStatuses = setOf("pending", "in_progress", "completed", "cancelled")
+    fun normalized(src: org.json.JSONObject): org.json.JSONObject {
+      val status = src.optString("status", "pending").lowercase()
+      return org.json.JSONObject()
+        .put("id", src.optString("id"))
+        .put("content", src.optString("content"))
+        .put("status", if (status in validStatuses) status else "pending")
+    }
+    val out = org.json.JSONArray()
+    if (args["merge"] == true) {
+      val unmatched = (0 until incoming.length()).map { incoming.getJSONObject(it) }.toMutableList()
+      val existing = loadTodos()
+      for (i in 0 until existing.length()) {
+        val e = existing.getJSONObject(i)
+        val match = unmatched.firstOrNull { it.optString("id") == e.optString("id") }
+        if (match != null) {
+          out.put(normalized(match))
+          unmatched.remove(match)
+        } else {
+          out.put(e)
+        }
+      }
+      unmatched.forEach { out.put(normalized(it)) }
+    } else {
+      for (i in 0 until incoming.length()) out.put(normalized(incoming.getJSONObject(i)))
+    }
+    todoPrefs.edit().putString("cuo_todos", out.toString()).apply()
+    "OK: Todo list saved (${out.length()} item(s))."
+  } catch (e: Exception) {
+    "Error: ${e.message}"
+  }
+
+  private fun formatTodos(arr: org.json.JSONArray): String {
+    if (arr.length() == 0) return "No todos. Use todo_write to plan multi-step work."
+    val order = listOf("pending", "in_progress", "completed", "cancelled")
+    val grouped = mutableMapOf<String, MutableList<String>>()
+    order.forEach { grouped[it] = mutableListOf() }
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      grouped.getOrPut(o.optString("status", "pending")) { mutableListOf() }.add("[${o.optString("id")}] ${o.optString("content")}")
+    }
+    val body = order.filter { grouped[it]!!.isNotEmpty() }.joinToString("\n") { st -> "$st:\n" + grouped[st]!!.joinToString("\n") { "  - $it" } }
+    val done = grouped["completed"]!!.size
+    val cancelled = grouped["cancelled"]!!.size
+    val open = arr.length() - done - cancelled
+    return "$body\n\n${arr.length()} total | $open open | $done completed | $cancelled cancelled"
+  }
+
+  // ---- File tree search (search_files) ----
+
+  private fun executeSearchFiles(args: Map<String, Any?>): String {
+    val rootPath = args["path"]?.toString() ?: return "Error: path required"
+    val pattern = args["pattern"]?.toString() ?: return "Error: pattern required"
+    val target = (args["target"]?.toString() ?: "content").lowercase()
+    if (target !in setOf("content", "files")) return "Error: target must be 'content' or 'files'"
+    val limit = ((args["limit"] as? Number)?.toInt() ?: 50).coerceIn(1, 500)
+    val skipDirs = setOf(".git", "node_modules", "build")
+    val regex = try {
+      Regex(pattern, RegexOption.IGNORE_CASE)
+    } catch (e: Exception) {
+      return "Error: invalid regex '$pattern': ${e.message}"
+    }
+    val globRegex = args["glob"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { g ->
+      try {
+        Regex("^" + g.replace("**/", "\u0001").replace(".", "\\.").replace("*", "[^/]*").replace("\u0001", "(?:.*/)?") + "$")
+      } catch (_: Exception) {
+        null
+      }
+    }
+    val root = java.io.File(rootPath)
+    if (!root.exists()) return "Error: path not found: $rootPath${storageHint(root)}"
+    if (!root.isDirectory) return "Error: '$rootPath' is a file, not a directory."
+    if (!root.canRead()) return "Error: cannot read $rootPath${storageHint(root)}"
+    val matches = mutableListOf<String>()
+    val walker = root.walkTopDown().maxDepth(10).onEnter { it.name !in skipDirs }.filter { it.isFile }.iterator()
+    while (matches.size < limit && walker.hasNext()) {
+      val file = walker.next()
+      val rel = file.absolutePath.removePrefix(root.absolutePath).trimStart('/')
+      if (globRegex != null && !globRegex.matches(rel) && !globRegex.matches(file.name)) continue
+      if (target == "files") {
+        if (regex.containsMatchIn(file.name)) matches.add(rel)
+      } else {
+        if (file.length() > 1_000_000) continue
+        try {
+          file.useLines { lines ->
+            lines.forEachIndexed { idx, line ->
+              if (matches.size >= limit) return@useLines
+              if (regex.containsMatchIn(line)) matches.add("$rel:${idx + 1}: ${line.trim().take(200)}")
+            }
+          }
+        } catch (_: Exception) {
+          // Binary or unreadable file — skip.
+        }
+      }
+    }
+    val what = if (target == "files") "file(s) named" else "match(es) for"
+    return if (matches.isEmpty()) {
+      "No $what '$pattern' under $rootPath"
+    } else {
+      "Found ${matches.size} $what '$pattern' under $rootPath:\n${matches.joinToString("\n")}"
+    }
+  }
+
+  // ---- Generic HTTP client (http_request) ----
+
+  private suspend fun executeHttpRequest(args: Map<String, Any?>): String = try {
+    val url = args["url"]?.toString() ?: return "Error: url required"
+    val method = (args["method"]?.toString() ?: "GET").uppercase()
+    if (method !in setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")) return "Error: unsupported method: $method"
+    val timeoutSec = ((args["timeout_seconds"] as? Number)?.toLong() ?: 30L).coerceIn(1L, 300L)
+    val headerMap = mutableMapOf<String, String>()
+    when (val h = args["headers"]) {
+      is org.json.JSONObject -> h.keys().forEach { k -> headerMap[k] = h.optString(k) }
+      is Map<*, *> -> h.forEach { (k, v) -> headerMap[k.toString()] = v.toString() }
+    }
+    val bodyText = args["body"]?.toString() ?: ""
+    val client = httpClient.newBuilder().callTimeout(timeoutSec, java.util.concurrent.TimeUnit.SECONDS).build()
+    val contentType = headerMap.entries.firstOrNull { it.key.equals("Content-Type", true) }?.value ?: "text/plain"
+    val builder = okhttp3.Request.Builder().url(url)
+    if (method != "GET" && method != "HEAD") {
+      val reqBody = okhttp3.RequestBody.create(contentType.toMediaTypeOrNull(), bodyText)
+      when (method) {
+        "POST" -> builder.post(reqBody)
+        "PUT" -> builder.put(reqBody)
+        "PATCH" -> builder.patch(reqBody)
+        "DELETE" -> if (bodyText.isEmpty()) builder.delete() else builder.delete(reqBody)
+      }
+    }
+    headerMap.forEach { (k, v) -> builder.header(k, v) }
+    ToolProgressBus.update("http_request", message = "$method $url".take(60))
+    val resp = client.newCall(builder.build()).execute()
+    resp.use { r ->
+      val bodyStr = r.body?.string() ?: ""
+      val selHeaders = listOf("Content-Type", "Content-Length", "Location", "Cache-Control", "Set-Cookie").mapNotNull { h -> r.header(h)?.let { "$h: ${it.take(200)}" } }.joinToString("\n")
+      val trunc = bodyStr.take(20480)
+      val note = if (bodyStr.length > 20480) "\n...(truncated, ${bodyStr.length} bytes total)" else ""
+      "HTTP ${r.code} ${r.message}\n$selHeaders\n\n$trunc$note"
+    }.also { ToolProgressBus.clear() }
+  } catch (e: Exception) {
+    ToolProgressBus.clear()
+    "Error: ${e.message}"
+  }
+}

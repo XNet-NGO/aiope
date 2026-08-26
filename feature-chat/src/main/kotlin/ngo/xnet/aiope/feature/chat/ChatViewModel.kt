@@ -1,0 +1,1433 @@
+package ngo.xnet.aiope.feature.chat
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import ngo.xnet.aiope.core.model.RemoteToolBridge
+import ngo.xnet.aiope.core.network.ModelConfig
+import ngo.xnet.aiope.core.network.ModelDef
+import ngo.xnet.aiope.core.network.ProviderProfile
+import ngo.xnet.aiope.core.network.ProviderTemplates
+import ngo.xnet.aiope.feature.chat.db.ChatDao
+import ngo.xnet.aiope.feature.chat.db.ConversationEntity
+import ngo.xnet.aiope.feature.chat.db.MessageEntity
+import ngo.xnet.aiope.feature.chat.engine.AudioConfig
+import ngo.xnet.aiope.feature.chat.engine.RealtimeAudioManager
+import ngo.xnet.aiope.feature.chat.engine.RealtimeStreaming
+import ngo.xnet.aiope.feature.chat.engine.SafeOkHttp
+import ngo.xnet.aiope.feature.chat.engine.StreamEvent
+import ngo.xnet.aiope.feature.chat.engine.StreamingOrchestrator
+import ngo.xnet.aiope.feature.chat.engine.TokenCounter
+import ngo.xnet.aiope.feature.chat.engine.ToolExecutor
+import ngo.xnet.aiope.feature.chat.settings.McpManager
+import ngo.xnet.aiope.feature.chat.settings.ProviderStore
+import ngo.xnet.aiope.feature.chat.settings.ToolStore
+import java.util.UUID
+import javax.inject.Inject
+
+@HiltViewModel
+class ChatViewModel @Inject constructor(
+  application: Application,
+  private val savedState: androidx.lifecycle.SavedStateHandle,
+  private val chatDao: ChatDao,
+  val providerStore: ProviderStore,
+  val toolStore: ToolStore,
+  private val remoteToolBridge: RemoteToolBridge,
+) : AndroidViewModel(application) {
+
+  private val connectivityManager = application.getSystemService(android.net.ConnectivityManager::class.java)
+
+  private fun isOnline(): Boolean = connectivityManager?.activeNetwork?.let { connectivityManager.getNetworkCapabilities(it)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) } ?: false
+
+  private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
+  val messages = _messages.asStateFlow()
+
+  private val _isStreaming = MutableStateFlow(false)
+  val isStreaming = _isStreaming.asStateFlow()
+
+  private var streamingJob: kotlinx.coroutines.Job? = null
+
+  // Realtime voice state
+  private val _isInRealtimeVoice = MutableStateFlow(false)
+  val isInRealtimeVoice = _isInRealtimeVoice.asStateFlow()
+  private val _isVoiceListening = MutableStateFlow(false)
+  val isVoiceListening = _isVoiceListening.asStateFlow()
+  private val _isVoiceSpeaking = MutableStateFlow(false)
+  val isVoiceSpeaking = _isVoiceSpeaking.asStateFlow()
+
+  /** Whether the selected model supports realtime voice */
+  private val _supportsRealtimeVoice = MutableStateFlow(false)
+  val supportsRealtimeVoice = _supportsRealtimeVoice.asStateFlow()
+  private fun updateSupportsRealtimeVoice() {
+    val profile = providerStore.getActive()
+    val model = getSelectedModelDef(profile)
+    _supportsRealtimeVoice.value = model?.supportsAudio == true && model.useStreaming
+  }
+  private var realtimeAudioManager: RealtimeAudioManager? = null
+  private val okHttp = SafeOkHttp.builder().readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS).build()
+  private var realtimeStreamingJob: kotlinx.coroutines.Job? = null
+  private var realtimeStream: RealtimeStreaming? = null
+  private var voiceTurnId: String = ""
+
+  fun cancelStreaming() {
+    streamingJob?.cancel()
+    streamingJob = null
+    _isStreaming.value = false
+  }
+
+  /** Toggle realtime voice mode */
+  fun toggleRealtimeVoice() {
+    if (_isInRealtimeVoice.value) {
+      stopRealtimeVoice()
+    } else {
+      startRealtimeVoice()
+    }
+  }
+
+  // Pre-connected voice session for instant start
+  private var preConnectedStream: RealtimeStreaming? = null
+  private var voiceSessionHandle: String? = null // For session resumption
+
+  /** Pre-connect the voice WebSocket so mic button is instant */
+  fun preConnectVoice() {
+    if (preConnectedStream != null || _isInRealtimeVoice.value) return
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(getApplication())
+        val (profileId, modelId) = taskStore.resolve(ngo.xnet.aiope.core.network.ModelTask.REALTIME_SPEECH, providerStore)
+        val profile = if (profileId != null) providerStore.getAll().find { it.id == profileId } ?: providerStore.getActive() else providerStore.getActive()
+        val resolvedModelId = modelId ?: "google-ai-studio/gemini-3.1-flash-live-preview"
+        val modelDef = ModelDef(id = resolvedModelId, supportsAudio = true, useStreaming = true, sampleRate = 16000)
+        val fullPrompt = buildSystemMessages(ModelConfig(modelId = resolvedModelId))
+          .firstOrNull { it.first == "system" }?.second ?: ""
+        val sysPrompt = fullPrompt.let { p ->
+          val toolsIdx = p.indexOf("## Tools")
+          val trimmed = if (toolsIdx > 0) p.substring(0, toolsIdx) else p.take(2000)
+          trimmed.trim()
+        } + "\n\nYou are in a live voice session. Be concise. Execute tools directly when needed."
+        preConnectedStream = RealtimeStreaming(
+          okHttp = okHttp,
+          modelDef = modelDef,
+          config = ModelConfig(modelId = modelDef.id),
+          provider = profile,
+          audioManager = RealtimeAudioManager(AudioConfig(sampleRate = modelDef.sampleRate)),
+          systemPrompt = sysPrompt,
+          voiceName = ngo.xnet.aiope.feature.chat.settings.getVoiceName(getApplication()),
+          tools = toolExecutor.buildToolDefs(),
+          sessionHandle = voiceSessionHandle,
+        )
+        android.util.Log.i("VoiceLive", "pre-connect: session ready (handle=${voiceSessionHandle?.take(8)})")
+      } catch (e: Exception) {
+        android.util.Log.w("VoiceLive", "pre-connect failed: ${e.message}")
+        preConnectedStream = null
+      }
+    }
+  }
+
+  /** Start realtime voice conversation */
+  private fun startRealtimeVoice() {
+    val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(getApplication())
+    val (profileId, modelId) = taskStore.resolve(ngo.xnet.aiope.core.network.ModelTask.REALTIME_SPEECH, providerStore)
+    val profile = if (profileId != null) providerStore.getAll().find { it.id == profileId } ?: providerStore.getActive() else providerStore.getActive()
+    val resolvedModelId = modelId ?: "google-ai-studio/gemini-3.1-flash-live-preview"
+    val modelDef = ModelDef(id = resolvedModelId, supportsAudio = true, useStreaming = true, sampleRate = 16000)
+
+    _isInRealtimeVoice.value = true
+    _isVoiceListening.value = true
+
+    realtimeAudioManager = RealtimeAudioManager(AudioConfig(sampleRate = modelDef.sampleRate)).apply {
+      startPlayback()
+    }
+    // Boost voice call volume and enable speaker
+    val audioManager = getApplication<android.app.Application>().getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+    audioManager.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
+    audioManager.isSpeakerphoneOn = true
+    // Route to speaker on Android 12+
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+      val speaker = audioManager.availableCommunicationDevices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+      if (speaker != null) audioManager.setCommunicationDevice(speaker)
+    }
+    audioManager.setStreamVolume(android.media.AudioManager.STREAM_VOICE_CALL, audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_VOICE_CALL), 0)
+
+    realtimeStreamingJob = viewModelScope.launch(Dispatchers.IO) {
+      try {
+        // Build a trimmed system prompt for voice (skip Dynamic UI docs, formatting rules)
+        val fullPrompt = buildSystemMessages(ModelConfig(modelId = resolvedModelId))
+          .firstOrNull { it.first == "system" }?.second ?: ""
+        // Keep only up to "## Tools" section or first 2000 chars for low latency
+        val sysPrompt = fullPrompt.let { p ->
+          val toolsIdx = p.indexOf("## Tools")
+          val trimmed = if (toolsIdx > 0) p.substring(0, toolsIdx) else p.take(2000)
+          trimmed.trim()
+        } + "\n\nYou are in a live voice session. Be concise. Execute tools directly when needed."
+        val realtimeStream = RealtimeStreaming(
+          okHttp = okHttp,
+          modelDef = modelDef,
+          config = ModelConfig(modelId = modelDef.id),
+          provider = profile,
+          audioManager = realtimeAudioManager!!,
+          systemPrompt = sysPrompt,
+          voiceName = ngo.xnet.aiope.feature.chat.settings.getVoiceName(getApplication()),
+          tools = toolExecutor.buildToolDefs(),
+        )
+        this@ChatViewModel.realtimeStream = realtimeStream
+
+        var currentTurnText = StringBuilder()
+        realtimeStream.createStream().collect { event ->
+          when (event) {
+            is StreamEvent.TextDelta -> {
+              // Text parts from model (rare with audio-only, but handle)
+              currentTurnText.append(event.text)
+            }
+
+            is StreamEvent.AudioChunk -> {
+              realtimeAudioManager?.playAudio(event.pcmData)
+              viewModelScope.launch(Dispatchers.Main) { _isVoiceSpeaking.value = true }
+            }
+
+            is StreamEvent.TurnComplete -> {
+              // Persist the assistant message
+              if (voiceTurnId.isNotBlank()) {
+                val assistantMsg = _messages.value.lastOrNull { it.id == voiceTurnId }
+                if (assistantMsg != null && assistantMsg.content.isNotBlank()) {
+                  viewModelScope.launch(Dispatchers.IO) {
+                    chatDao.insertMessage(MessageEntity(id = assistantMsg.id, conversationId = conversationId, role = Role.ASSISTANT.value, content = assistantMsg.content))
+                  }
+                }
+              }
+              currentTurnText.clear()
+              voiceTurnId = ""
+              realtimeAudioManager?.onTurnComplete()
+              viewModelScope.launch(Dispatchers.Main) {
+                _isVoiceSpeaking.value = false
+                _isVoiceListening.value = true
+              }
+            }
+
+            is StreamEvent.Connected -> {}
+
+            is StreamEvent.Interrupted -> {
+              // User barged in — clear playback queue immediately
+              realtimeAudioManager?.clearPlayback()
+            }
+
+            is StreamEvent.InputTranscription -> {
+              val msgId = java.util.UUID.randomUUID().toString()
+              viewModelScope.launch(Dispatchers.Main) {
+                _messages.value = _messages.value + ChatMessage(id = msgId, role = Role.USER, content = event.text)
+              }
+              // Persist user message
+              viewModelScope.launch(Dispatchers.IO) {
+                chatDao.insertMessage(MessageEntity(id = msgId, conversationId = conversationId, role = Role.USER.value, content = event.text))
+              }
+            }
+
+            is StreamEvent.OutputTranscription -> {
+              viewModelScope.launch(Dispatchers.Main) {
+                val msgs = _messages.value.toMutableList()
+                val last = msgs.lastOrNull()
+                if (last != null && last.role == Role.ASSISTANT && last.id == voiceTurnId) {
+                  msgs[msgs.lastIndex] = last.copy(content = last.content + event.text)
+                } else {
+                  voiceTurnId = java.util.UUID.randomUUID().toString()
+                  msgs.add(ChatMessage(id = voiceTurnId, role = Role.ASSISTANT, content = event.text))
+                }
+                _messages.value = msgs
+              }
+            }
+
+            is StreamEvent.Error -> {
+              if (!event.message.isNullOrBlank()) {
+                viewModelScope.launch(Dispatchers.Main) {
+                  _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: ${event.message}")
+                }
+              }
+              stopRealtimeVoice()
+            }
+
+            is StreamEvent.ToolCallEvent -> {
+              val responses = event.functionCalls.map { fc ->
+                val result = try {
+                  toolExecutor.execute(fc.name, fc.args)
+                } catch (e: Exception) {
+                  "Error: ${e.message}"
+                }
+                fc.id to result
+              }
+              realtimeStream.sendToolResponse(responses)
+            }
+
+            else -> {}
+          }
+        }
+      } catch (e: Exception) {
+        if (e is kotlinx.coroutines.CancellationException) return@launch
+        val msg = e.message
+        if (msg.isNullOrBlank()) return@launch
+        viewModelScope.launch(Dispatchers.Main) {
+          _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: $msg")
+        }
+        stopRealtimeVoice()
+      }
+    }
+  }
+
+  /** Route text/images/docs through the active live voice session */
+  private fun sendToLiveVoice(text: String, imageUris: List<String>) {
+    val userMsg = ChatMessage(role = Role.USER, content = text, imageUris = imageUris)
+    _messages.value = _messages.value + userMsg
+
+    viewModelScope.launch(Dispatchers.IO) {
+      val stream = realtimeStream ?: return@launch
+      if (imageUris.isNotEmpty()) {
+        // Encode images and send as inline data via clientContent
+        val filesDir = getApplication<android.app.Application>().filesDir
+        val parts = mutableListOf<org.json.JSONObject>()
+        // Always include text — model needs it to trigger a response about the image
+        val prompt = if (text.isNotBlank()) text else "Describe what you see in this image."
+        parts.add(org.json.JSONObject().put("text", prompt))
+        for (uri in imageUris) {
+          try {
+            // Resolve URI (could be content:// or file path)
+            val bitmap = if (uri.startsWith("content://") || uri.startsWith("file://")) {
+              val inputStream = getApplication<android.app.Application>().contentResolver.openInputStream(android.net.Uri.parse(uri))
+              android.graphics.BitmapFactory.decodeStream(inputStream).also { inputStream?.close() }
+            } else {
+              val file = java.io.File(if (uri.startsWith("/")) uri else java.io.File(filesDir, uri).absolutePath)
+              android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+            } ?: continue
+
+            // Downscale to max 1024px
+            val maxDim = maxOf(bitmap.width, bitmap.height)
+            val scaled = if (maxDim > 1024) {
+              val scale = 1024f / maxDim
+              android.graphics.Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true).also { if (it != bitmap) bitmap.recycle() }
+            } else {
+              bitmap
+            }
+
+            val baos = java.io.ByteArrayOutputStream()
+            scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, baos)
+            scaled.recycle()
+            val b64 = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+            android.util.Log.i("VoiceLive", "sending image: ${baos.size()} bytes, b64 len=${b64.length}")
+            parts.add(org.json.JSONObject().put("inlineData", org.json.JSONObject().put("mimeType", "image/jpeg").put("data", b64)))
+          } catch (e: Exception) {
+            android.util.Log.e("VoiceLive", "Failed to process image: ${e.message} uri=$uri")
+          }
+        }
+        stream.sendClientContent(parts)
+      } else if (text.isNotBlank()) {
+        // Send text through realtimeInput
+        stream.sendText(text)
+      }
+    }
+  }
+
+  private fun stopRealtimeVoice() {
+    // Save session handle for future resumption
+    realtimeStream?.lastSessionHandle?.let { voiceSessionHandle = it }
+    viewModelScope.launch(Dispatchers.Main) {
+      _isInRealtimeVoice.value = false
+      _isVoiceListening.value = false
+      _isVoiceSpeaking.value = false
+    }
+    realtimeStreamingJob?.cancel()
+    realtimeStreamingJob = null
+    realtimeStream = null
+    preConnectedStream = null
+    try {
+      realtimeAudioManager?.stop()
+    } catch (_: Exception) {}
+    realtimeAudioManager = null
+    try {
+      val am = getApplication<android.app.Application>().getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+      am.mode = android.media.AudioManager.MODE_NORMAL
+      am.isSpeakerphoneOn = false
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        am.clearCommunicationDevice()
+      }
+    } catch (_: Exception) {}
+  }
+
+  /** Get selected model definition */
+  private fun getSelectedModelDef(profile: ProviderProfile): ModelDef? {
+    val modelId = profile.selectedModelId
+    val modelConfig = profile.modelConfigs[modelId]
+    val builtin = ProviderTemplates.byId[profile.builtinId]?.defaultModels?.find { it.id == modelId }
+    if (builtin != null) return builtin
+    // Check if modelConfig marks it as audio-capable
+    val audio = modelConfig?.audioOverride == true
+    return ModelDef(id = modelId, supportsAudio = audio, useStreaming = audio)
+  }
+
+  private val _terminalVisible = MutableStateFlow(false)
+  val terminalVisible = _terminalVisible.asStateFlow()
+  private val _browserVisible = MutableStateFlow(false)
+  val browserVisible = _browserVisible.asStateFlow()
+  private val _agentPanelVisible = MutableStateFlow(false)
+  val agentPanelVisible = _agentPanelVisible.asStateFlow()
+  private val _agentRoster = MutableStateFlow<List<ngo.xnet.aiope.feature.chat.db.AgentEntity>>(emptyList())
+  val agentRoster = _agentRoster.asStateFlow()
+  private val _persistedTasks = MutableStateFlow<List<ngo.xnet.aiope.feature.chat.db.AgentTaskEntity>>(emptyList())
+  val persistedTasks = _persistedTasks.asStateFlow()
+  private val _scheduledTasks = MutableStateFlow<List<ngo.xnet.aiope.feature.chat.db.ScheduledTaskEntity>>(emptyList())
+  val scheduledTasks = _scheduledTasks.asStateFlow()
+  private val _browserMaximized = MutableStateFlow(false)
+  val browserMaximized = _browserMaximized.asStateFlow()
+
+  private var conversationId: String
+    get() = savedState["conversationId"] ?: UUID.randomUUID().toString().also { savedState["conversationId"] = it }
+    set(value) {
+      savedState["conversationId"] = value
+    }
+
+  val _modelLabel = MutableStateFlow("")
+  val modelLabel: String get() = _modelLabel.value
+
+  private val _agentMode = MutableStateFlow(ngo.xnet.aiope.feature.chat.engine.AgentMode.CHAT)
+  val agentMode: kotlinx.coroutines.flow.StateFlow<ngo.xnet.aiope.feature.chat.engine.AgentMode> = _agentMode
+  fun setAgentMode(mode: ngo.xnet.aiope.feature.chat.engine.AgentMode) {
+    _agentMode.value = mode
+  }
+
+  private val _autoRun = MutableStateFlow(false)
+  val autoRun = _autoRun.asStateFlow()
+  fun setAutoRun(on: Boolean) {
+    _autoRun.value = on
+  }
+  private var autoRunRounds = 0
+
+  fun switchModel(modelId: String) {
+    val p = providerStore.getActive()
+    providerStore.save(p.copy(selectedModelId = modelId))
+    _modelLabel.value = modelId.substringAfterLast('/').ifBlank { p.label.ifBlank { "No model" } }
+  }
+
+  private fun refreshModelLabel() {
+    val p = providerStore.getActive()
+    val id = p.selectedModelId.substringAfterLast('/')
+    _modelLabel.value = id.ifBlank { p.label.ifBlank { "No model" } }
+  }
+
+  fun getModelList(): List<ModelDef> {
+    val p = providerStore.getActive()
+    return providerStore.getModelCache(p.id)
+      ?: providerStore.getModelCacheStale(p.id)
+      ?: providerStore.getAll().firstOrNull { it.builtinId == p.builtinId && it.id != p.id }?.let { providerStore.getModelCacheStale(it.id) }
+      ?: ProviderTemplates.byId[p.builtinId]?.defaultModels
+      ?: emptyList()
+  }
+
+  private val _conversations = MutableStateFlow<List<ConversationEntity>>(emptyList())
+  val conversations = _conversations.asStateFlow()
+
+  init {
+    refreshModelLabel()
+    ngo.xnet.aiope.feature.chat.browser.BrowserServer.start { getBrowser() }
+    getBrowser() // preload WebView on main thread
+    // Pre-connect voice WebSocket for instant mic start
+    preConnectVoice()
+    viewModelScope.launch {
+      // Reuse last conversation if it exists, or find an empty one
+      val all = chatDao.getConversations()
+      val empty = all.firstOrNull { chatDao.getMessages(it.id).isEmpty() }
+      if (empty != null) {
+        conversationId = empty.id
+      } else if (all.isNotEmpty()) {
+        // Load the most recent conversation
+        val last = all.first()
+        conversationId = last.id
+        val msgs = chatDao.getMessages(last.id).map {
+          val uris = if (it.imagePaths.isNotBlank()) {
+            it.imagePaths.split(",").mapNotNull { relPath ->
+              val file = java.io.File(getApplication<android.app.Application>().filesDir, relPath.trim())
+              if (file.exists()) android.net.Uri.fromFile(file).toString() else null
+            }
+          } else {
+            emptyList()
+          }
+          ChatMessage(id = it.id, role = Role.from(it.role), content = it.content, imageUris = uris, timestamp = it.timestamp)
+        }
+        _messages.value = msgs
+      } else {
+        chatDao.insertConversation(ConversationEntity(id = conversationId))
+      }
+      refreshConversations()
+    }
+  }
+
+  fun newConversation() {
+    conversationId = UUID.randomUUID().toString()
+    _messages.value = emptyList()
+    toolExecutor.lastLocationData = null
+    viewModelScope.launch {
+      chatDao.insertConversation(ConversationEntity(id = conversationId))
+      refreshConversations()
+    }
+  }
+
+  fun loadConversation(id: String) {
+    conversationId = id
+    toolExecutor.lastLocationData = null
+    viewModelScope.launch {
+      val msgs = chatDao.getMessages(id).map {
+        val uris = if (it.imagePaths.isNotBlank()) {
+          it.imagePaths.split(",").mapNotNull { relPath ->
+            val file = java.io.File(getApplication<android.app.Application>().filesDir, relPath.trim())
+            if (file.exists()) android.net.Uri.fromFile(file).toString() else null
+          }
+        } else {
+          emptyList()
+        }
+        ChatMessage(id = it.id, role = Role.from(it.role), content = it.content, imageUris = uris, timestamp = it.timestamp)
+      }
+      _messages.value = msgs
+    }
+  }
+
+  fun getConversationContent(format: String): String {
+    val msgs = _messages.value
+    if (msgs.isEmpty()) return ""
+    return when (format) {
+      "json" -> {
+        val arr = org.json.JSONArray()
+        msgs.forEach { m ->
+          arr.put(
+            org.json.JSONObject().put("role", m.role.value).put("content", m.content)
+              .apply { if (m.toolCalls.isNotEmpty()) put("tool_calls", org.json.JSONArray(m.toolCalls)) },
+          )
+        }
+        org.json.JSONObject().put("title", conversationId).put("exported", System.currentTimeMillis()).put("messages", arr).toString(2)
+      }
+
+      "txt" -> {
+        buildString {
+          msgs.forEach { m ->
+            when (m.role) {
+              Role.USER -> append("User: ${m.content}\n\n")
+              Role.ASSISTANT -> append("Assistant: ${m.content}\n\n")
+              Role.SYSTEM -> append("System: ${m.content.take(200)}\n\n")
+              else -> append("${m.role.value}: ${m.content}\n\n")
+            }
+          }
+        }
+      }
+
+      else -> { // markdown and pdf use the same base content
+        buildString {
+          append("# AIOPE Conversation\n\n")
+          msgs.forEach { m ->
+            when (m.role) {
+              Role.USER -> append("## User\n\n${m.content}\n\n")
+              Role.ASSISTANT -> append("## Assistant\n\n${m.content}\n\n")
+              Role.SYSTEM -> append("> _System: ${m.content.take(200)}_\n\n")
+              else -> append("## ${m.role.value}\n\n${m.content}\n\n")
+            }
+            if (m.toolCalls.isNotEmpty()) {
+              append("<details><summary>Tools used</summary>\n\n")
+              m.toolCalls.forEachIndexed { i, call ->
+                val result = m.toolResults.getOrNull(i)?.take(300) ?: ""
+                append("- `$call`\n  → $result\n")
+              }
+              append("\n</details>\n\n")
+            }
+          }
+        }
+      }
+    }
+  }
+
+  fun shareConversation(format: String, context: android.content.Context) {
+    val content = getConversationContent(format)
+    if (content.isEmpty()) return
+
+    if (format == "pdf") {
+      try {
+        LatexPdfExporter.export(context, content)
+      } catch (e: Exception) {
+        e.printStackTrace()
+        android.widget.Toast.makeText(context, "PDF export failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+      }
+      return
+    }
+
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      try {
+        val shareDir = java.io.File(context.cacheDir, "share")
+        if (!shareDir.exists()) shareDir.mkdirs()
+        val file = java.io.File(shareDir, "aiope_export_${System.currentTimeMillis()}.$format")
+        file.writeText(content)
+
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val mimeType = when (format) {
+          "json" -> "application/json"
+          "md" -> "text/markdown"
+          else -> "text/plain"
+        }
+
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+          type = mimeType
+          putExtra(android.content.Intent.EXTRA_STREAM, uri)
+          addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+          context.startActivity(android.content.Intent.createChooser(intent, "Share conversation"))
+        }
+      } catch (e: Exception) {
+        e.printStackTrace()
+      }
+    }
+  }
+  fun deleteConversation(id: String) {
+    viewModelScope.launch {
+      chatDao.deleteConversation(id)
+      if (id == conversationId) newConversation()
+      refreshConversations()
+    }
+  }
+
+  private suspend fun refreshConversations() {
+    _conversations.value = chatDao.getConversations()
+  }
+
+  // LLM client — resolves task model, then creates client
+
+  /** Resolve provider + model for a given task. Falls back to active profile. */
+  private fun resolveTaskModel(task: ngo.xnet.aiope.core.network.ModelTask): Pair<ProviderProfile, String> {
+    val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(getApplication())
+    val tc = taskStore.getTaskConfig(task)
+    val profile = tc.profileId?.let { providerStore.getById(it) } ?: providerStore.getActive()
+    val modelId = tc.modelId ?: profile.selectedModelId
+    return profile to modelId
+  }
+
+  /** Translate a message using the local model (fallback to cloud) */
+  fun translateMessage(messageId: String, language: String) {
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        val msg = _messages.value.find { it.id == messageId } ?: return@launch
+
+        // Try local model first
+        val localResult = try {
+          null
+        } catch (_: Exception) {
+          null
+        }
+
+        if (localResult != null) {
+          val updated = _messages.value.toMutableList()
+          val idx = updated.indexOfFirst { it.id == messageId }
+          if (idx >= 0) {
+            updated[idx] = updated[idx].copy(translation = localResult)
+            _messages.value = updated
+          }
+          return@launch
+        }
+
+        // Fallback to cloud
+        val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.TRANSLATION)
+        val prompt = "Translate the following text to $language. Reply with ONLY the translation, nothing else:\n\n${msg.content}"
+        val orchestrator = StreamingOrchestrator(
+          baseUrl = profile.effectiveApiBase(),
+          apiKey = profile.apiKey,
+          model = modelId,
+        )
+        val sb = StringBuilder()
+        orchestrator.stream(listOf("user" to prompt)).collect { chunk ->
+          if (chunk.content.isNotEmpty()) {
+            sb.append(chunk.content)
+            val updated = _messages.value.toMutableList()
+            val idx = updated.indexOfFirst { it.id == messageId }
+            if (idx >= 0) {
+              updated[idx] = updated[idx].copy(translation = sb.toString())
+              _messages.value = updated
+            }
+          }
+        }
+      } catch (e: Exception) {
+        val updated = _messages.value.toMutableList()
+        val idx = updated.indexOfFirst { it.id == messageId }
+        if (idx >= 0) {
+          updated[idx] = updated[idx].copy(translation = "Translation error: ${e.message}")
+          _messages.value = updated
+        }
+      }
+    }
+  }
+
+  /** Generate a conversation title using the local model (fallback to cloud) */
+  private fun generateTitle(firstMessage: String) {
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        // Try local model first
+        val localTitle = try {
+          null
+        } catch (_: Exception) {
+          null
+        }
+
+        if (localTitle != null) {
+          chatDao.updateConversation(conversationId, localTitle)
+          refreshConversations()
+          return@launch
+        }
+
+        // Fallback to cloud
+        val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.TITLE)
+        val prompt = "Generate a short title (max 6 words) for a conversation that starts with: \"${firstMessage.take(200)}\". Reply with ONLY the title, no quotes."
+        val orchestrator = StreamingOrchestrator(
+          baseUrl = profile.effectiveApiBase(),
+          apiKey = profile.apiKey,
+          model = modelId,
+        )
+        val sb = StringBuilder()
+        orchestrator.stream(listOf("user" to prompt)).collect { chunk ->
+          if (chunk.content.isNotEmpty()) sb.append(chunk.content)
+        }
+        val title = sb.toString().trim().take(60)
+        if (title.isNotBlank()) {
+          chatDao.updateConversation(conversationId, title)
+          refreshConversations()
+        }
+      } catch (e: Exception) {
+        android.util.Log.w("ChatVM", "title gen failed: ${e.message}")
+      }
+    }
+  }
+
+  private var lastSendTime = 0L
+  private var lastSendHash = 0
+
+  fun send(text: String, imageUris: List<String> = emptyList()) {
+    // If in live voice session, route through the WebSocket instead of text chat
+    if (_isInRealtimeVoice.value && realtimeStream != null) {
+      sendToLiveVoice(text, imageUris)
+      return
+    }
+
+    if (!isOnline()) {
+      _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ No internet connection. Please check your network and try again.")
+      return
+    }
+    val now = System.currentTimeMillis()
+    val hash = text.hashCode() xor imageUris.hashCode()
+    if (now - lastSendTime < 500 && hash == lastSendHash) return
+    lastSendTime = now
+    lastSendHash = hash
+
+    val userMsg = ChatMessage(role = Role.USER, content = text, imageUris = imageUris)
+    if (_subagentManager != null) _subagentManager!!.clear()
+    if (imageUris.isNotEmpty()) autoRunRounds = 0 // user-initiated with images resets counter
+    _messages.value = _messages.value + userMsg
+
+    cancelStreaming()
+    streamingJob = viewModelScope.launch(Dispatchers.IO) {
+      // Save images to disk
+      val savedPaths = ngo.xnet.aiope.feature.chat.engine.ImageProcessor.saveImagesToDisk(
+        getApplication<android.app.Application>().filesDir,
+        getApplication<android.app.Application>().contentResolver,
+        userMsg.id,
+        imageUris,
+      )
+      chatDao.insertMessage(
+        MessageEntity(
+          id = userMsg.id,
+          conversationId = conversationId,
+          role = userMsg.role.value,
+          content = userMsg.content,
+          imagePaths = savedPaths,
+        ),
+      )
+
+      _isStreaming.value = true
+      val assistantMsg = ChatMessage(role = Role.ASSISTANT, content = "")
+      _messages.value = _messages.value + assistantMsg
+
+      val p = providerStore.getActive()
+      val mc = p.activeModelConfig()
+
+      // Validate provider is configured before attempting API call
+      if (p.effectiveApiBase().isBlank() || p.selectedModelId.isBlank()) {
+        val errorMsg = when {
+          p.effectiveApiBase().isBlank() -> "⚠️ Provider \"${p.label}\" has no API base URL configured. Go to Settings → Providers to configure it."
+          else -> "⚠️ No model selected for provider \"${p.label}\". Go to Settings → Providers to select a model."
+        }
+        val updated = _messages.value.toMutableList()
+        updated[updated.lastIndex] = updated.last().copy(content = errorMsg)
+        _messages.value = updated
+        return@launch
+      }
+
+      toolExecutor.shellOutputLimit = mc.shellOutputLimit
+      toolExecutor.fetchLimit = mc.fetchLimit
+      toolExecutor.fileReadLimit = mc.fileReadLimit
+      toolExecutor.locationUsedThisTurn = false
+      var streamResult: StreamResult? = null
+
+      try {
+        val useTools = mc.toolsOverride != false // null=auto(send), true=send, false=dont send
+        val toolDefs = if (useTools) toolExecutor.buildToolDefs() else emptyList()
+
+        // Build messages (trim to contextTokens limit using jtokkit)
+        val chatMessages = buildSystemMessages(mc)
+        val maxTokens = mc.contextTokens.toLong()
+        var tokenCount = TokenCounter.countMessages(chatMessages, mc.modelId)
+        val history = _messages.value.dropLast(2).reversed()
+        val trimmed = mutableListOf<Pair<String, String>>()
+        for (msg in history) {
+          val msgTokens = TokenCounter.count(msg.content, mc.modelId) + 4
+          if (tokenCount + msgTokens > maxTokens) break
+          tokenCount += msgTokens
+          val role = when (msg.role) {
+            Role.USER -> "user"
+            Role.ASSISTANT -> "assistant"
+            Role.SYSTEM -> "system"
+            else -> null
+          }
+          if (role != null) {
+            var content = msg.content
+            // Skip empty assistant messages (leftover from tool call rounds)
+            if (role == "assistant" && content.isBlank()) continue
+            trimmed.add(0, role to content)
+          }
+        }
+        chatMessages.addAll(trimmed)
+        chatMessages.add("user" to text)
+
+        val isTaskModel = imageUris.isNotEmpty()
+        val (sendProfile, sendModelId) = if (isTaskModel) resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.IMAGE_RECOGNITION) else (p to p.selectedModelId)
+        val sendMessages = if (isTaskModel) mutableListOf<Pair<String, String>>("user" to text) else chatMessages
+        val sendTools = if (isTaskModel) emptyList() else toolDefs
+        val orchestrator = StreamingOrchestrator(
+          baseUrl = sendProfile.effectiveApiBase(),
+          apiKey = sendProfile.apiKey,
+          model = sendModelId,
+          tools = sendTools,
+          onToolCall = { name, args -> toolExecutor.execute(name, args) },
+        )
+
+        // Encode images to base64 — use saved disk paths (content URIs may expire)
+        val filesDir = getApplication<android.app.Application>().filesDir
+        val imageBase64s = ngo.xnet.aiope.feature.chat.engine.ImageProcessor.encodeImages(filesDir, savedPaths)
+
+        val streamResult1 = collectStream(orchestrator, sendMessages, imageBase64s)
+        streamResult = streamResult1
+        val result = streamResult1.content
+
+        // Extract generated image URIs from content
+        val generatedImages = Regex("""file:///[^\s)]+\.(png|jpg|jpeg|webp)""").findAll(result).map { it.value }.toList()
+        if (generatedImages.isNotEmpty()) {
+          _messages.value = _messages.value.toMutableList().also {
+            it[it.lastIndex] = it.last().copy(imageUris = generatedImages)
+          }
+        }
+
+        val finalMsg = _messages.value.lastOrNull() ?: return@launch
+        toolExecutor.locationUsedThisTurn = false // Don't carry map to next response
+        android.util.Log.d("AIOPE2", "Final content len=${finalMsg.content.length} last100=${finalMsg.content.takeLast(100)}")
+        if (_messages.value.size <= 2) {
+          chatDao.updateConversation(conversationId, text.take(50))
+          // Auto-generate title using TITLE task model
+          generateTitle(text)
+        }
+
+        // Auto-continue when tools were used
+        val hadTools = finalMsg.toolCalls.isNotEmpty()
+        if (_autoRun.value && hadTools && autoRunRounds < 20) {
+          autoRunRounds++
+          val prompt = chatDao.getSetting("agent_auto_run_prompt") ?: "continue"
+          withContext(Dispatchers.Main) { send(prompt) }
+        } else {
+          autoRunRounds = 0
+        }
+      } catch (_: kotlinx.coroutines.CancellationException) {
+        // Keep any response received before the stream was stopped.
+      } catch (e: Exception) {
+        val updated = _messages.value.toMutableList()
+        val partial = updated.last().content
+        val error = "Error: ${e.message ?: "Unknown streaming error"}"
+        updated[updated.lastIndex] = updated.last().copy(
+          content = if (partial.isBlank()) error else "$partial\n\n$error",
+        )
+        _messages.value = updated
+      } finally {
+        // A cancelled coroutine cannot call suspending Room APIs unless cleanup is made
+        // non-cancellable. Upsert the current assistant message for success, errors,
+        // and user cancellation so the last streamed response survives a reload.
+        withContext(kotlinx.coroutines.NonCancellable) {
+          val finalMsg = _messages.value.lastOrNull { it.id == assistantMsg.id }
+          if (finalMsg != null && finalMsg.content.isNotBlank()) {
+            val filesDirPath = getApplication<android.app.Application>().filesDir.absolutePath
+            val imagePaths = finalMsg.imageUris.joinToString(",") {
+              it.removePrefix("file://").removePrefix("$filesDirPath/")
+            }
+            chatDao.insertMessage(
+              MessageEntity(
+                id = finalMsg.id,
+                conversationId = conversationId,
+                role = Role.ASSISTANT.value,
+                content = finalMsg.content,
+                imagePaths = imagePaths,
+                inputTokens = streamResult?.usage?.inputTokens ?: 0,
+                outputTokens = streamResult?.usage?.outputTokens ?: 0,
+                latencyMs = streamResult?.latencyMs ?: 0,
+                modelUsed = p.selectedModelId,
+              ),
+            )
+          }
+        }
+        _isStreaming.value = false
+        maybeAutoCompact(mc)
+      }
+    }
+  }
+
+  fun toggleTerminal() {
+    _terminalVisible.value = !_terminalVisible.value
+  }
+  fun toggleBrowser() {
+    _browserVisible.value = !_browserVisible.value
+  }
+  fun toggleAgentPanel() {
+    _agentPanelVisible.value = !_agentPanelVisible.value
+    if (_agentPanelVisible.value) {
+      loadAgentPanelData()
+      startPanelRefresh()
+    } else {
+      panelRefreshJob?.cancel()
+    }
+  }
+
+  private var panelRefreshJob: kotlinx.coroutines.Job? = null
+
+  private fun startPanelRefresh() {
+    panelRefreshJob?.cancel()
+    panelRefreshJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      while (_agentPanelVisible.value) {
+        kotlinx.coroutines.delay(3000)
+        _persistedTasks.value = chatDao.getAgentTasks(30)
+        _scheduledTasks.value = chatDao.getScheduledTasks()
+      }
+    }
+  }
+
+  private fun loadAgentPanelData() {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      _agentRoster.value = chatDao.getAgents()
+      _persistedTasks.value = chatDao.getAgentTasks(30)
+      _scheduledTasks.value = chatDao.getScheduledTasks()
+    }
+  }
+
+  fun spawnAgentFromPanel(agentName: String, task: String) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      subagentManager.runAgent(agentName, task)
+      _persistedTasks.value = chatDao.getAgentTasks(30)
+    }
+  }
+
+  fun cancelAgentTask(taskId: String) {
+    // Remove from running tasks list (the coroutine will be cancelled by scope)
+    val current = subagentManager.tasks.value
+    val task = current.firstOrNull { it.id == taskId } ?: return
+    // Mark as error in memory
+    val updated = current.map { if (it.id == taskId) it.copy(stage = ngo.xnet.aiope.feature.chat.engine.AgentExecutor.Stage.ERROR, error = "Cancelled by user") else it }
+    // Update persisted
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      chatDao.updateAgentTask(taskId, "failed", "Cancelled by user", System.currentTimeMillis())
+      _persistedTasks.value = chatDao.getAgentTasks(30)
+    }
+  }
+
+  fun rerunAgentTask(taskId: String) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      val task = chatDao.getAgentTasks(50).firstOrNull { it.id == taskId } ?: return@launch
+      subagentManager.runAgent(task.agentName, task.prompt)
+      _persistedTasks.value = chatDao.getAgentTasks(30)
+    }
+  }
+
+  fun saveAgent(agent: ngo.xnet.aiope.feature.chat.db.AgentEntity) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      chatDao.insertAgent(agent)
+      _agentRoster.value = chatDao.getAgents()
+    }
+  }
+
+  fun deleteAgent(id: String) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      chatDao.deleteAgent(id)
+      _agentRoster.value = chatDao.getAgents()
+    }
+  }
+
+  fun saveScheduledTask(task: ngo.xnet.aiope.feature.chat.db.ScheduledTaskEntity) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      val updated = ngo.xnet.aiope.feature.chat.engine.AgentScheduler.schedule(getApplication(), task)
+      chatDao.insertScheduledTask(updated)
+      _scheduledTasks.value = chatDao.getScheduledTasks()
+    }
+  }
+
+  fun deleteScheduledTask(id: String) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      ngo.xnet.aiope.feature.chat.engine.AgentScheduler.cancel(getApplication(), id)
+      chatDao.deleteScheduledTask(id)
+      _scheduledTasks.value = chatDao.getScheduledTasks()
+    }
+  }
+  fun setBrowserVisible(v: Boolean) {
+    _browserVisible.value = v
+  }
+  fun setBrowserMaximized(v: Boolean) {
+    _browserMaximized.value = v
+  }
+
+  /** Edit & Resend: truncate messages after index, resend with new text */
+  fun editAndResend(text: String, atIndex: Int) {
+    truncateAt(atIndex)
+    send(text)
+  }
+
+  fun truncateAt(atIndex: Int) {
+    cancelStreaming()
+    val cutTimestamp = if (atIndex < _messages.value.size) _messages.value[atIndex].timestamp else System.currentTimeMillis()
+    _messages.value = _messages.value.take(atIndex)
+    viewModelScope.launch { chatDao.deleteMessagesAfter(conversationId, cutTimestamp) }
+  }
+
+  /** Retry: remove last assistant message and re-run the last user message */
+  fun retry(atIndex: Int) {
+    val msgs = _messages.value.toMutableList()
+    if (atIndex < msgs.size && msgs[atIndex].role == Role.ASSISTANT) {
+      // Remove this message and everything after it
+      val removedTimestamp = msgs[atIndex].timestamp
+      while (msgs.size > atIndex) msgs.removeAt(msgs.lastIndex)
+      _messages.value = msgs
+      viewModelScope.launch { chatDao.deleteMessagesAfter(conversationId, removedTimestamp) }
+      // Find the last user message (now the one right before atIndex)
+      val lastUser = msgs.lastOrNull { it.role == Role.USER }
+      if (lastUser != null) resend(lastUser.content)
+    }
+  }
+
+  /** Compact: summarize messages 0..atIndex into a single context message */
+  private fun maybeAutoCompact(mc: ModelConfig) {
+    if (!mc.autoCompact) return
+    val msgs = _messages.value
+    val totalTokens = msgs.sumOf { TokenCounter.count(it.content, mc.modelId) }
+    val threshold = mc.contextTokens * 95 / 100 // 95% of token limit
+    if (totalTokens > threshold && msgs.size > 4) {
+      // Compact everything except the last 3 messages (preserves live conversational tail)
+      compact(msgs.size - 4)
+    }
+  }
+
+  fun compact(atIndex: Int) {
+    val msgs = _messages.value
+    if (atIndex < 1 || msgs.size < 4) return
+    // Keep the last 3 messages intact - only compact up to that point
+    val idx = minOf(atIndex, msgs.size - 4)
+    val toCompact = msgs.take(idx + 1)
+    val transcript = toCompact.joinToString("\n") { "[${it.role.value}] ${it.content.take(2000)}" }
+    val remaining = msgs.drop(idx + 1)
+
+    cancelStreaming()
+    streamingJob = viewModelScope.launch(Dispatchers.IO) {
+      _isStreaming.value = true
+      try {
+        val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.SUMMARY)
+        val prompt = """
+You are compressing a conversation so an AI assistant can continue it seamlessly.
+The transcript below is the EARLIER part of the conversation. The conversation continues
+in the most recent messages, which you must NOT summarize.
+
+Produce a compact summary with these sections (omit empty ones):
+- CONTEXT: project, goal, and current situation
+- DECISIONS: every decision made, with brief rationale
+- FACTS: exact paths, versions, URLs, model names, commands, IDs, and numbers - preserve these verbatim, never paraphrase them
+- TASKS: what is done, what is in progress, what is next
+- PREFERENCES: user rules, constraints, and style requirements
+- OPEN: unresolved questions or threads
+
+Rules:
+- Preserve exact strings for paths, commands, URLs, model names, and numbers
+- Keep the summary under 800 words
+- Output only the summary sections, no preamble
+
+TRANSCRIPT:
+$transcript
+        """.trimIndent()
+        val orchestrator = StreamingOrchestrator(
+          baseUrl = profile.effectiveApiBase(),
+          apiKey = profile.apiKey,
+          model = modelId,
+        )
+        val sb = StringBuilder()
+        orchestrator.stream(listOf("user" to prompt)).collect { chunk ->
+          if (chunk.content.isNotEmpty()) sb.append(chunk.content)
+        }
+        val summaryMsg = ChatMessage(role = Role.SYSTEM, content = sb.toString())
+        val indicatorMsg = ChatMessage(role = Role.SYSTEM, content = "⟳ Context compacted — earlier messages summarized")
+        _messages.value = listOf(summaryMsg, indicatorMsg) + remaining
+
+        // Persist: delete old messages, save summary + indicator + remaining
+        chatDao.deleteMessagesAfter(conversationId, 0) // delete all messages in this conversation
+        chatDao.insertMessage(
+          MessageEntity(
+            id = summaryMsg.id,
+            conversationId = conversationId,
+            role = summaryMsg.role.value,
+            content = summaryMsg.content,
+          ),
+        )
+        chatDao.insertMessage(
+          MessageEntity(
+            id = indicatorMsg.id,
+            conversationId = conversationId,
+            role = indicatorMsg.role.value,
+            content = indicatorMsg.content,
+          ),
+        )
+        remaining.forEach { msg ->
+          chatDao.insertMessage(
+            MessageEntity(
+              id = msg.id,
+              conversationId = conversationId,
+              role = msg.role.value,
+              content = msg.content,
+            ),
+          )
+        }
+      } catch (_: kotlinx.coroutines.CancellationException) { /* stopped */ } catch (e: Exception) {
+        android.util.Log.e("ChatVM", "compact failed", e)
+        _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Compaction failed: ${e.message}")
+      } finally {
+        _isStreaming.value = false
+      }
+    }
+  }
+
+  /** Fork: create new conversation from messages 0..atIndex */
+  fun fork(atIndex: Int) {
+    val forkedMsgs = _messages.value.take(atIndex + 1)
+    val newId = UUID.randomUUID().toString()
+    viewModelScope.launch {
+      chatDao.insertConversation(ConversationEntity(id = newId, title = "Fork: ${forkedMsgs.firstOrNull { it.role == Role.USER }?.content?.take(30) ?: "chat"}"))
+      forkedMsgs.forEach { msg ->
+        chatDao.insertMessage(MessageEntity(id = UUID.randomUUID().toString(), conversationId = newId, role = msg.role.value, content = msg.content))
+      }
+      conversationId = newId
+      _messages.value = forkedMsgs
+      refreshConversations()
+    }
+  }
+
+  /** Shared streaming collection logic used by send() and resend(). Returns final content string. */
+  private data class StreamResult(val content: String, val usage: ngo.xnet.aiope.feature.chat.engine.UsageInfo?, val latencyMs: Long)
+
+  private suspend fun collectStream(
+    orchestrator: StreamingOrchestrator,
+    messages: List<Pair<String, String>>,
+    imageBase64s: List<String> = emptyList(),
+  ): StreamResult {
+    val sb = StringBuilder()
+    val reasoningBlocks = mutableListOf<String>()
+    val currentReasoning = StringBuilder()
+    var isReasoning = false
+    val toolCallsList = mutableListOf<String>()
+    val toolResultsList = mutableListOf<String>()
+    val toolErrorsList = mutableListOf<String>()
+    var lastUiLength = 0
+    val charsPerLine = 55
+    val streamStartMs = System.currentTimeMillis()
+    var lastUsage: ngo.xnet.aiope.feature.chat.engine.UsageInfo? = null
+
+    try {
+      orchestrator.stream(messages, imageBase64s).collect { chunk ->
+        chunk.reasoning?.let { r ->
+          if (!isReasoning) {
+            isReasoning = true
+            currentReasoning.clear()
+          }
+          currentReasoning.append(r)
+        }
+        // Handle content replacement (strips tool markup from display)
+        chunk.contentReplace?.let { replacement ->
+          sb.clear()
+          sb.append(replacement)
+        }
+        if (chunk.content.isNotEmpty()) {
+          if (isReasoning && currentReasoning.isNotEmpty()) {
+            reasoningBlocks.add(currentReasoning.toString())
+            currentReasoning.clear()
+            isReasoning = false
+          }
+          sb.append(chunk.content)
+        }
+        chunk.toolCalls?.let { calls ->
+          if (isReasoning && currentReasoning.isNotEmpty()) {
+            reasoningBlocks.add(currentReasoning.toString())
+            currentReasoning.clear()
+            isReasoning = false
+          }
+          for (c in calls) toolCallsList.add("${c.name}(${c.arguments.entries.joinToString(", ") { "${it.key}=${it.value}" }})")
+        }
+        chunk.toolResults?.let { results ->
+          for (r in results) {
+            toolResultsList.add(r.result.take(2000))
+            if (r.result.startsWith("Error:") || r.result.startsWith("FAILED")) toolErrorsList.add("${r.name}: ${r.result.take(200)}")
+          }
+        }
+        chunk.error?.let { sb.append("\nError: $it") }
+        chunk.usage?.let { lastUsage = it }
+        if (chunk.isDone && isReasoning && currentReasoning.isNotEmpty()) {
+          reasoningBlocks.add(currentReasoning.toString())
+          isReasoning = false
+        }
+        val allReasoning = if (isReasoning && currentReasoning.isNotEmpty()) reasoningBlocks + currentReasoning.toString() else reasoningBlocks.toList()
+        val currentLen = sb.length
+        val hasNewLine = chunk.content.contains('\n')
+        val lineWorth = currentLen - lastUiLength >= charsPerLine
+        if (chunk.isDone || chunk.error != null || hasNewLine || lineWorth || chunk.toolCalls != null || chunk.toolResults != null || chunk.reasoning != null || chunk.contentReplace != null) {
+          lastUiLength = currentLen
+          withContext(Dispatchers.Main) {
+            _messages.value = _messages.value.toMutableList().also {
+              it[it.lastIndex] = it.last().copy(
+                content = sb.toString(),
+                reasoning = allReasoning,
+                isReasoningDone = !isReasoning,
+                toolCalls = toolCallsList.toList(),
+                toolResults = toolResultsList.toList(),
+                toolErrors = toolErrorsList.toList(),
+                locationData = if (toolExecutor.locationUsedThisTurn) toolExecutor.lastLocationData else null,
+              )
+            }
+          }
+        }
+      }
+    } finally {
+      // The UI is throttled during streaming. Flush the latest buffered chunk even
+      // when collection fails or is cancelled before the next UI update.
+      withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+        val allReasoning = if (isReasoning && currentReasoning.isNotEmpty()) {
+          reasoningBlocks + currentReasoning.toString()
+        } else {
+          reasoningBlocks.toList()
+        }
+        _messages.value = _messages.value.toMutableList().also {
+          it[it.lastIndex] = it.last().copy(
+            content = sb.toString(),
+            reasoning = allReasoning,
+            isReasoningDone = !isReasoning,
+            toolCalls = toolCallsList.toList(),
+            toolResults = toolResultsList.toList(),
+            toolErrors = toolErrorsList.toList(),
+            locationData = if (toolExecutor.locationUsedThisTurn) toolExecutor.lastLocationData else null,
+          )
+        }
+      }
+    }
+    return StreamResult(sb.toString(), lastUsage, System.currentTimeMillis() - streamStartMs)
+  }
+
+  private fun resend(text: String) {
+    if (!isOnline()) {
+      _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ No internet connection. Please check your network and try again.")
+      return
+    }
+    cancelStreaming()
+    streamingJob = viewModelScope.launch(Dispatchers.IO) {
+      _isStreaming.value = true
+      val assistantMsg = ChatMessage(role = Role.ASSISTANT, content = "")
+      _messages.value = _messages.value + assistantMsg
+      try {
+        val p = providerStore.getActive()
+        val mc = p.activeModelConfig()
+        val useTools = mc.toolsOverride != false
+        val chatMessages = buildSystemMessages(mc)
+        _messages.value.dropLast(1).forEach { msg ->
+          when (msg.role) {
+            Role.USER -> chatMessages.add("user" to msg.content)
+
+            Role.ASSISTANT -> {
+              if (msg.content.isNotBlank()) chatMessages.add("assistant" to msg.content)
+            }
+
+            else -> {}
+          }
+        }
+
+        val orchestrator = StreamingOrchestrator(
+          baseUrl = p.effectiveApiBase(),
+          apiKey = p.apiKey,
+          model = p.selectedModelId,
+          tools = if (useTools) toolExecutor.buildToolDefs() else emptyList(),
+          onToolCall = { name, args -> toolExecutor.execute(name, args) },
+        )
+
+        val streamResult2 = collectStream(orchestrator, chatMessages)
+        val result = streamResult2.content
+
+        val resendImages = Regex("""file:///[^\s)]+\.(png|jpg|jpeg|webp)""").findAll(result).map { it.value }.toList()
+        if (resendImages.isNotEmpty()) {
+          _messages.value = _messages.value.toMutableList().also { it[it.lastIndex] = it.last().copy(imageUris = resendImages) }
+        }
+      } catch (_: kotlinx.coroutines.CancellationException) {
+        // Keep any response received before the stream was stopped.
+      } catch (e: Exception) {
+        val updated = _messages.value.toMutableList()
+        val partial = updated.last().content
+        val error = "Error: ${e.message ?: "Unknown streaming error"}"
+        updated[updated.lastIndex] = updated.last().copy(
+          content = if (partial.isBlank()) error else "$partial\n\n$error",
+        )
+        _messages.value = updated
+      } finally {
+        withContext(kotlinx.coroutines.NonCancellable) {
+          val finalMsg = _messages.value.lastOrNull { it.id == assistantMsg.id }
+          if (finalMsg != null && finalMsg.content.isNotBlank()) {
+            val filesDirPath = getApplication<android.app.Application>().filesDir.absolutePath
+            val imagePaths = finalMsg.imageUris.joinToString(",") {
+              it.removePrefix("file://").removePrefix("$filesDirPath/")
+            }
+            chatDao.insertMessage(
+              MessageEntity(
+                id = finalMsg.id,
+                conversationId = conversationId,
+                role = Role.ASSISTANT.value,
+                content = finalMsg.content,
+                imagePaths = imagePaths,
+              ),
+            )
+          }
+        }
+        _isStreaming.value = false
+      }
+    }
+  }
+
+  val mcpManager: McpManager by lazy { McpManager(toolStore).also { it.startHeartbeat() } }
+
+  private val subagentReadOnlyTools = setOf(
+    "search_web",
+    "search_images",
+    "search_location",
+    "fetch_url",
+    "read_file",
+    "list_directory",
+    "query_data",
+    "memory_recall",
+  )
+
+  private var _subagentManager: ngo.xnet.aiope.feature.chat.engine.AgentExecutor? = null
+  val subagentManager: ngo.xnet.aiope.feature.chat.engine.AgentExecutor get() {
+    if (_subagentManager == null) toolExecutor // force lazy init which sets _subagentManager
+    return _subagentManager!!
+  }
+
+  private val toolExecutor by lazy {
+    ToolExecutor(
+      app = getApplication(),
+      providerStore = providerStore,
+      toolStore = toolStore,
+      chatDao = chatDao,
+      mcpManager = mcpManager,
+      locationProvider = ngo.xnet.aiope.feature.chat.location.LocationProvider(getApplication()),
+      getBrowser = { getBrowser() },
+      onBrowserVisible = { setBrowserVisible(it) },
+      onBrowserMaximized = { setBrowserMaximized(it) },
+      resolveTaskModel = { resolveTaskModel(it) },
+      getAgentMode = { _agentMode.value },
+      remoteToolBridge = remoteToolBridge,
+    ).also { te ->
+      _subagentManager = ngo.xnet.aiope.feature.chat.engine.AgentExecutor(
+        createOrchestrator = { config, tools, onToolCall ->
+          val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(getApplication())
+          val tc = taskStore.getTaskConfig(ngo.xnet.aiope.core.network.ModelTask.SUBAGENT)
+          val p = if (tc.profileId != null) providerStore.getById(tc.profileId!!) ?: providerStore.getActive() else providerStore.getActive()
+          val modelId = config.model.ifEmpty { tc.modelId ?: p.selectedModelId }
+          ngo.xnet.aiope.feature.chat.engine.StreamingOrchestrator(
+            baseUrl = p.effectiveApiBase(),
+            apiKey = p.apiKey,
+            model = modelId,
+            tools = tools,
+            onToolCall = onToolCall,
+            temperature = config.temperature,
+          )
+        },
+        buildMessages = { agent, prompt ->
+          val agentPrompt = agent?.prompt ?: "You are a helpful agent. Complete the given task using your tools."
+          val remoteCtx = try {
+            kotlinx.coroutines.runBlocking { remoteToolBridge.buildSystemContext() }
+          } catch (_: Exception) {
+            ""
+          }
+          val envContext = """
+
+## Environment
+- Date/Time: ${java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z"))}
+- Platform: Android (AIOPE agent system)
+- Agent: ${agent?.name ?: "default"}
+
+## Tool Execution
+You MUST use tools for ANY task involving information retrieval, file operations, or commands.
+- To search the web: call search_web
+- To fetch a URL: call fetch_url
+- To read a file: call read_file
+- To write a file: call write_file
+- To list a directory: call list_directory
+- To run a shell command: call run_sh
+- To connect to a remote server: call ssh_start with server NAME (not IP)
+- To run command on remote server: call ssh_exec with server NAME and command
+- To disconnect: call ssh_exit with server NAME
+
+IMPORTANT: For remote server operations, use ssh_start FIRST with the server name, then ssh_exec.
+DO NOT use run_sh with the ssh binary — it is not available on Android.
+DO NOT describe what you would do — actually DO it with tools.
+If a tool fails, try an alternative approach. Do not give up.
+When finished, provide a concise summary of results.
+$remoteCtx"""
+          listOf("system" to (agentPrompt + envContext), "user" to prompt)
+        },
+        getToolDefs = { te.buildToolDefs() },
+        executeTool = { name, args -> te.execute(name, args) },
+        dao = chatDao,
+      )
+      te.subagentManager = _subagentManager
+    }
+  }
+
+  private suspend fun buildSystemMessages(mc: ngo.xnet.aiope.core.network.ModelConfig): MutableList<Pair<String, String>> {
+    val msgs = mutableListOf<Pair<String, String>>()
+    val modePrefix = _agentMode.value.systemPrefix
+    val prompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
+    val remoteCtx = remoteToolBridge.buildSystemContext()
+    val dateTime = "## Current Date & Time\n${java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z"))}"
+    val ragInstruction = "## Knowledge Base\nYou have a local knowledge base via `rag_search`. ALWAYS search it FIRST before using search_web or fetch_url when the user asks a question that might be answered by indexed documents. Only use web search if RAG returns no relevant results."
+    val parts = listOfNotNull(
+      modePrefix.takeIf { it.isNotBlank() },
+      prompt.takeIf { it.isNotBlank() },
+      dateTime,
+      ragInstruction,
+      remoteCtx.takeIf { it.isNotBlank() },
+    )
+    val full = parts.joinToString("\n\n")
+    if (full.isNotBlank()) msgs.add("system" to full)
+    return msgs
+  }
+  private fun getBrowser() = ngo.xnet.aiope.feature.chat.browser.BrowserHolder.getOrCreate(getApplication())
+
+  override fun onCleared() {
+    super.onCleared()
+    kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) { remoteToolBridge.disconnectAll() }
+  }
+}

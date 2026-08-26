@@ -1,0 +1,107 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"llama.cpp/ggml/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 348,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 349,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 417,
+				"parent" : 0
+			}
+		]
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"llama.cpp/ggml/src/libggml.a"
+			],
+			"targetId" : "ggml::@94de48a0d5830e0c5d2f",
+			"targetIndex" : 1,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "include",
+			"paths" : 
+			[
+				"llama.cpp/ggml/include/ggml.h",
+				"llama.cpp/ggml/include/ggml-cpu.h",
+				"llama.cpp/ggml/include/ggml-alloc.h",
+				"llama.cpp/ggml/include/ggml-backend.h",
+				"llama.cpp/ggml/include/ggml-blas.h",
+				"llama.cpp/ggml/include/ggml-cann.h",
+				"llama.cpp/ggml/include/ggml-cpp.h",
+				"llama.cpp/ggml/include/ggml-cuda.h",
+				"llama.cpp/ggml/include/ggml-opt.h",
+				"llama.cpp/ggml/include/ggml-metal.h",
+				"llama.cpp/ggml/include/ggml-rpc.h",
+				"llama.cpp/ggml/include/ggml-virtgpu.h",
+				"llama.cpp/ggml/include/ggml-sycl.h",
+				"llama.cpp/ggml/include/ggml-vulkan.h",
+				"llama.cpp/ggml/include/ggml-webgpu.h",
+				"llama.cpp/ggml/include/ggml-zendnn.h",
+				"llama.cpp/ggml/include/ggml-openvino.h",
+				"llama.cpp/ggml/include/gguf.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"llama.cpp/ggml/src/libggml-base.a"
+			],
+			"targetId" : "ggml-base::@94de48a0d5830e0c5d2f",
+			"targetIndex" : 2,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 3,
+			"component" : "Unspecified",
+			"destination" : "lib/cmake/ggml",
+			"paths" : 
+			[
+				"/home/user-x/projects/aiope/core-inference/.cxx/Release/5k3x261b/arm64-v8a/llama.cpp/ggml/ggml-config.cmake",
+				"/home/user-x/projects/aiope/core-inference/.cxx/Release/5k3x261b/arm64-v8a/llama.cpp/ggml/ggml-version.cmake"
+			],
+			"type" : "file"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "llama.cpp/ggml",
+		"source" : "llama.cpp/ggml"
+	}
+}

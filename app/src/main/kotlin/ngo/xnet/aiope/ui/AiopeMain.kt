@@ -12,17 +12,26 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import ngo.xnet.aiope.core.designsystem.theme.AiopeTheme
+import androidx.navigation.compose.rememberNavController
+import ngo.xnet.aiope.core.navigation.AppComposeNavigator
+import ngo.xnet.aiope.feature.chat.db.ChatDao
+import ngo.xnet.aiope.feature.chat.settings.ProviderStore
+import ngo.xnet.aiope.feature.chat.settings.ToolStore
+import ngo.xnet.aiope.navigation.AiopeNavHost
 
 @Composable
-fun AiopeMain() {
-  AiopeTheme {
+fun AiopeMain(composeNavigator: AppComposeNavigator, providerStore: ProviderStore, toolStore: ToolStore, chatDao: ChatDao) {
+  ngo.xnet.aiope.feature.chat.theme.ThemeProvider {
     Surface(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
       var showSplash by remember { mutableStateOf(true) }
       if (showSplash) {
         SplashScreen { showSplash = false }
       } else {
-        androidx.compose.material3.Text("AIOPE is running!")
+        val navHostController = rememberNavController()
+        LaunchedEffect(Unit) {
+          composeNavigator.handleNavigationCommands(navHostController)
+        }
+        AiopeNavHost(navHostController = navHostController, composeNavigator = composeNavigator, providerStore = providerStore, toolStore = toolStore, chatDao = chatDao)
       }
     }
   }

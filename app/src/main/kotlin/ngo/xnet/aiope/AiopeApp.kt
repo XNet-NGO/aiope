@@ -4,12 +4,15 @@ import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.SvgDecoder
+import dagger.hilt.android.HiltAndroidApp
 
+@HiltAndroidApp
 class AiopeApp :
   Application(),
   ImageLoaderFactory {
   override fun onCreate() {
     super.onCreate()
+    ngo.xnet.aiope.feature.chat.engine.AgentRescheduleWorker.enqueue(this)
   }
 
   override fun newImageLoader() = ImageLoader.Builder(this)
