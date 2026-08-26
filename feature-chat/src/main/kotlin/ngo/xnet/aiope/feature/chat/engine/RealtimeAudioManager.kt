@@ -94,7 +94,7 @@ class RealtimeAudioManager(
       val captureBytes = 1024 * 2
       val buf = ByteArray(captureBytes)
       var chunksSent = 0
-      val vadThreshold = 200 // RMS energy gate to skip silence
+      val vadThreshold = 50 // RMS energy gate - low threshold to not miss speech
       while (isActive) {
         val read = audioRecord?.read(buf, 0, buf.size) ?: break
         if (read > 0) {
