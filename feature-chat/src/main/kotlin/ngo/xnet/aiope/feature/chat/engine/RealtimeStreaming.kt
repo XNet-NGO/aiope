@@ -307,7 +307,7 @@ class RealtimeStreaming(
       "query_data", "send_notification", "set_alarm", "dismiss_alarm",
       "read_calendar", "create_event", "read_contacts", "send_sms", "read_sms",
       "memory_store", "memory_recall", "memory_forget",
-      "rag_search", "device_info", "media_control", "image_generate", "analyze_image",
+      "rag_search", "device_info", "media_control", "image_generate",
       "clipboard_copy", "clipboard_read", "http_request",
       "datetime_now", "ssh_exec",
     )
