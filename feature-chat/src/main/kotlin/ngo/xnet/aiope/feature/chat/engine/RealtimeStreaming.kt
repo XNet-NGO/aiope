@@ -33,9 +33,14 @@ class RealtimeStreaming(
   private val systemPrompt: String = "",
   private val voiceName: String = "Aoede",
   private val tools: List<StreamingOrchestrator.ToolDef> = emptyList(),
+  private val sessionHandle: String? = null,
   private val gatewayUrl: String = "wss://inf.xnet.ngo/ws/voice",
 ) {
   private var webSocket: WebSocket? = null
+
+  /** Last session handle for resumption */
+  var lastSessionHandle: String? = null
+    private set
 
   private val isGoogleDirect: Boolean
     get() = provider.effectiveApiBase().contains("generativelanguage.googleapis.com")
@@ -110,6 +115,11 @@ class RealtimeStreaming(
                 android.util.Log.i("VoiceLive", "setupComplete received (binary), starting capture")
                 audioManager.startCapture()
                 trySend(StreamEvent.Connected)
+                return
+              }
+              // Capture session handle for resumption
+              json.optJSONObject("sessionResumptionUpdate")?.let { sru ->
+                sru.optString("newHandle", "").takeIf { it.isNotBlank() }?.let { lastSessionHandle = it }
                 return
               }
               // Log non-audio messages for debugging transcription
@@ -247,6 +257,18 @@ class RealtimeStreaming(
                 },
               ),
             )
+          }
+          // Session resumption for instant reconnection
+          if (sessionHandle != null) {
+            put(
+              "sessionResumption",
+              JSONObject().apply {
+                put("handle", sessionHandle)
+              },
+            )
+          } else {
+            // Request session handles for future resumption
+            put("sessionResumption", JSONObject())
           }
         },
       )
