@@ -137,7 +137,24 @@ class RealtimeStreaming(
       },
     )
 
-    awaitClose { stop() }
+    // Heartbeat: ping every 15s to prevent NAT timeout
+    val heartbeatTimer = java.util.Timer("ws-heartbeat", true)
+    heartbeatTimer.scheduleAtFixedRate(
+      object : java.util.TimerTask() {
+        override fun run() {
+          try {
+            webSocket?.send("")
+          } catch (_: Exception) {}
+        }
+      },
+      15000L,
+      15000L,
+    )
+
+    awaitClose {
+      heartbeatTimer.cancel()
+      stop()
+    }
   }.flowOn(Dispatchers.IO)
 
   // ══════════════════════════════════════════════════════════════

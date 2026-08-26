@@ -90,18 +90,32 @@ class RealtimeAudioManager(
     android.util.Log.i("VoiceLive", "startCapture: googleDirect=$googleDirect sampleRate=${config.sampleRate} ws=${webSocket != null}")
 
     captureJob = CoroutineScope(Dispatchers.IO).launch {
-      val buf = ByteArray(bufSize)
+      // 1024 frames = 64ms at 16kHz for low-latency capture
+      val captureBytes = 1024 * 2
+      val buf = ByteArray(captureBytes)
       var chunksSent = 0
+      val vadThreshold = 200 // RMS energy gate to skip silence
       while (isActive) {
         val read = audioRecord?.read(buf, 0, buf.size) ?: break
         if (read > 0) {
+          // Lightweight VAD: skip pure silence
+          var energy = 0L
+          for (i in 0 until read step 2) {
+            if (i + 1 < read) {
+              val sample = (buf[i].toInt() and 0xFF) or (buf[i + 1].toInt() shl 8)
+              energy += sample.toLong() * sample
+            }
+          }
+          val rms = Math.sqrt(energy.toDouble() / (read / 2)).toInt()
+          if (rms < vadThreshold) continue
+
           val encoded = android.util.Base64.encodeToString(buf.copyOf(read), android.util.Base64.NO_WRAP)
           if (googleDirect) {
-            val sent = webSocket?.send("""{"realtimeInput":{"audio":{"mimeType":"audio/pcm;rate=${config.sampleRate}","data":"$encoded"}}}""")
-            if (chunksSent++ < 3 || chunksSent % 50 == 0) android.util.Log.d("VoiceLive", "audio chunk #$chunksSent sent=$sent bytes=$read")
+            webSocket?.send("""{"realtimeInput":{"audio":{"mimeType":"audio/pcm;rate=${config.sampleRate}","data":"$encoded"}}}""")
           } else {
             webSocket?.send("""{"audio":{"pcm":"$encoded","sampleRate":${config.sampleRate}}}""")
           }
+          chunksSent++
         }
       }
       android.util.Log.w("VoiceLive", "capture loop ended, chunksSent=$chunksSent")
