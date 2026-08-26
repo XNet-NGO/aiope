@@ -271,6 +271,14 @@ class RealtimeStreaming(
             // Request session handles for future resumption
             put("sessionResumption", JSONObject())
           }
+          // Context window compression: extend past 15min, control costs
+          put(
+            "contextWindowCompression",
+            JSONObject().apply {
+              put("slidingWindow", JSONObject().apply { put("targetTokens", 8000) })
+              put("triggerTokens", 25000)
+            },
+          )
         },
       )
     }
@@ -389,6 +397,11 @@ class RealtimeStreaming(
       // Turn complete
       if (serverContent.optBoolean("turnComplete", false)) {
         events.add(StreamEvent.TurnComplete)
+      }
+
+      // Interrupted — user barged in, clear playback
+      if (serverContent.optBoolean("interrupted", false)) {
+        events.add(StreamEvent.Interrupted)
       }
 
       // Input transcription

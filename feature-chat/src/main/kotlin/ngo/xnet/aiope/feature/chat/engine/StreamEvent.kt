@@ -8,6 +8,7 @@ sealed class StreamEvent {
   data class AudioChunk(val pcmData: ByteArray) : StreamEvent()
   data class TurnStart(val turnId: String) : StreamEvent()
   data object TurnComplete : StreamEvent()
+  data object Interrupted : StreamEvent()
   data class InputTranscription(val text: String) : StreamEvent()
   data class OutputTranscription(val text: String) : StreamEvent()
   data class ToolCallEvent(val functionCalls: List<FunctionCall>) : StreamEvent()

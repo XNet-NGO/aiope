@@ -28,6 +28,11 @@ class RealtimeAudioManager(
   private var webSocket: WebSocket? = null
   private var aec: AcousticEchoCanceler? = null
   private val playbackQueue = java.util.concurrent.LinkedBlockingQueue<ByteArray>()
+
+  /** Clear playback queue (on interruption / barge-in) */
+  fun clearPlayback() {
+    playbackQueue.clear()
+  }
   private var sharedSessionId: Int = 0
   var googleDirect: Boolean = false
 
@@ -90,25 +95,15 @@ class RealtimeAudioManager(
     android.util.Log.i("VoiceLive", "startCapture: googleDirect=$googleDirect sampleRate=${config.sampleRate} ws=${webSocket != null}")
 
     captureJob = CoroutineScope(Dispatchers.IO).launch {
-      // 1024 frames = 64ms at 16kHz for low-latency capture
-      val captureBytes = 1024 * 2
+      // 20-40ms chunks per Google best practices (320 frames = 20ms at 16kHz)
+      val captureBytes = 640 // 320 frames * 2 bytes (20ms)
       val buf = ByteArray(captureBytes)
       var chunksSent = 0
-      val vadThreshold = 50 // RMS energy gate - low threshold to not miss speech
+      // NO client-side VAD — Google's server-side VAD handles speech detection
+      // Client buffering causes latency; send everything immediately
       while (isActive) {
         val read = audioRecord?.read(buf, 0, buf.size) ?: break
         if (read > 0) {
-          // Lightweight VAD: skip pure silence
-          var energy = 0L
-          for (i in 0 until read step 2) {
-            if (i + 1 < read) {
-              val sample = (buf[i].toInt() and 0xFF) or (buf[i + 1].toInt() shl 8)
-              energy += sample.toLong() * sample
-            }
-          }
-          val rms = Math.sqrt(energy.toDouble() / (read / 2)).toInt()
-          if (rms < vadThreshold) continue
-
           val encoded = android.util.Base64.encodeToString(buf.copyOf(read), android.util.Base64.NO_WRAP)
           if (googleDirect) {
             webSocket?.send("""{"realtimeInput":{"audio":{"mimeType":"audio/pcm;rate=${config.sampleRate}","data":"$encoded"}}}""")
