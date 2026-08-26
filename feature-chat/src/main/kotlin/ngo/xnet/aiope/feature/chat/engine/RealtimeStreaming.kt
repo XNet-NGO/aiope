@@ -256,8 +256,20 @@ class RealtimeStreaming(
   }
 
   private fun buildGoogleToolDeclarations(): JSONArray {
+    // Curated tool list for voice (low latency, most useful for spoken interactions)
+    val voiceTools = setOf(
+      "run_sh", "read_file", "write_file", "list_directory", "edit_file", "search_files",
+      "get_location", "open_intent", "fetch_url", "search_web", "search_images", "search_location",
+      "query_data", "send_notification", "set_alarm", "dismiss_alarm",
+      "read_calendar", "create_event", "read_contacts", "send_sms", "read_sms",
+      "memory_store", "memory_recall", "memory_forget",
+      "rag_search", "device_info", "media_control", "image_generate", "analyze_image",
+      "clipboard_copy", "clipboard_read", "http_request",
+      "datetime_now", "ssh_exec",
+    )
     val decls = JSONArray()
-    for (t in tools.take(25)) {
+    for (t in tools) {
+      if (t.name !in voiceTools) continue
       try {
         val params = JSONObject(t.parameters.toString())
         if (params.optJSONObject("properties")?.length() == 0) {
