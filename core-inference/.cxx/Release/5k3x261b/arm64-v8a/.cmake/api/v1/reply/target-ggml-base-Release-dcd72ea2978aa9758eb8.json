@@ -1,0 +1,491 @@
+{
+	"archive" : {},
+	"artifacts" : 
+	[
+		{
+			"path" : "llama.cpp/ggml/src/libggml-base.a"
+		}
+	],
+	"backtrace" : 1,
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"add_library",
+			"install",
+			"add_compile_options",
+			"target_link_libraries",
+			"add_compile_definitions",
+			"target_include_directories",
+			"target_compile_features"
+		],
+		"files" : 
+		[
+			"llama.cpp/ggml/src/CMakeLists.txt",
+			"llama.cpp/ggml/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 192,
+				"parent" : 0
+			},
+			{
+				"file" : 1
+			},
+			{
+				"command" : 1,
+				"file" : 1,
+				"line" : 349,
+				"parent" : 2
+			},
+			{
+				"command" : 2,
+				"file" : 0,
+				"line" : 49,
+				"parent" : 0
+			},
+			{
+				"command" : 3,
+				"file" : 0,
+				"line" : 496,
+				"parent" : 0
+			},
+			{
+				"command" : 4,
+				"file" : 0,
+				"line" : 4,
+				"parent" : 0
+			},
+			{
+				"command" : 4,
+				"file" : 0,
+				"line" : 154,
+				"parent" : 0
+			},
+			{
+				"command" : 4,
+				"file" : 0,
+				"line" : 148,
+				"parent" : 0
+			},
+			{
+				"command" : 5,
+				"file" : 0,
+				"line" : 216,
+				"parent" : 0
+			},
+			{
+				"command" : 5,
+				"file" : 0,
+				"line" : 492,
+				"parent" : 0
+			},
+			{
+				"command" : 6,
+				"file" : 0,
+				"line" : 493,
+				"parent" : 0
+			}
+		]
+	},
+	"compileGroups" : 
+	[
+		{
+			"compileCommandFragments" : 
+			[
+				{
+					"fragment" : "-g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -O3 -DNDEBUG  -fPIC"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wshadow"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wstrict-prototypes"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wpointer-arith"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wmissing-prototypes"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Werror=implicit-int"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Werror=implicit-function-declaration"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wall"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wextra"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wpedantic"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wcast-qual"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wno-unused-function"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wunreachable-code-break"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wunreachable-code-return"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wdouble-promotion"
+				},
+				{
+					"backtrace" : 5,
+					"fragment" : "-pthread"
+				},
+				{
+					"fragment" : "-std=gnu11"
+				}
+			],
+			"defines" : 
+			[
+				{
+					"backtrace" : 0,
+					"define" : "GGML_COMMIT=\"unknown\""
+				},
+				{
+					"backtrace" : 6,
+					"define" : "GGML_SCHED_MAX_COPIES=4"
+				},
+				{
+					"backtrace" : 0,
+					"define" : "GGML_VERSION=\"0.16.0\""
+				},
+				{
+					"backtrace" : 7,
+					"define" : "_GNU_SOURCE"
+				},
+				{
+					"backtrace" : 8,
+					"define" : "_XOPEN_SOURCE=600"
+				}
+			],
+			"includes" : 
+			[
+				{
+					"backtrace" : 9,
+					"path" : "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/ggml/src/."
+				},
+				{
+					"backtrace" : 10,
+					"path" : "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/ggml/src/../include"
+				}
+			],
+			"language" : "C",
+			"languageStandard" : 
+			{
+				"backtraces" : 
+				[
+					11
+				],
+				"standard" : "11"
+			},
+			"sourceIndexes" : 
+			[
+				6,
+				8,
+				14
+			],
+			"sysroot" : 
+			{
+				"path" : "/home/user-x/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+			}
+		},
+		{
+			"compileCommandFragments" : 
+			[
+				{
+					"fragment" : "-g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -O3 -DNDEBUG  -fPIC"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wmissing-declarations"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wmissing-noreturn"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wall"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wextra"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wpedantic"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wcast-qual"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wno-unused-function"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wunreachable-code-break"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wunreachable-code-return"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wmissing-prototypes"
+				},
+				{
+					"backtrace" : 4,
+					"fragment" : "-Wextra-semi"
+				},
+				{
+					"backtrace" : 5,
+					"fragment" : "-pthread"
+				},
+				{
+					"fragment" : "-std=c++17"
+				}
+			],
+			"defines" : 
+			[
+				{
+					"backtrace" : 0,
+					"define" : "GGML_COMMIT=\"unknown\""
+				},
+				{
+					"backtrace" : 6,
+					"define" : "GGML_SCHED_MAX_COPIES=4"
+				},
+				{
+					"backtrace" : 0,
+					"define" : "GGML_VERSION=\"0.16.0\""
+				},
+				{
+					"backtrace" : 7,
+					"define" : "_GNU_SOURCE"
+				},
+				{
+					"backtrace" : 8,
+					"define" : "_XOPEN_SOURCE=600"
+				}
+			],
+			"includes" : 
+			[
+				{
+					"backtrace" : 9,
+					"path" : "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/ggml/src/."
+				},
+				{
+					"backtrace" : 10,
+					"path" : "/home/user-x/projects/aiope/core-inference/src/main/cpp/llama.cpp/ggml/src/../include"
+				}
+			],
+			"language" : "CXX",
+			"languageStandard" : 
+			{
+				"backtraces" : 
+				[
+					11
+				],
+				"standard" : "17"
+			},
+			"sourceIndexes" : 
+			[
+				7,
+				9,
+				10,
+				11,
+				12,
+				16
+			],
+			"sysroot" : 
+			{
+				"path" : "/home/user-x/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+			}
+		}
+	],
+	"id" : "ggml-base::@94de48a0d5830e0c5d2f",
+	"install" : 
+	{
+		"destinations" : 
+		[
+			{
+				"backtrace" : 3,
+				"path" : "lib"
+			}
+		],
+		"prefix" : 
+		{
+			"path" : "/usr/local"
+		}
+	},
+	"name" : "ggml-base",
+	"nameOnDisk" : "libggml-base.a",
+	"paths" : 
+	{
+		"build" : "llama.cpp/ggml/src",
+		"source" : "llama.cpp/ggml/src"
+	},
+	"sourceGroups" : 
+	[
+		{
+			"name" : "Header Files",
+			"sourceIndexes" : 
+			[
+				0,
+				1,
+				2,
+				3,
+				4,
+				5,
+				13,
+				15
+			]
+		},
+		{
+			"name" : "Source Files",
+			"sourceIndexes" : 
+			[
+				6,
+				7,
+				8,
+				9,
+				10,
+				11,
+				12,
+				14,
+				16
+			]
+		}
+	],
+	"sources" : 
+	[
+		{
+			"backtrace" : 1,
+			"path" : "llama.cpp/ggml/include/ggml.h",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "llama.cpp/ggml/include/ggml-alloc.h",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "llama.cpp/ggml/include/ggml-backend.h",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "llama.cpp/ggml/include/ggml-cpp.h",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "llama.cpp/ggml/include/ggml-opt.h",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"path" : "llama.cpp/ggml/include/gguf.h",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "llama.cpp/ggml/src/ggml.c",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 1,
+			"path" : "llama.cpp/ggml/src/ggml.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "llama.cpp/ggml/src/ggml-alloc.c",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 1,
+			"path" : "llama.cpp/ggml/src/ggml-backend.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 1,
+			"path" : "llama.cpp/ggml/src/ggml-backend-meta.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 1,
+			"path" : "llama.cpp/ggml/src/ggml-opt.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 1,
+			"path" : "llama.cpp/ggml/src/ggml-threading.cpp",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "llama.cpp/ggml/src/ggml-threading.h",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 0,
+			"path" : "llama.cpp/ggml/src/ggml-quants.c",
+			"sourceGroupIndex" : 1
+		},
+		{
+			"backtrace" : 1,
+			"path" : "llama.cpp/ggml/src/ggml-quants.h",
+			"sourceGroupIndex" : 0
+		},
+		{
+			"backtrace" : 1,
+			"compileGroupIndex" : 1,
+			"path" : "llama.cpp/ggml/src/gguf.cpp",
+			"sourceGroupIndex" : 1
+		}
+	],
+	"type" : "STATIC_LIBRARY"
+}
