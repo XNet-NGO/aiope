@@ -426,6 +426,37 @@ class RealtimeStreaming(
     webSocket?.send(json.toString())
   }
 
+  /** Send multimodal content (text + images/docs) through the live session */
+  fun sendClientContent(parts: List<JSONObject>) {
+    val json = if (isGoogleDirect) {
+      // For Gemini 3.1, use realtimeInput for text or clientContent for multimodal
+      JSONObject().apply {
+        put(
+          "clientContent",
+          JSONObject().apply {
+            put(
+              "turns",
+              JSONArray().put(
+                JSONObject().apply {
+                  put("role", "user")
+                  put("parts", JSONArray().apply { parts.forEach { put(it) } })
+                },
+              ),
+            )
+            put("turnComplete", true)
+          },
+        )
+      }
+    } else {
+      // Gateway: send as text (images not supported via gateway voice)
+      val textPart = parts.firstOrNull { it.has("text") }?.optString("text") ?: ""
+      JSONObject().apply {
+        put("text", JSONObject().apply { put("content", textPart) })
+      }
+    }
+    webSocket?.send(json.toString())
+  }
+
   /** Send audio chunk (called by AudioManager) */
   fun sendAudio(pcmBase64: String) {
     val json = if (isGoogleDirect) {
