@@ -455,22 +455,9 @@ class RealtimeStreaming(
   /** Send text mid-conversation */
   fun sendText(text: String) {
     val json = if (isGoogleDirect) {
+      // Gemini 3.1: use realtimeInput.text (clientContent only for initial history)
       JSONObject().apply {
-        put(
-          "clientContent",
-          JSONObject().apply {
-            put(
-              "turns",
-              JSONArray().put(
-                JSONObject().apply {
-                  put("role", "user")
-                  put("parts", JSONArray().put(JSONObject().put("text", text)))
-                },
-              ),
-            )
-            put("turnComplete", true)
-          },
-        )
+        put("realtimeInput", JSONObject().apply { put("text", text) })
       }
     } else {
       JSONObject().apply {
@@ -482,33 +469,46 @@ class RealtimeStreaming(
 
   /** Send multimodal content (text + images/docs) through the live session */
   fun sendClientContent(parts: List<JSONObject>) {
-    val json = if (isGoogleDirect) {
-      // For Gemini 3.1, use realtimeInput for text or clientContent for multimodal
-      JSONObject().apply {
-        put(
-          "clientContent",
-          JSONObject().apply {
-            put(
-              "turns",
-              JSONArray().put(
+    if (isGoogleDirect) {
+      // Gemini 3.1: clientContent only for initial history.
+      // Send text via realtimeInput.text, images via realtimeInput.video
+      for (part in parts) {
+        val msg = when {
+          part.has("text") -> JSONObject().apply {
+            put("realtimeInput", JSONObject().apply { put("text", part.getString("text")) })
+          }
+
+          part.has("inlineData") -> {
+            val inline = part.getJSONObject("inlineData")
+            JSONObject().apply {
+              put(
+                "realtimeInput",
                 JSONObject().apply {
-                  put("role", "user")
-                  put("parts", JSONArray().apply { parts.forEach { put(it) } })
+                  put(
+                    "video",
+                    JSONObject().apply {
+                      put("mimeType", inline.optString("mimeType", "image/jpeg"))
+                      put("data", inline.optString("data"))
+                    },
+                  )
                 },
-              ),
-            )
-            put("turnComplete", true)
-          },
-        )
+              )
+            }
+          }
+
+          else -> null
+        }
+        msg?.let { webSocket?.send(it.toString()) }
       }
     } else {
-      // Gateway: send as text (images not supported via gateway voice)
+      // Gateway: send as text
       val textPart = parts.firstOrNull { it.has("text") }?.optString("text") ?: ""
-      JSONObject().apply {
-        put("text", JSONObject().apply { put("content", textPart) })
-      }
+      webSocket?.send(
+        JSONObject().apply {
+          put("text", JSONObject().apply { put("content", textPart) })
+        }.toString(),
+      )
     }
-    webSocket?.send(json.toString())
   }
 
   /** Send audio chunk (called by AudioManager) */

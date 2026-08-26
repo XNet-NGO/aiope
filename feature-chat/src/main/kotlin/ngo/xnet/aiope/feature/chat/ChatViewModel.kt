@@ -293,10 +293,10 @@ class ChatViewModel @Inject constructor(
         if (text.isNotBlank()) parts.add(org.json.JSONObject().put("text", text))
         for (uri in imageUris) {
           try {
-            val path = ngo.xnet.aiope.feature.chat.engine.ImageProcessor.resolveImagePath(filesDir, uri)
-            val bytes = java.io.File(path).readBytes()
+            val file = java.io.File(if (uri.startsWith("/")) uri else java.io.File(filesDir, uri).absolutePath)
+            val bytes = file.readBytes()
             val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-            val mime = if (path.endsWith(".png")) "image/png" else "image/jpeg"
+            val mime = if (file.name.endsWith(".png")) "image/png" else "image/jpeg"
             parts.add(org.json.JSONObject().put("inlineData", org.json.JSONObject().put("mimeType", mime).put("data", b64)))
           } catch (_: Exception) {}
         }
