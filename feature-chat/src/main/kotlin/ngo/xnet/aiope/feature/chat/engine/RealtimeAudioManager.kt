@@ -95,12 +95,9 @@ class RealtimeAudioManager(
     android.util.Log.i("VoiceLive", "startCapture: googleDirect=$googleDirect sampleRate=${config.sampleRate} ws=${webSocket != null}")
 
     captureJob = CoroutineScope(Dispatchers.IO).launch {
-      // 20-40ms chunks per Google best practices (320 frames = 20ms at 16kHz)
-      val captureBytes = 640 // 320 frames * 2 bytes (20ms)
-      val buf = ByteArray(captureBytes)
+      // Use system minimum buffer size for reliable capture
+      val buf = ByteArray(bufSize)
       var chunksSent = 0
-      // NO client-side VAD — Google's server-side VAD handles speech detection
-      // Client buffering causes latency; send everything immediately
       while (isActive) {
         val read = audioRecord?.read(buf, 0, buf.size) ?: break
         if (read > 0) {
