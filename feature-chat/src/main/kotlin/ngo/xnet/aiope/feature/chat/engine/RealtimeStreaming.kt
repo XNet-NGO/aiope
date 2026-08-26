@@ -285,6 +285,13 @@ class RealtimeStreaming(
               put("triggerTokens", 25000)
             },
           )
+          // Include all input (video/text/audio) in turns, not just audio activity
+          put(
+            "realtimeInputConfig",
+            JSONObject().apply {
+              put("turnCoverage", "TURN_INCLUDES_ALL_INPUT")
+            },
+          )
         },
       )
     }
