@@ -230,6 +230,35 @@ class ChatViewModel @Inject constructor(
   }
 
   /** Stop realtime voice conversation */
+  /** Route text/images/docs through the active live voice session */
+  private fun sendToLiveVoice(text: String, imageUris: List<String>) {
+    val userMsg = ChatMessage(role = Role.USER, content = text, imageUris = imageUris)
+    _messages.value = _messages.value + userMsg
+
+    viewModelScope.launch(Dispatchers.IO) {
+      val stream = realtimeStream ?: return@launch
+      if (imageUris.isNotEmpty()) {
+        // Encode images and send as inline data via clientContent
+        val filesDir = getApplication<android.app.Application>().filesDir
+        val parts = mutableListOf<org.json.JSONObject>()
+        if (text.isNotBlank()) parts.add(org.json.JSONObject().put("text", text))
+        for (uri in imageUris) {
+          try {
+            val path = ngo.xnet.aiope.feature.chat.engine.ImageProcessor.resolveImagePath(filesDir, uri)
+            val bytes = java.io.File(path).readBytes()
+            val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            val mime = if (path.endsWith(".png")) "image/png" else "image/jpeg"
+            parts.add(org.json.JSONObject().put("inlineData", org.json.JSONObject().put("mimeType", mime).put("data", b64)))
+          } catch (_: Exception) {}
+        }
+        stream.sendClientContent(parts)
+      } else if (text.isNotBlank()) {
+        // Send text through realtimeInput
+        stream.sendText(text)
+      }
+    }
+  }
+
   private fun stopRealtimeVoice() {
     viewModelScope.launch(Dispatchers.Main) {
       _isInRealtimeVoice.value = false
@@ -602,6 +631,12 @@ class ChatViewModel @Inject constructor(
   private var lastSendHash = 0
 
   fun send(text: String, imageUris: List<String> = emptyList()) {
+    // If in live voice session, route through the WebSocket instead of text chat
+    if (_isInRealtimeVoice.value && realtimeStream != null) {
+      sendToLiveVoice(text, imageUris)
+      return
+    }
+
     if (!isOnline()) {
       _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ No internet connection. Please check your network and try again.")
       return
