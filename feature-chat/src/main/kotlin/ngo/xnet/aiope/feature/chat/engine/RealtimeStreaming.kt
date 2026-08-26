@@ -257,7 +257,7 @@ class RealtimeStreaming(
 
   private fun buildGoogleToolDeclarations(): JSONArray {
     val decls = JSONArray()
-    for (t in tools.take(50)) {
+    for (t in tools.take(25)) {
       try {
         val params = JSONObject(t.parameters.toString())
         if (params.optJSONObject("properties")?.length() == 0) {
