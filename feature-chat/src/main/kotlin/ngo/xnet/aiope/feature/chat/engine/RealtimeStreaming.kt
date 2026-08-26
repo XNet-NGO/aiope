@@ -470,44 +470,32 @@ class RealtimeStreaming(
   /** Send multimodal content (text + images/docs) through the live session */
   fun sendClientContent(parts: List<JSONObject>) {
     if (isGoogleDirect) {
-      // Gemini 3.1: clientContent only for initial history.
-      // Send text via realtimeInput.text, images via realtimeInput.video
+      // Send images FIRST, then text (model needs image context before question)
       for (part in parts) {
-        val msg = when {
-          part.has("text") -> JSONObject().apply {
-            put("realtimeInput", JSONObject().apply { put("text", part.getString("text")) })
-          }
-
-          part.has("inlineData") -> {
-            val inline = part.getJSONObject("inlineData")
-            JSONObject().apply {
-              put(
-                "realtimeInput",
-                JSONObject().apply {
-                  put(
-                    "video",
-                    JSONObject().apply {
-                      put("mimeType", inline.optString("mimeType", "image/jpeg"))
-                      put("data", inline.optString("data"))
-                    },
-                  )
-                },
-              )
-            }
-          }
-
-          else -> null
+        if (part.has("inlineData")) {
+          val inline = part.getJSONObject("inlineData")
+          webSocket?.send(JSONObject().apply {
+            put("realtimeInput", JSONObject().apply {
+              put("video", JSONObject().apply {
+                put("mimeType", inline.optString("mimeType", "image/jpeg"))
+                put("data", inline.optString("data"))
+              })
+            })
+          }.toString())
         }
-        msg?.let { webSocket?.send(it.toString()) }
+      }
+      for (part in parts) {
+        if (part.has("text")) {
+          webSocket?.send(JSONObject().apply {
+            put("realtimeInput", JSONObject().apply { put("text", part.getString("text")) })
+          }.toString())
+        }
       }
     } else {
-      // Gateway: send as text
       val textPart = parts.firstOrNull { it.has("text") }?.optString("text") ?: ""
-      webSocket?.send(
-        JSONObject().apply {
-          put("text", JSONObject().apply { put("content", textPart) })
-        }.toString(),
-      )
+      webSocket?.send(JSONObject().apply {
+        put("text", JSONObject().apply { put("content", textPart) })
+      }.toString())
     }
   }
 

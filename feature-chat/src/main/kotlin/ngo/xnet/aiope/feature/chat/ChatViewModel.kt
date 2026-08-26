@@ -290,7 +290,9 @@ class ChatViewModel @Inject constructor(
         // Encode images and send as inline data via clientContent
         val filesDir = getApplication<android.app.Application>().filesDir
         val parts = mutableListOf<org.json.JSONObject>()
-        if (text.isNotBlank()) parts.add(org.json.JSONObject().put("text", text))
+        // Always include text — model needs it to trigger a response about the image
+        val prompt = if (text.isNotBlank()) text else "Describe what you see in this image."
+        parts.add(org.json.JSONObject().put("text", prompt))
         for (uri in imageUris) {
           try {
             val file = java.io.File(if (uri.startsWith("/")) uri else java.io.File(filesDir, uri).absolutePath)
