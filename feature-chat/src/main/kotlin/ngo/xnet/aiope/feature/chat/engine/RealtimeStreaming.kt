@@ -122,6 +122,12 @@ class RealtimeStreaming(
                 sru.optString("newHandle", "").takeIf { it.isNotBlank() }?.let { lastSessionHandle = it }
                 return
               }
+              // GoAway: server will disconnect soon — log for awareness
+              json.optJSONObject("goAway")?.let { ga ->
+                val timeLeft = ga.optString("timeLeft", "unknown")
+                android.util.Log.w("VoiceLive", "GoAway received — connection ending in $timeLeft")
+                return
+              }
               // Log non-audio messages for debugging transcription
               if (!text.contains("inlineData")) {
                 android.util.Log.i("VoiceLive", "recv: ${text.take(400)}")
