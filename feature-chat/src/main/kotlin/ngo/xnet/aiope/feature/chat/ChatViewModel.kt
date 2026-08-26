@@ -90,6 +90,46 @@ class ChatViewModel @Inject constructor(
     }
   }
 
+  // Pre-connected voice session for instant start
+  private var preConnectedStream: RealtimeStreaming? = null
+  private var voiceSessionHandle: String? = null // For session resumption
+
+  /** Pre-connect the voice WebSocket so mic button is instant */
+  fun preConnectVoice() {
+    if (preConnectedStream != null || _isInRealtimeVoice.value) return
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(getApplication())
+        val (profileId, modelId) = taskStore.resolve(ngo.xnet.aiope.core.network.ModelTask.REALTIME_SPEECH, providerStore)
+        val profile = if (profileId != null) providerStore.getAll().find { it.id == profileId } ?: providerStore.getActive() else providerStore.getActive()
+        val resolvedModelId = modelId ?: "google-ai-studio/gemini-3.1-flash-live-preview"
+        val modelDef = ModelDef(id = resolvedModelId, supportsAudio = true, useStreaming = true, sampleRate = 16000)
+        val fullPrompt = buildSystemMessages(ModelConfig(modelId = resolvedModelId))
+          .firstOrNull { it.first == "system" }?.second ?: ""
+        val sysPrompt = fullPrompt.let { p ->
+          val toolsIdx = p.indexOf("## Tools")
+          val trimmed = if (toolsIdx > 0) p.substring(0, toolsIdx) else p.take(2000)
+          trimmed.trim()
+        } + "\n\nYou are in a live voice session. Be concise. Execute tools directly when needed."
+        preConnectedStream = RealtimeStreaming(
+          okHttp = okHttp,
+          modelDef = modelDef,
+          config = ModelConfig(modelId = modelDef.id),
+          provider = profile,
+          audioManager = RealtimeAudioManager(AudioConfig(sampleRate = modelDef.sampleRate)),
+          systemPrompt = sysPrompt,
+          voiceName = ngo.xnet.aiope.feature.chat.settings.getVoiceName(getApplication()),
+          tools = toolExecutor.buildToolDefs(),
+          sessionHandle = voiceSessionHandle,
+        )
+        android.util.Log.i("VoiceLive", "pre-connect: session ready (handle=${voiceSessionHandle?.take(8)})")
+      } catch (e: Exception) {
+        android.util.Log.w("VoiceLive", "pre-connect failed: ${e.message}")
+        preConnectedStream = null
+      }
+    }
+  }
+
   /** Start realtime voice conversation */
   private fun startRealtimeVoice() {
     val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(getApplication())
@@ -264,6 +304,8 @@ class ChatViewModel @Inject constructor(
   }
 
   private fun stopRealtimeVoice() {
+    // Save session handle for future resumption
+    realtimeStream?.lastSessionHandle?.let { voiceSessionHandle = it }
     viewModelScope.launch(Dispatchers.Main) {
       _isInRealtimeVoice.value = false
       _isVoiceListening.value = false
@@ -272,6 +314,7 @@ class ChatViewModel @Inject constructor(
     realtimeStreamingJob?.cancel()
     realtimeStreamingJob = null
     realtimeStream = null
+    preConnectedStream = null
     try {
       realtimeAudioManager?.stop()
     } catch (_: Exception) {}
@@ -362,6 +405,8 @@ class ChatViewModel @Inject constructor(
     refreshModelLabel()
     ngo.xnet.aiope.feature.chat.browser.BrowserServer.start { getBrowser() }
     getBrowser() // preload WebView on main thread
+    // Pre-connect voice WebSocket for instant mic start
+    preConnectVoice()
     viewModelScope.launch {
       // Reuse last conversation if it exists, or find an empty one
       val all = chatDao.getConversations()
