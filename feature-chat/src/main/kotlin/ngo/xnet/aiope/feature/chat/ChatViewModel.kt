@@ -296,10 +296,40 @@ class ChatViewModel @Inject constructor(
         for (uri in imageUris) {
           try {
             val file = java.io.File(if (uri.startsWith("/")) uri else java.io.File(filesDir, uri).absolutePath)
-            val bytes = file.readBytes()
-            val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-            val mime = if (file.name.endsWith(".png")) "image/png" else "image/jpeg"
-            parts.add(org.json.JSONObject().put("inlineData", org.json.JSONObject().put("mimeType", mime).put("data", b64)))
+            val isVideo = file.name.let { it.endsWith(".mp4") || it.endsWith(".webm") || it.endsWith(".mov") || it.endsWith(".avi") }
+
+            if (isVideo) {
+              // Extract frames from video (max 5 frames at 1 FPS) and send as JPEG
+              val retriever = android.media.MediaMetadataRetriever()
+              retriever.setDataSource(file.absolutePath)
+              val durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 5000L
+              val frameCount = minOf(5, (durationMs / 1000).toInt().coerceAtLeast(1))
+              for (i in 0 until frameCount) {
+                val timeUs = (i * 1000000L * durationMs / frameCount / 1000)
+                val frame = retriever.getFrameAtTime(timeUs, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: continue
+                // Downscale frame
+                val scaled = android.graphics.Bitmap.createScaledBitmap(frame, minOf(frame.width, 1024), minOf(frame.height, 1024), true)
+                val baos = java.io.ByteArrayOutputStream()
+                scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, baos)
+                if (scaled != frame) scaled.recycle()
+                frame.recycle()
+                val b64 = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+                parts.add(org.json.JSONObject().put("inlineData", org.json.JSONObject().put("mimeType", "image/jpeg").put("data", b64)))
+              }
+              retriever.release()
+            } else {
+              // Image: downscale to max 1024px
+              val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+              android.graphics.BitmapFactory.decodeFile(file.absolutePath, options)
+              val scale = maxOf(1, maxOf(options.outWidth, options.outHeight) / 1024)
+              val decodeOpts = android.graphics.BitmapFactory.Options().apply { inSampleSize = scale }
+              val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath, decodeOpts) ?: continue
+              val baos = java.io.ByteArrayOutputStream()
+              bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, baos)
+              bitmap.recycle()
+              val b64 = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+              parts.add(org.json.JSONObject().put("inlineData", org.json.JSONObject().put("mimeType", "image/jpeg").put("data", b64)))
+            }
           } catch (_: Exception) {}
         }
         stream.sendClientContent(parts)

@@ -474,28 +474,40 @@ class RealtimeStreaming(
       for (part in parts) {
         if (part.has("inlineData")) {
           val inline = part.getJSONObject("inlineData")
-          webSocket?.send(JSONObject().apply {
-            put("realtimeInput", JSONObject().apply {
-              put("video", JSONObject().apply {
-                put("mimeType", inline.optString("mimeType", "image/jpeg"))
-                put("data", inline.optString("data"))
-              })
-            })
-          }.toString())
+          webSocket?.send(
+            JSONObject().apply {
+              put(
+                "realtimeInput",
+                JSONObject().apply {
+                  put(
+                    "video",
+                    JSONObject().apply {
+                      put("mimeType", inline.optString("mimeType", "image/jpeg"))
+                      put("data", inline.optString("data"))
+                    },
+                  )
+                },
+              )
+            }.toString(),
+          )
         }
       }
       for (part in parts) {
         if (part.has("text")) {
-          webSocket?.send(JSONObject().apply {
-            put("realtimeInput", JSONObject().apply { put("text", part.getString("text")) })
-          }.toString())
+          webSocket?.send(
+            JSONObject().apply {
+              put("realtimeInput", JSONObject().apply { put("text", part.getString("text")) })
+            }.toString(),
+          )
         }
       }
     } else {
       val textPart = parts.firstOrNull { it.has("text") }?.optString("text") ?: ""
-      webSocket?.send(JSONObject().apply {
-        put("text", JSONObject().apply { put("content", textPart) })
-      }.toString())
+      webSocket?.send(
+        JSONObject().apply {
+          put("text", JSONObject().apply { put("content", textPart) })
+        }.toString(),
+      )
     }
   }
 
