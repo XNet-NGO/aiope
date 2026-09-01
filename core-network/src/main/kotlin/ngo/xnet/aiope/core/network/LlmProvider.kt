@@ -225,7 +225,7 @@ object ProviderTemplates {
       "cloudflare_ai",
       "Cloudflare Workers AI",
       "",
-      "https://api.cloudflare.com/client/v4/accounts/e9f193b23b2f822c3425a000357c543a/ai/v1",
+      "https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/v1",
       apiKeyHint = "Cloudflare API token",
       defaultModels = listOf(
         ModelDef("@cf/meta/llama-4-scout-17b-16e-instruct", "Llama 4 Scout 17B", 131_072),

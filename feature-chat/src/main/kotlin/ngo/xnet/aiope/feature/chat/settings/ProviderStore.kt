@@ -1,6 +1,9 @@
 package ngo.xnet.aiope.feature.chat.settings
 
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import ngo.xnet.aiope.core.network.ModelConfig
 import ngo.xnet.aiope.core.network.ModelDef
 import ngo.xnet.aiope.core.network.ProviderProfile
@@ -9,9 +12,6 @@ import ngo.xnet.aiope.feature.chat.db.ChatDao
 import ngo.xnet.aiope.feature.chat.db.ModelCacheEntity
 import ngo.xnet.aiope.feature.chat.db.ProviderEntity
 import ngo.xnet.aiope.feature.chat.db.SettingsKvEntity
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import javax.inject.Inject
@@ -50,9 +50,12 @@ class ProviderStore @Inject constructor(
     }
     seed(ngo.xnet.aiope.core.network.ModelTask.RAG, "google-ai-studio/models-gemini-embedding-2")
     seed(ngo.xnet.aiope.core.network.ModelTask.REALTIME_SPEECH, "google-ai-studio/gemini-3.1-flash-live-preview")
-    seed(ngo.xnet.aiope.core.network.ModelTask.SUMMARY, "google-ai-studio/models-gemma-4-26b-a4b-it")
+    seed(ngo.xnet.aiope.core.network.ModelTask.SUMMARY, "google-ai-studio/models-gemma-4-31b-it")
     seed(ngo.xnet.aiope.core.network.ModelTask.TRANSLATION, "google-ai-studio/models-gemma-4-26b-a4b-it")
     seed(ngo.xnet.aiope.core.network.ModelTask.TITLE, "google-ai-studio/models-gemma-4-26b-a4b-it")
+    seed(ngo.xnet.aiope.core.network.ModelTask.SUBAGENT, "google-ai-studio/models-gemma-4-31b-it")
+    seed(ngo.xnet.aiope.core.network.ModelTask.IMAGE_RECOGNITION, "google-ai-studio/models-gemma-4-26b-a4b-it")
+    seed(ngo.xnet.aiope.core.network.ModelTask.IMAGE_GENERATION, "cloudflare/@cf-black-forest-labs-flux-1-schnell")
   }
 
   private fun seedDefault() {
@@ -102,11 +105,11 @@ class ProviderStore @Inject constructor(
         runBlocking(Dispatchers.IO) {
           dao.upsertProvider(ProviderEntity(p.id, p.toJson().toString(), p.id == activeId))
         }
-        // Migrate model cache
+        // Migrate model cache (old key was builtinId, new key is provider id)
         val cacheRaw = prefs.getString("mcache_${p.builtinId}", null)
         val cacheTs = prefs.getLong("mcache_ts_${p.builtinId}", 0)
         if (cacheRaw != null) {
-          runBlocking(Dispatchers.IO) { dao.upsertModelCache(ModelCacheEntity(p.builtinId, cacheRaw, cacheTs)) }
+          runBlocking(Dispatchers.IO) { dao.upsertModelCache(ModelCacheEntity(p.id, cacheRaw, cacheTs)) }
         }
       }
       // Migrate geoapify key
@@ -115,7 +118,9 @@ class ProviderStore @Inject constructor(
         runBlocking(Dispatchers.IO) { dao.upsertSetting(SettingsKvEntity("geoapify_key", geoKey)) }
       }
       prefs.edit().clear().apply()
-    } catch (e: Exception) { android.util.Log.w("ProviderStore", "op failed: ${e.message}") }
+    } catch (e: Exception) {
+      android.util.Log.w("ProviderStore", "op failed: ${e.message}")
+    }
   }
 
   fun getAll(): List<ProviderProfile> = runBlocking(Dispatchers.IO) {
@@ -130,8 +135,8 @@ class ProviderStore @Inject constructor(
   fun getById(id: String): ProviderProfile? = getAll().firstOrNull { it.id == id }
 
   fun save(profile: ProviderProfile) = runBlocking(Dispatchers.IO) {
-    val existing = dao.getActiveProvider()
-    val isActive = existing?.id == profile.id && existing.isActive
+    val existing = dao.getProviderById(profile.id)
+    val isActive = existing?.isActive ?: profile.isActive
     dao.upsertProvider(ProviderEntity(profile.id, profile.toJson().toString(), isActive))
   }
 
@@ -142,7 +147,7 @@ class ProviderStore @Inject constructor(
     dao.setActiveProvider(id)
   }
 
-  fun saveModelCache(builtinId: String, models: List<ModelDef>) {
+  fun saveModelCache(cacheKey: String, models: List<ModelDef>) {
     val arr = JSONArray()
     models.forEach { m ->
       arr.put(
@@ -159,17 +164,17 @@ class ProviderStore @Inject constructor(
         },
       )
     }
-    runBlocking(Dispatchers.IO) { dao.upsertModelCache(ModelCacheEntity(builtinId, arr.toString())) }
+    runBlocking(Dispatchers.IO) { dao.upsertModelCache(ModelCacheEntity(cacheKey, arr.toString())) }
   }
 
-  fun getModelCache(builtinId: String): List<ModelDef>? = runBlocking(Dispatchers.IO) {
-    val e = dao.getModelCache(builtinId) ?: return@runBlocking null
+  fun getModelCache(cacheKey: String): List<ModelDef>? = runBlocking(Dispatchers.IO) {
+    val e = dao.getModelCache(cacheKey) ?: return@runBlocking null
     if (System.currentTimeMillis() - e.cachedAt > 24 * 60 * 60 * 1000) return@runBlocking null
     parseModelCache(e.json)
   }
 
-  fun getModelCacheStale(builtinId: String): List<ModelDef>? = runBlocking(Dispatchers.IO) {
-    dao.getModelCache(builtinId)?.let { parseModelCache(it.json) }
+  fun getModelCacheStale(cacheKey: String): List<ModelDef>? = runBlocking(Dispatchers.IO) {
+    dao.getModelCache(cacheKey)?.let { parseModelCache(it.json) }
   }
 
   private fun parseModelCache(raw: String): List<ModelDef>? = runCatching {
@@ -210,8 +215,10 @@ class ProviderStore @Inject constructor(
             family = o.optString("family", ""),
           )
         }.sortedBy { it.id }
-        if (models.isNotEmpty()) saveModelCache(profile.builtinId, models)
-      } catch (e: Exception) { android.util.Log.w("ProviderStore", "op failed: ${e.message}") }
+        if (models.isNotEmpty()) saveModelCache(profile.id, models)
+      } catch (e: Exception) {
+        android.util.Log.w("ProviderStore", "op failed: ${e.message}")
+      }
     }.start()
   }
 }
