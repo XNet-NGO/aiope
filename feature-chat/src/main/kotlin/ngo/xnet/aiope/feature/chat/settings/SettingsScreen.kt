@@ -52,6 +52,12 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: 
           val p = ProviderProfile(builtinId = b.id, label = b.displayName, apiBase = b.apiBase ?: "", selectedModelId = b.defaultModels.firstOrNull()?.id ?: "")
           providerStore.save(p)
           providerStore.setActive(p.id)
+          // Copy model cache from sibling provider with same template
+          val sibling = profiles.firstOrNull { it.builtinId == b.id }
+          if (sibling != null) {
+            val cache = providerStore.getModelCacheStale(sibling.id)
+            if (!cache.isNullOrEmpty()) providerStore.saveModelCache(p.id, cache)
+          }
           editId = p.id
           refresh()
           screen = "edit"

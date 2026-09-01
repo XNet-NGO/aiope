@@ -1,13 +1,13 @@
 package ngo.xnet.aiope.feature.chat.settings
 
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import ngo.xnet.aiope.feature.chat.db.ChatDao
 import ngo.xnet.aiope.feature.chat.db.McpServerEntity
 import ngo.xnet.aiope.feature.chat.db.SettingsKvEntity
 import ngo.xnet.aiope.feature.chat.db.ToolToggleEntity
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import javax.inject.Inject
@@ -125,6 +125,8 @@ class ToolStore @Inject constructor(
 
 enum class McpTransport { HTTP, SSE }
 
+enum class McpAuthType { NONE, HEADER, OAUTH2 }
+
 data class McpServerConfig(
   val id: String = java.util.UUID.randomUUID().toString().take(8),
   val name: String,
@@ -135,7 +137,28 @@ data class McpServerConfig(
   val toolCount: Int = 0,
   val status: McpStatus = McpStatus.IDLE,
   val error: String? = null,
+  val authType: McpAuthType = McpAuthType.NONE,
+  val oauthClientId: String = "",
+  val oauthClientSecret: String = "",
+  val oauthTokenUrl: String = "",
+  val oauthAuthUrl: String = "",
+  val oauthScopes: String = "",
+  val oauthAccessToken: String = "",
+  val oauthRefreshToken: String = "",
+  val oauthTokenExpiry: Long = 0L,
 ) {
+  fun isTokenExpired(): Boolean = oauthTokenExpiry > 0 && System.currentTimeMillis() >= oauthTokenExpiry
+
+  fun hasValidToken(): Boolean = oauthAccessToken.isNotBlank() && !isTokenExpired()
+
+  fun effectiveHeaders(): Map<String, String> {
+    val base = headers.toMutableMap()
+    if (authType == McpAuthType.OAUTH2 && oauthAccessToken.isNotBlank()) {
+      base["Authorization"] = "Bearer $oauthAccessToken"
+    }
+    return base
+  }
+
   fun toJson() = JSONObject().apply {
     put("id", id)
     put("name", name)
@@ -146,6 +169,15 @@ data class McpServerConfig(
     put("toolCount", toolCount)
     put("status", status.name.lowercase())
     error?.let { put("error", it) }
+    put("authType", authType.name.lowercase())
+    if (oauthClientId.isNotBlank()) put("oauthClientId", oauthClientId)
+    if (oauthClientSecret.isNotBlank()) put("oauthClientSecret", oauthClientSecret)
+    if (oauthTokenUrl.isNotBlank()) put("oauthTokenUrl", oauthTokenUrl)
+    if (oauthAuthUrl.isNotBlank()) put("oauthAuthUrl", oauthAuthUrl)
+    if (oauthScopes.isNotBlank()) put("oauthScopes", oauthScopes)
+    if (oauthAccessToken.isNotBlank()) put("oauthAccessToken", oauthAccessToken)
+    if (oauthRefreshToken.isNotBlank()) put("oauthRefreshToken", oauthRefreshToken)
+    if (oauthTokenExpiry > 0) put("oauthTokenExpiry", oauthTokenExpiry)
   }
   companion object {
     fun fromJson(j: JSONObject) = McpServerConfig(
@@ -161,6 +193,19 @@ data class McpServerConfig(
         McpStatus.IDLE
       },
       error = j.optString("error", "").ifBlank { null },
+      authType = try {
+        McpAuthType.valueOf(j.optString("authType", "none").uppercase())
+      } catch (_: Exception) {
+        McpAuthType.NONE
+      },
+      oauthClientId = j.optString("oauthClientId", ""),
+      oauthClientSecret = j.optString("oauthClientSecret", ""),
+      oauthTokenUrl = j.optString("oauthTokenUrl", ""),
+      oauthAuthUrl = j.optString("oauthAuthUrl", ""),
+      oauthScopes = j.optString("oauthScopes", ""),
+      oauthAccessToken = j.optString("oauthAccessToken", ""),
+      oauthRefreshToken = j.optString("oauthRefreshToken", ""),
+      oauthTokenExpiry = j.optLong("oauthTokenExpiry", 0L),
     )
   }
 }

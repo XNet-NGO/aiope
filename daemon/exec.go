@@ -6,8 +6,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
-	"syscall"
 
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/ssh"
@@ -18,15 +16,13 @@ import (
 func ExecMiddleware(tracker *ProcessTracker) wish.Middleware {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(sess ssh.Session) {
-			cmd := sess.Command()
+			cmdStr := sess.RawCommand()
 
 			// No command — interactive PTY shell
-			if len(cmd) == 0 {
+			if cmdStr == "" {
 				handlePTY(sess, tracker)
 				return
 			}
-
-			cmdStr := strings.Join(cmd, " ")
 
 			// Health check command
 			if cmdStr == "__aiope_health__" {
@@ -43,11 +39,11 @@ func ExecMiddleware(tracker *ProcessTracker) wish.Middleware {
 func handleExec(sess ssh.Session, cmdStr string, tracker *ProcessTracker) {
 	log.Info("Exec", "cmd", cmdStr, "user", sess.User(), "remote", sess.RemoteAddr())
 
-	c := exec.Command("sh", "-c", cmdStr)
+	c := shellCommand(cmdStr)
 	c.Env = append(os.Environ(), sess.Environ()...)
 	c.Stdout = sess
 	c.Stderr = sess.Stderr()
-	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	setSysProcAttr(c)
 
 	if err := c.Start(); err != nil {
 		fmt.Fprintf(sess.Stderr(), "exec error: %v\n", err)
@@ -78,15 +74,12 @@ func handlePTY(sess ssh.Session, tracker *ProcessTracker) {
 		return
 	}
 
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/sh"
-	}
+	shell := defaultShell()
 
 	c := exec.Command(shell)
 	c.Env = append(os.Environ(), sess.Environ()...)
 	c.Env = append(c.Env, fmt.Sprintf("TERM=%s", ptyReq.Term))
-	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	setSysProcAttr(c)
 
 	f, err := pty.Start(c)
 	if err != nil {

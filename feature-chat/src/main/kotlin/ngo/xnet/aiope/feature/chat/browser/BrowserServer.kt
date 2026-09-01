@@ -44,7 +44,9 @@ object BrowserServer {
           val socket = ss.accept()
           if (!connectionSemaphore.tryAcquire()) {
             // At capacity — reject
-            try { socket.close() } catch (_: Exception) {}
+            try {
+              socket.close()
+            } catch (_: Exception) {}
             continue
           }
           launch {

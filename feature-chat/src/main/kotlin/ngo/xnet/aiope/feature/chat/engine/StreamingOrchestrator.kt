@@ -28,18 +28,21 @@ class StreamingOrchestrator(
   private val tools: List<ToolDef> = emptyList(),
   private val onToolCall: suspend (String, Map<String, Any?>) -> String = { _, _ -> "" },
   private val temperature: Float = 0.7f,
+  private val reasoningEffort: String? = null,
 ) {
   data class ToolDef(val name: String, val description: String, val parameters: JSONObject)
 
   companion object {
     private val client = SafeOkHttp.builder()
       .connectTimeout(15, TimeUnit.SECONDS)
-      .readTimeout(5, TimeUnit.MINUTES) // reduced from 10m — detect dead connections faster
+      .readTimeout(3, TimeUnit.MINUTES) // shorter than 5m — trigger retry on dead connections sooner
       .writeTimeout(30, TimeUnit.SECONDS)
       .callTimeout(0, TimeUnit.SECONDS)
       .retryOnConnectionFailure(true)
       .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
       .connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.SECONDS)) // no pooling — fresh connection every request (cellular NAT kills idle)
+      .socketFactory(KeepAliveSocketFactory)
+      .eventListenerFactory(LlmEventListener.Factory)
       .build()
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
     private const val MAX_RETRIES = 3
@@ -48,6 +51,7 @@ class StreamingOrchestrator(
       "fetch_url", "memory_recall", "get_location", "browser_content", "browser_elements",
       "search_location", "read_calendar", "read_contacts", "read_sms", "clipboard_read",
       "device_info", "analyze_image", "image_generate", "ssh_exec",
+      "search_files", "http_request", "datetime_now", "todo_read", "list_schedules", "rag_search",
     )
 
     private fun isTransientReset(msg: String): Boolean {
@@ -92,6 +96,7 @@ class StreamingOrchestrator(
 
     var firstRequest = true
     var maxRounds = 40
+    var lastUsage: UsageInfo? = null
 
     while (maxRounds-- > 0) {
       if (!firstRequest) {
@@ -117,6 +122,38 @@ class StreamingOrchestrator(
           val content = rawMessages[i].optString("content", "")
           if (content.length > 500) rawMessages[i].put("content", content.take(500) + "...(truncated)")
         }
+      }
+
+      // Sanitize for Gemini: remove assistant tool_calls without thought_signature
+      // and their corresponding tool result messages (orphaned from pre-fix history)
+      val toRemove = mutableSetOf<Int>()
+      for (i in rawMessages.indices) {
+        val msg = rawMessages[i]
+        if (msg.optString("role") == "assistant" && msg.has("tool_calls")) {
+          val tcs = msg.optJSONArray("tool_calls")
+          if (tcs != null && tcs.length() > 0) {
+            val firstTc = tcs.optJSONObject(0)
+            val hasSignature = firstTc?.optJSONObject("extra_content")?.optJSONObject("google")?.has("thought_signature") == true
+            if (!hasSignature) {
+              // Collect tool_call IDs to also remove matching tool results
+              val ids = mutableSetOf<String>()
+              for (j in 0 until tcs.length()) {
+                tcs.optJSONObject(j)?.optString("id")?.let { ids.add(it) }
+              }
+              toRemove.add(i)
+              // Find matching tool result messages
+              for (k in (i + 1) until rawMessages.size) {
+                val r = rawMessages[k]
+                if (r.optString("role") == "tool" && r.optString("tool_call_id") in ids) {
+                  toRemove.add(k)
+                }
+              }
+            }
+          }
+        }
+      }
+      if (toRemove.isNotEmpty()) {
+        toRemove.sortedDescending().forEach { rawMessages.removeAt(it) }
       }
 
       val body = buildRequestBody(rawMessages)
@@ -175,6 +212,13 @@ class StreamingOrchestrator(
               gotDataThisAttempt = true
               try {
                 val json = JSONObject(data)
+                // Extract usage (often in the final chunk)
+                json.optJSONObject("usage")?.let { u ->
+                  lastUsage = UsageInfo(
+                    inputTokens = u.optInt("prompt_tokens", 0),
+                    outputTokens = u.optInt("completion_tokens", 0),
+                  )
+                }
                 val choices = json.optJSONArray("choices") ?: return
                 if (choices.length() == 0) return
                 val choice = choices.getJSONObject(0)
@@ -269,6 +313,13 @@ class StreamingOrchestrator(
                   if (contentSoFar.length > 2_000_000) {
                     contentSoFar.delete(0, contentSoFar.length - 1_500_000)
                   }
+                  // Suppress display of minimax tool call XML (will be parsed after stream)
+                  val soFar = contentSoFar.toString()
+                  if (soFar.contains("<minimax:tool_call>") && !soFar.contains("</minimax:tool_call>")) {
+                    content = "" // Hold back — still accumulating tool call block
+                  } else if (soFar.contains("<minimax:tool_call>") && soFar.contains("</minimax:tool_call>")) {
+                    content = "" // Entire block received — will be handled by fallback parser
+                  }
                 }
 
                 // On retry, skip emitting content we already sent to the UI
@@ -282,17 +333,29 @@ class StreamingOrchestrator(
                 if (tcArr != null) {
                   for (i in 0 until tcArr.length()) {
                     val tc = tcArr.getJSONObject(i)
-                    val idx = tc.optInt("index", 0)
+                    val tcId = tc.optString("id", "")
+                    // Use explicit index if provided, otherwise find by id or use next slot
+                    val idx = if (tc.has("index")) {
+                      tc.getInt("index")
+                    } else if (tcId.isNotBlank()) {
+                      // Find existing slot with this id, or assign next available
+                      toolAcc.entries.firstOrNull { it.value["id"] == tcId }?.key
+                        ?: toolAcc.size
+                    } else {
+                      0
+                    }
                     val acc = toolAcc.getOrPut(idx) { mutableMapOf("id" to "", "name" to "", "args" to "") }
-                    tc.optString("id", "").let { if (it.isNotBlank()) acc["id"] = it }
+                    if (tcId.isNotBlank()) acc["id"] = tcId
                     tc.optJSONObject("function")?.let { fn ->
                       fn.optString("name", "").let { if (it.isNotBlank()) acc["name"] = it }
                       fn.optString("arguments", "").let { acc["args"] = (acc["args"] ?: "") + it }
                     }
+                    // Capture extra_content (Google thought_signature)
+                    tc.optJSONObject("extra_content")?.let { acc["extra_content"] = it.toString() }
                   }
                 }
 
-                if (finishReason == "tool_calls" || (finishReason == "stop" && toolAcc.isNotEmpty())) {
+                if (finishReason == "tool_calls" || finishReason == "tool_use" || (finishReason == "stop" && toolAcc.isNotEmpty())) {
                   hasToolCalls = toolAcc.isNotEmpty()
                 }
               } catch (e: Exception) {
@@ -304,7 +367,7 @@ class StreamingOrchestrator(
               val msg = t?.message ?: response?.let { "HTTP ${it.code}" } ?: "Connection failed"
               if (isTransientReset(msg) && sseDoneRef.get()) {
                 android.util.Log.w("AIOPE2", "SSE reset after done (non-fatal): $msg")
-              } else {
+              } else if (sseErrorRef.get() == null) {
                 sseErrorRef.set(msg)
                 android.util.Log.e("AIOPE2", "SSE failure (attempt ${retries + 1}): $msg", t)
               }
@@ -370,7 +433,7 @@ class StreamingOrchestrator(
           } catch (_: Exception) {
             emptyMap()
           }
-          ToolCallInfo(id = acc["id"] ?: "call_${System.nanoTime()}", name = acc["name"] ?: "", arguments = args)
+          ToolCallInfo(id = acc["id"] ?: "call_${System.nanoTime()}", name = acc["name"] ?: "", arguments = args, extraContent = acc["extra_content"])
         }
         send(ChatStreamChunk(toolCalls = callInfos))
 
@@ -399,15 +462,25 @@ class StreamingOrchestrator(
         }
         send(ChatStreamChunk(toolResults = results))
 
-        // Append assistant tool_calls + tool results for next round
+        // Append assistant tool_calls + tool results for next round.
+        // Keep any pre-tool commentary the model streamed (e.g. "Let me check...")
+        val preToolText = contentSoFar.toString().trim()
         rawMessages.add(
           JSONObject().apply {
             put("role", "assistant")
-            put("content", JSONObject.NULL)
+            put("content", preToolText.ifEmpty { "" })
             put(
               "tool_calls",
               JSONArray().apply {
-                for (c in callInfos) put(JSONObject().put("id", c.id).put("type", "function").put("function", JSONObject().put("name", c.name).put("arguments", JSONObject(c.arguments).toString())))
+                for (c in callInfos) {
+                  val tcObj = JSONObject()
+                    .put("id", c.id)
+                    .put("type", "function")
+                    .put("function", JSONObject().put("name", c.name).put("arguments", JSONObject(c.arguments).toString()))
+                  // Include extra_content (Google thought_signature) if present
+                  c.extraContent?.let { tcObj.put("extra_content", JSONObject(it)) }
+                  put(tcObj)
+                }
               },
             )
           },
@@ -441,41 +514,68 @@ class StreamingOrchestrator(
             coroutineScope {
               callInfos.map { call ->
                 async(Dispatchers.IO) {
-                  val result = try { onToolCall(call.name, call.arguments) } catch (e: Exception) { "Error: ${e.message}" }
+                  val result = try {
+                    onToolCall(call.name, call.arguments)
+                  } catch (e: Exception) {
+                    "Error: ${e.message}"
+                  }
                   ToolResultInfo(id = call.id, name = call.name, arguments = call.arguments, result = result)
                 }
               }.map { it.await() }
             }
           } else {
             callInfos.map { call ->
-              val result = try { onToolCall(call.name, call.arguments) } catch (e: Exception) { "Error: ${e.message}" }
+              val result = try {
+                onToolCall(call.name, call.arguments)
+              } catch (e: Exception) {
+                "Error: ${e.message}"
+              }
               ToolResultInfo(id = call.id, name = call.name, arguments = call.arguments, result = result)
             }
           }
           send(ChatStreamChunk(toolResults = results))
-          rawMessages.add(JSONObject().apply {
-            put("role", "assistant")
-            put("content", text)
-          })
+          rawMessages.add(
+            JSONObject().apply {
+              put("role", "assistant")
+              put("content", text)
+            },
+          )
           for (r in results) {
-            rawMessages.add(JSONObject().apply {
-              put("role", "tool")
-              put("tool_call_id", r.id)
-              put("content", r.result.take(16000))
-            })
+            rawMessages.add(
+              JSONObject().apply {
+                put("role", "tool")
+                put("tool_call_id", r.id)
+                put("content", r.result.take(16000))
+              },
+            )
           }
           contentSoFar.clear()
           continue
         }
       }
 
+      // Detect DSML hallucination loop: model outputs tool call tokens but no valid calls
+      if (tools.isNotEmpty()) {
+        val text = contentSoFar.toString()
+        if (text.contains("DSML") && text.contains("function_calls")) {
+          val cleanContent = stripToolMarkup(text)
+          if (cleanContent.isNotBlank()) {
+            send(ChatStreamChunk(contentReplace = cleanContent))
+          }
+          // Don't loop — the model is hallucinating tool calls
+          send(ChatStreamChunk(isDone = true, usage = lastUsage))
+          close()
+          return@callbackFlow
+        }
+      }
+
       // Done
-      send(ChatStreamChunk(isDone = true))
+      send(ChatStreamChunk(isDone = true, usage = lastUsage))
       close()
       return@callbackFlow
     }
 
-    send(ChatStreamChunk(isDone = true))
+    send(ChatStreamChunk(isDone = true, usage = lastUsage))
     close()
 
     awaitClose { }
@@ -486,6 +586,9 @@ class StreamingOrchestrator(
     body.put("model", model)
     body.put("stream", true)
     body.put("temperature", temperature.toDouble())
+    if (reasoningEffort != null && reasoningEffort != "auto") {
+      body.put("reasoning_effort", reasoningEffort)
+    }
     body.put("messages", JSONArray().apply { for (m in messages) put(m) })
     android.util.Log.e("AIOPE2", "Request: model=$model tools=${tools.size} msgs=${messages.size}")
     if (tools.isNotEmpty()) {
@@ -524,7 +627,11 @@ class StreamingOrchestrator(
               val key = param.groupValues[1].trim()
               val value = param.groupValues[2].trim()
               // Try to parse as JSON (arrays, objects, numbers, booleans)
-              args[key] = try { JSONObject("{\"v\":$value}").opt("v") } catch (_: Exception) { value }
+              args[key] = try {
+                JSONObject("{\"v\":$value}").opt("v")
+              } catch (_: Exception) {
+                value
+              }
             }
             results.add(name to args)
           }
@@ -606,7 +713,25 @@ class StreamingOrchestrator(
     }
     if (results.isNotEmpty()) return results
 
-    // Pattern 7: <|tool_call>call:func_name{key:<|"|>value<|"|>}<tool_call|> (Gemma 4 native)
+    // Pattern 7: DSML format (DeepSeek) — <｜DSML｜function_calls followed by JSON array
+    if (text.contains("DSML") && text.contains("function_calls")) {
+      // Extract JSON array after the DSML token
+      val dsmlRegex = Regex("""(?:DSML[｜|]function_calls|DSML.{0,5}function_calls)\s*\[?\s*(\{.*?\})\s*\]?""", RegexOption.DOT_MATCHES_ALL)
+      for (m in dsmlRegex.findAll(text)) {
+        try {
+          val j = JSONObject(m.groupValues[1])
+          val name = j.optString("name", "")
+          if (name in toolNames) {
+            val argsObj = j.optJSONObject("arguments") ?: j.optJSONObject("parameters") ?: JSONObject()
+            val args = argsObj.keys().asSequence().associateWith { k -> argsObj.opt(k) }
+            results.add(name to args)
+          }
+        } catch (_: Exception) {}
+      }
+      if (results.isNotEmpty()) return results
+    }
+
+    // Pattern 8: <|tool_call>call:func_name{key:<|"|>value<|"|>}<tool_call|> (Gemma 4 native)
     if (text.contains("<|tool_call>")) {
       val gemmaRegex = Regex("""<\|tool_call>call:(\w+)\{(.*?)\}<tool_call\|>""", RegexOption.DOT_MATCHES_ALL)
       for (m in gemmaRegex.findAll(text)) {
@@ -637,10 +762,10 @@ class StreamingOrchestrator(
   /** Infer the primary argument key for a tool based on its name */
   private fun inferArgKey(toolName: String): String = when (toolName) {
     "run_sh", "run_proot" -> "command"
-    "read_file", "write_file" -> "path"
-    "list_directory" -> "path"
+    "read_file", "write_file", "edit_file" -> "path"
+    "list_directory", "search_files" -> "path"
     "search_web", "search_images" -> "query"
-    "fetch_url" -> "url"
+    "fetch_url", "http_request" -> "url"
     "memory_store", "memory_recall", "memory_forget" -> "key"
     "send_sms" -> "message"
     "send_notification" -> "text"
@@ -653,6 +778,10 @@ class StreamingOrchestrator(
     "analyze_image" -> "prompt"
     "search_location" -> "query"
     "query_data" -> "source"
+    "schedule_task" -> "prompt"
+    "cancel_schedule" -> "task_id"
+    "rag_search" -> "query"
+    "create_event" -> "title"
     else -> "input"
   }
 
@@ -675,6 +804,9 @@ class StreamingOrchestrator(
     cleaned = Regex("""\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"(?:arguments|parameters)"\s*:\s*\{.*?\}\s*\}""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
     // Strip [Tools: tool_name → args] bracket format
     cleaned = Regex("""\[Tools?:\s*[a-z_]+\s*→\s*.+?\]""").replace(cleaned, "")
+    // Strip DSML markers (DeepSeek)
+    cleaned = Regex("""<[｜|]DSML[｜|]function_calls.*""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
+    cleaned = Regex("""(?:DSML[｜|]function_calls).*""", RegexOption.DOT_MATCHES_ALL).replace(cleaned, "")
     // Collapse multiple blank lines
     cleaned = Regex("""\n{3,}""").replace(cleaned, "\n\n")
     return cleaned.trim()

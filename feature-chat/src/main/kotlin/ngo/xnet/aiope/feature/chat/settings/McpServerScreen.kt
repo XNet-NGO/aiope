@@ -27,10 +27,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ngo.xnet.aiope.core.network.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ngo.xnet.aiope.core.network.*
 
 @Composable
 internal fun McpServerScreen(toolStore: ToolStore, onBack: () -> Unit) {
@@ -184,6 +184,15 @@ private fun McpServerDetailPage(
   var transport by remember { mutableStateOf(server.transport) }
   var enabled by remember { mutableStateOf(server.enabled) }
   var headers by remember { mutableStateOf(server.headers.entries.map { it.key to it.value }.toMutableList().ifEmpty { mutableListOf("Authorization" to "") }) }
+  var authType by remember { mutableStateOf(server.authType) }
+  var oauthClientId by remember { mutableStateOf(server.oauthClientId) }
+  var oauthClientSecret by remember { mutableStateOf(server.oauthClientSecret) }
+  var oauthTokenUrl by remember { mutableStateOf(server.oauthTokenUrl) }
+  var oauthAuthUrl by remember { mutableStateOf(server.oauthAuthUrl) }
+  var oauthScopes by remember { mutableStateOf(server.oauthScopes) }
+  var oauthAccessToken by remember { mutableStateOf(server.oauthAccessToken) }
+  var oauthRefreshToken by remember { mutableStateOf(server.oauthRefreshToken) }
+  var oauthTokenExpiry by remember { mutableStateOf(server.oauthTokenExpiry) }
   var tools by remember { mutableStateOf(mcpManager.getCachedTools(server.id)) }
   var status by remember { mutableStateOf(server.status) }
   var error by remember { mutableStateOf(server.error) }
@@ -192,7 +201,7 @@ private fun McpServerDetailPage(
 
   fun save() {
     val hdrs = headers.filter { it.first.isNotBlank() && it.second.isNotBlank() }.associate { it.first.trim() to it.second.trim() }
-    toolStore.updateMcpServer(server.copy(name = name.trim(), url = url.trim(), transport = transport, headers = hdrs, enabled = enabled, status = status, error = error))
+    toolStore.updateMcpServer(server.copy(name = name.trim(), url = url.trim(), transport = transport, headers = hdrs, enabled = enabled, status = status, error = error, authType = authType, oauthClientId = oauthClientId.trim(), oauthClientSecret = oauthClientSecret.trim(), oauthTokenUrl = oauthTokenUrl.trim(), oauthAuthUrl = oauthAuthUrl.trim(), oauthScopes = oauthScopes.trim(), oauthAccessToken = oauthAccessToken, oauthRefreshToken = oauthRefreshToken, oauthTokenExpiry = oauthTokenExpiry))
   }
 
   fun connect() {
@@ -316,6 +325,98 @@ private fun McpServerDetailPage(
           Text("Add header")
         }
         Spacer(Modifier.height(8.dp))
+      }
+
+      // Authentication
+      item {
+        HorizontalDivider(thickness = 0.5.dp, color = cs.outlineVariant.copy(0.3f))
+        Spacer(Modifier.height(8.dp))
+        Text("Authentication", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+        Spacer(Modifier.height(4.dp))
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+          SegmentedButton(selected = authType == McpAuthType.NONE, onClick = { authType = McpAuthType.NONE }, shape = SegmentedButtonDefaults.itemShape(0, 3)) { Text("None") }
+          SegmentedButton(selected = authType == McpAuthType.HEADER, onClick = { authType = McpAuthType.HEADER }, shape = SegmentedButtonDefaults.itemShape(1, 3)) { Text("Header") }
+          SegmentedButton(selected = authType == McpAuthType.OAUTH2, onClick = { authType = McpAuthType.OAUTH2 }, shape = SegmentedButtonDefaults.itemShape(2, 3)) { Text("OAuth2") }
+        }
+        Spacer(Modifier.height(8.dp))
+      }
+
+      // OAuth2 fields
+      if (authType == McpAuthType.OAUTH2) {
+        item {
+          OutlinedTextField(value = oauthClientId, onValueChange = { oauthClientId = it }, label = { Text("Client ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+          Spacer(Modifier.height(8.dp))
+          OutlinedTextField(value = oauthClientSecret, onValueChange = { oauthClientSecret = it }, label = { Text("Client Secret") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+          Spacer(Modifier.height(8.dp))
+          OutlinedTextField(value = oauthTokenUrl, onValueChange = { oauthTokenUrl = it }, label = { Text("Token URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+          Spacer(Modifier.height(8.dp))
+          OutlinedTextField(value = oauthAuthUrl, onValueChange = { oauthAuthUrl = it }, label = { Text("Authorization URL (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+          Spacer(Modifier.height(8.dp))
+          OutlinedTextField(value = oauthScopes, onValueChange = { oauthScopes = it }, label = { Text("Scopes (space-separated)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+          Spacer(Modifier.height(8.dp))
+
+          // Token status
+          if (oauthAccessToken.isNotBlank()) {
+            val tokenStatus = if (oauthTokenExpiry > 0 && System.currentTimeMillis() >= oauthTokenExpiry) "Expired" else "Valid"
+            val tokenColor = if (tokenStatus == "Valid") androidx.compose.ui.graphics.Color(0xFF4CAF50) else cs.error
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+              Box(Modifier.size(8.dp).background(tokenColor, shape = androidx.compose.foundation.shape.CircleShape))
+              Spacer(Modifier.width(8.dp))
+              Text("Token: $tokenStatus", style = MaterialTheme.typography.bodySmall, color = tokenColor)
+              if (oauthTokenExpiry > 0) {
+                val exp = java.text.SimpleDateFormat("HH:mm MMM dd", java.util.Locale.US).format(java.util.Date(oauthTokenExpiry))
+                Text(" (expires $exp)", style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+              }
+            }
+            Spacer(Modifier.height(4.dp))
+          }
+
+          // Authorize button
+          var authorizing by remember { mutableStateOf(false) }
+          var authError by remember { mutableStateOf<String?>(null) }
+          Button(
+            onClick = {
+              save()
+              authorizing = true
+              authError = null
+              scope.launch(Dispatchers.IO) {
+                try {
+                  val result = McpOAuth2.fetchToken(
+                    tokenUrl = oauthTokenUrl.trim(),
+                    clientId = oauthClientId.trim(),
+                    clientSecret = oauthClientSecret.trim(),
+                    scopes = oauthScopes.trim(),
+                    refreshToken = oauthRefreshToken.ifBlank { null },
+                  )
+                  oauthAccessToken = result.accessToken
+                  if (result.refreshToken.isNotBlank()) oauthRefreshToken = result.refreshToken
+                  oauthTokenExpiry = result.expiresAt
+                  withContext(Dispatchers.Main) { save() }
+                } catch (e: Exception) {
+                  authError = e.message
+                } finally {
+                  authorizing = false
+                }
+              }
+            },
+            enabled = !authorizing && oauthTokenUrl.isNotBlank() && oauthClientId.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Text(
+              if (authorizing) {
+                "Authorizing..."
+              } else if (oauthAccessToken.isNotBlank()) {
+                "Refresh Token"
+              } else {
+                "Get Token"
+              },
+            )
+          }
+          if (authError != null) {
+            Text(authError!!, style = MaterialTheme.typography.bodySmall, color = cs.error, modifier = Modifier.padding(top = 4.dp))
+          }
+          Spacer(Modifier.height(12.dp))
+        }
       }
 
       // Enable + Connect

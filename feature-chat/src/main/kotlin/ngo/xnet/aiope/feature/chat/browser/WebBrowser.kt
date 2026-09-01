@@ -79,13 +79,22 @@ class WebBrowser(context: Context) {
     }
   }
 
-  /** Get page text content (innerText of body). */
-  suspend fun getPageContent(): String {
+  /** Get page text content (innerText of body) with optional pagination. */
+  suspend fun getPageContent(offset: Int = 0, limit: Int? = null): String {
     val text = evaluateJs("document.body?.innerText || ''")
     val title = evaluateJs("document.title || ''")
     val url = currentUrl.get()
-    val trimmed = if (text.length > 12000) text.take(12000) + "\n...(truncated)" else text
-    return "URL: $url\nTitle: $title\n\n$trimmed"
+
+    val safeOffset = offset.coerceIn(0, text.length)
+    val actualLimit = limit ?: text.length
+    val end = (safeOffset + actualLimit).coerceAtMost(text.length)
+
+    var trimmed = text.substring(safeOffset, end)
+    if (end < text.length) {
+      trimmed += "\n...(truncated. Use offset=$end to read more)"
+    }
+
+    return "URL: $url\nTitle: $title\nContent Length: ${text.length}\nShowing: $safeOffset to $end\n\n$trimmed"
   }
 
   /** Click an element by CSS selector. */
@@ -132,34 +141,51 @@ class WebBrowser(context: Context) {
     (function(){
       var els = document.querySelectorAll('a,button,input,select,textarea,[role=button],[onclick]');
       var out = [];
-      for (var i = 0; i < Math.min(els.length, 80); i++) {
+      for (var i = 0; i < els.length; i++) {
         var e = els[i];
         var r = e.getBoundingClientRect();
         if (r.width === 0 && r.height === 0) continue;
+
         // Build a unique selector
         var sel = '';
         if (e.id) { sel = '#' + e.id; }
         else if (e.name) { sel = e.tagName.toLowerCase() + '[name="' + e.name + '"]'; }
-        else if (e.getAttribute('aria-label')) { sel = '[aria-label="' + e.getAttribute('aria-label') + '"]'; }
-        else if (e.type && e.tagName === 'INPUT') { sel = 'input[type="' + e.type + '"]'; if (e.placeholder) sel += '[placeholder="' + e.placeholder.substring(0,30) + '"]'; }
+        else if (e.getAttribute('aria-label')) { sel = '[aria-label="' + e.getAttribute('aria-label').replace(/"/g, '\\"') + '"]'; }
+        else if (e.type && e.tagName === 'INPUT') { sel = 'input[type="' + e.type + '"]'; if (e.placeholder) sel += '[placeholder="' + e.placeholder.substring(0,30).replace(/"/g, '\\"') + '"]'; }
         else {
           sel = e.tagName.toLowerCase();
-          if (e.className && typeof e.className === 'string' && e.className.trim()) sel += '.' + e.className.trim().split(/\s+/)[0];
+          if (e.className && typeof e.className === 'string' && e.className.trim()) sel += '.' + e.className.trim().split(/\s+/)[0].replace(/[:\[\]]/g, '\\\\$&');
           // Add nth-of-type for uniqueness
           var parent = e.parentElement;
           if (parent) {
-            var siblings = parent.querySelectorAll(':scope > ' + sel.split('[')[0]);
-            if (siblings.length > 1) {
-              for (var j = 0; j < siblings.length; j++) { if (siblings[j] === e) { sel += ':nth-of-type(' + (j+1) + ')'; break; } }
-            }
+            try {
+              var siblings = parent.querySelectorAll(':scope > ' + sel.split('[')[0]);
+              if (siblings.length > 1) {
+                for (var j = 0; j < siblings.length; j++) { if (siblings[j] === e) { sel += ':nth-of-type(' + (j+1) + ')'; break; } }
+              }
+            } catch(e) {}
           }
         }
-        // Description
+
+        // Description / Semantic Context
         var label = '';
-        if (e.textContent) label = e.textContent.trim().substring(0,50);
-        else if (e.value) label = 'val=' + e.value.substring(0,30);
-        else if (e.placeholder) label = 'placeholder=' + e.placeholder.substring(0,30);
-        else if (e.title) label = e.title.substring(0,40);
+        if (e.id) {
+           try {
+               var escapedId = e.id.replace(/"/g, '\\"');
+               var labelEl = document.querySelector('label[for="' + escapedId + '"]');
+               if (labelEl) label = "Label: " + labelEl.textContent.trim().substring(0,50) + " | ";
+           } catch(err) {}
+        }
+        if (!label) {
+           var parentLabel = e.closest('label');
+           if (parentLabel) label = "Label: " + parentLabel.textContent.trim().substring(0,50) + " | ";
+        }
+
+        if (e.textContent && e.textContent.trim()) label += e.textContent.trim().substring(0,50);
+        else if (e.value) label += 'val=' + e.value.substring(0,30);
+        else if (e.placeholder) label += 'placeholder=' + e.placeholder.substring(0,30);
+        else if (e.title) label += e.title.substring(0,40);
+
         out.push('[' + (out.length+1) + '] ' + sel + (label ? ' — "' + label + '"' : ''));
       }
       return out.join('\\n');

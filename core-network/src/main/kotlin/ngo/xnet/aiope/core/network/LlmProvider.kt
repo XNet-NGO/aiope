@@ -94,7 +94,6 @@ data class ModelDef(
   val sampleRate: Int = 16000,
 )
 
-
 /** Provider profile — only connection info + selected model + per-model configs */
 data class ProviderProfile(
   val id: String = java.util.UUID.randomUUID().toString(),
@@ -222,6 +221,47 @@ object ProviderTemplates {
       ),
     ),
     BuiltinProvider("custom", "Custom", "", apiKeyHint = "API key", requiresApiKey = false),
+    BuiltinProvider(
+      "cloudflare_ai",
+      "Cloudflare Workers AI",
+      "",
+      "https://api.cloudflare.com/client/v4/accounts/e9f193b23b2f822c3425a000357c543a/ai/v1",
+      apiKeyHint = "Cloudflare API token",
+      defaultModels = listOf(
+        ModelDef("@cf/meta/llama-4-scout-17b-16e-instruct", "Llama 4 Scout 17B", 131_072),
+        ModelDef("@cf/meta/llama-3.3-70b-instruct-fp8-fast", "Llama 3.3 70B", 131_072),
+        ModelDef("@cf/meta/llama-3.1-8b-instruct", "Llama 3.1 8B", 131_072),
+        ModelDef("@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", "DeepSeek R1 32B", 131_072),
+        ModelDef("@cf/qwen/qwen2.5-coder-32b-instruct", "Qwen 2.5 Coder 32B", 131_072),
+        ModelDef("@cf/google/gemma-7b-it-lora", "Gemma 7B", 8192),
+        ModelDef("@cf/mistralai/mistral-7b-instruct-v0.2-lora", "Mistral 7B", 32_768),
+      ),
+    ),
+    BuiltinProvider(
+      "google_ai_studio",
+      "Google AI Studio",
+      "",
+      "https://generativelanguage.googleapis.com/v1beta/openai",
+      apiKeyHint = "Google AI API key",
+      defaultModels = listOf(
+        ModelDef("models/gemini-2.5-flash", "Gemini 2.5 Flash", 1_000_000),
+        ModelDef("models/gemini-2.5-pro", "Gemini 2.5 Pro", 1_000_000),
+        ModelDef("models/gemini-3.5-flash", "Gemini 3.5 Flash", 1_000_000),
+        ModelDef("models/gemini-3.5-flash-lite", "Gemini 3.5 Flash Lite", 1_000_000),
+        ModelDef("models/gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite", 1_000_000),
+        ModelDef("models/gemma-4-31b-it", "Gemma 4 31B", 256_000),
+        ModelDef("models/gemma-4-26b-a4b-it", "Gemma 4 26B", 256_000),
+        ModelDef(
+          "models/gemini-3.1-flash-live-preview",
+          "Gemini 3.1 Flash Live",
+          contextWindow = 131_072,
+          supportsAudio = true,
+          useStreaming = true,
+          audioInputType = "LINEAR_PCM",
+          sampleRate = 16000,
+        ),
+      ),
+    ),
   )
   val byId = ALL.associateBy { it.id }
 }

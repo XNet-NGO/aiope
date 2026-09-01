@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.launch
 import ngo.xnet.aiope.feature.remote.db.RemoteServerEntity
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -116,17 +118,17 @@ fun ServerListScreen(
     ServerEditSheet(
       server = editServer,
       onDismiss = { showSheet = false },
-      onSave = { name, host, user, port, privateKey, publicKey ->
+      onSave = { name, host, user, port, privateKey, publicKey, password, osType ->
         if (editServer != null) {
-          viewModel.updateServer(editServer!!.id, name, host, user, port, privateKey, publicKey)
+          viewModel.updateServer(editServer!!.id, name, host, user, port, privateKey, publicKey, password, osType)
         } else {
-          viewModel.addServer(name, host, user, port, privateKey, publicKey)
+          viewModel.addServer(name, host, user, port, privateKey, publicKey, password, osType)
         }
         showSheet = false
       },
-      onDeploy = { name, host, user, port, privateKey, publicKey ->
+      onDeploy = { name, host, user, port, privateKey, publicKey, password, osType ->
         if (editServer != null) {
-          viewModel.updateServer(editServer!!.id, name, host, user, port, privateKey, publicKey)
+          viewModel.updateServer(editServer!!.id, name, host, user, port, privateKey, publicKey, password, osType)
           viewModel.redeployServer(
             editServer!!.copy(
               name = name,
@@ -135,10 +137,12 @@ fun ServerListScreen(
               bootstrapPort = port,
               privateKey = privateKey,
               publicKey = publicKey,
+              password = password,
+              osType = osType,
             ),
           )
         } else {
-          viewModel.addAndDeploy(name, host, user, port, privateKey, publicKey)
+          viewModel.addAndDeploy(name, host, user, port, privateKey, publicKey, password, osType)
         }
         showSheet = false
       },
@@ -229,8 +233,8 @@ private fun ServerCard(
 private fun ServerEditSheet(
   server: RemoteServerEntity?,
   onDismiss: () -> Unit,
-  onSave: (name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?) -> Unit,
-  onDeploy: (name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?) -> Unit,
+  onSave: (name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?, password: String?, osType: String) -> Unit,
+  onDeploy: (name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?, password: String?, osType: String) -> Unit,
 ) {
   var name by remember { mutableStateOf(server?.name ?: "") }
   var host by remember { mutableStateOf(server?.host ?: "") }
@@ -238,6 +242,8 @@ private fun ServerEditSheet(
   var port by remember { mutableStateOf((server?.bootstrapPort ?: 22).toString()) }
   var privateKey by remember { mutableStateOf(server?.privateKey ?: "") }
   var publicKey by remember { mutableStateOf(server?.publicKey ?: "") }
+  var password by remember { mutableStateOf(server?.password ?: "") }
+  var osType by remember { mutableStateOf(server?.osType ?: "linux") }
 
   val isEdit = server != null
   val title = if (isEdit) "Edit Server" else "Add Server"
@@ -289,12 +295,60 @@ private fun ServerEditSheet(
       }
 
       HorizontalDivider()
-      Text("SSH Keys", style = MaterialTheme.typography.titleSmall)
+      Text("OS Type", style = MaterialTheme.typography.titleSmall)
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        FilterChip(
+          selected = osType == "linux",
+          onClick = { osType = "linux" },
+          label = { Text("Linux") },
+        )
+        FilterChip(
+          selected = osType == "windows",
+          onClick = { osType = "windows" },
+          label = { Text("Windows") },
+        )
+      }
+
+      HorizontalDivider()
+      Text("Authentication", style = MaterialTheme.typography.titleSmall)
       Text(
-        "Paste your private key (and optionally public key) for authentication.",
+        "Use a password for initial setup, or paste an SSH key for key-based auth.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
+
+      OutlinedTextField(
+        value = password,
+        onValueChange = { password = it },
+        label = { Text("Password") },
+        placeholder = { Text("SSH password (optional if key is set)") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+      )
+
+      HorizontalDivider()
+      Text("SSH Keys", style = MaterialTheme.typography.titleSmall)
+      Text(
+        "Paste your own keypair or generate a new Ed25519 pair.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+
+      val scope = rememberCoroutineScope()
+      OutlinedButton(onClick = {
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+          try {
+            val kp = ngo.xnet.aiope.feature.remote.ssh.KeyGen.generate()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+              privateKey = kp.first
+              publicKey = kp.second
+            }
+          } catch (e: Exception) {
+            android.util.Log.e("KeyGen", "Failed: ${e.message}", e)
+          }
+        }
+      }) { Text("Generate Keypair") }
 
       OutlinedTextField(
         value = privateKey,
@@ -328,6 +382,8 @@ private fun ServerEditSheet(
               p,
               privateKey.trim().ifBlank { null },
               publicKey.trim().ifBlank { null },
+              password.trim().ifBlank { null },
+              osType,
             )
           },
           modifier = Modifier.weight(1f),
@@ -345,14 +401,16 @@ private fun ServerEditSheet(
               p,
               privateKey.trim().ifBlank { null },
               publicKey.trim().ifBlank { null },
+              password.trim().ifBlank { null },
+              osType,
             )
           },
           modifier = Modifier.weight(1f),
-          enabled = name.isNotBlank() && host.isNotBlank() && user.isNotBlank() && privateKey.isNotBlank(),
+          enabled = name.isNotBlank() && host.isNotBlank() && user.isNotBlank() && (privateKey.isNotBlank() || password.isNotBlank()),
         ) {
           Icon(Icons.Default.Upload, null, Modifier.size(18.dp))
           Spacer(Modifier.width(6.dp))
-          Text("Deploy")
+          Text(if (isEdit) "Redeploy" else "Deploy")
         }
       }
     }

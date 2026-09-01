@@ -27,10 +27,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ngo.xnet.aiope.core.network.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ngo.xnet.aiope.core.network.*
 
 internal val TOKEN_STEPS = listOf(0, 256, 512, 1024, 2048, 4096, 8192, 16000, 32000, 64000, 128000, 200000, 500000, 1000000)
 internal val HISTORY_STEPS = listOf(1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 200000, 256000, 384000, 500000, 750000, 1000000, 2000000, 5000000, 10000000)
@@ -48,7 +48,7 @@ internal fun ProfileEditor(
   val builtin = ProviderTemplates.byId[p.builtinId]
   val scope = rememberCoroutineScope()
   var loading by remember { mutableStateOf(false) }
-  var models by remember { mutableStateOf(store.getModelCache(p.builtinId) ?: store.getModelCacheStale(p.builtinId) ?: builtin?.defaultModels ?: emptyList()) }
+  var models by remember { mutableStateOf(store.getModelCache(p.id) ?: store.getModelCacheStale(p.id) ?: store.getAll().firstOrNull { it.builtinId == p.builtinId && it.id != p.id }?.let { store.getModelCacheStale(it.id) } ?: builtin?.defaultModels ?: emptyList()) }
   var modelExpanded by remember { mutableStateOf(false) }
   var customModelText by remember { mutableStateOf("") }
 
@@ -88,20 +88,28 @@ internal fun ProfileEditor(
 
       // Model selector
       Section("Model")
+      var fetchError by remember { mutableStateOf<String?>(null) }
       Row(verticalAlignment = Alignment.CenterVertically) {
         Button(onClick = {
           loading = true
+          fetchError = null
           scope.launch {
             val fetched = fetchModels(p.effectiveApiBase(), p.apiKey)
             if (fetched.isNotEmpty()) {
-              store.saveModelCache(p.builtinId, fetched)
+              store.saveModelCache(p.id, fetched)
               models = fetched
+              fetchError = null
+            } else {
+              fetchError = "No /models endpoint — add models manually below"
             }
             loading = false
           }
         }, enabled = !loading) { Text(if (loading) "Loading…" else "Load Models") }
         Spacer(Modifier.width(8.dp))
         Text("${models.size} models", style = MaterialTheme.typography.bodySmall)
+      }
+      fetchError?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 2.dp))
       }
       Spacer(Modifier.height(8.dp))
       ExposedDropdownMenuBox(expanded = modelExpanded, onExpandedChange = { modelExpanded = it }) {
@@ -290,7 +298,7 @@ internal fun ProfileEditor(
       Spacer(Modifier.height(8.dp))
       Button(onClick = {
         saveModelConfig()
-        store.saveModelCache(p.builtinId, models)
+        store.saveModelCache(p.id, models)
         onSave(p)
       }, modifier = Modifier.fillMaxWidth()) { Text("Save & Activate") }
       Spacer(Modifier.height(32.dp))
@@ -398,6 +406,7 @@ private suspend fun testConnection(p: ProviderProfile, mc: ModelConfig): String 
       mc.temperature?.let { put("temperature", it.toDouble()) }
     }
     val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    conn.instanceFollowRedirects = false
     conn.requestMethod = "POST"
     conn.setRequestProperty("Content-Type", "application/json")
     if (p.apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${p.apiKey.trim()}")
@@ -405,15 +414,32 @@ private suspend fun testConnection(p: ProviderProfile, mc: ModelConfig): String 
     conn.readTimeout = 30_000
     conn.doOutput = true
     conn.outputStream.write(body.toString().toByteArray())
-    if (conn.responseCode !in 200..299) {
+    // Follow redirects manually to preserve Authorization header
+    var finalConn = conn
+    var redirects = 0
+    while (finalConn.responseCode in 301..308 && redirects < 5) {
+      val loc = finalConn.getHeaderField("Location") ?: break
+      val redirectUrl = if (loc.startsWith("http")) loc else "${java.net.URL(url).protocol}://${java.net.URL(url).host}$loc"
+      finalConn = java.net.URL(redirectUrl).openConnection() as java.net.HttpURLConnection
+      finalConn.instanceFollowRedirects = false
+      finalConn.requestMethod = "POST"
+      finalConn.setRequestProperty("Content-Type", "application/json")
+      if (p.apiKey.isNotBlank()) finalConn.setRequestProperty("Authorization", "Bearer ${p.apiKey.trim()}")
+      finalConn.connectTimeout = 15_000
+      finalConn.readTimeout = 30_000
+      finalConn.doOutput = true
+      finalConn.outputStream.write(body.toString().toByteArray())
+      redirects++
+    }
+    if (finalConn.responseCode !in 200..299) {
       val err = try {
-        conn.errorStream?.bufferedReader()?.readText()?.take(200)
+        finalConn.errorStream?.bufferedReader()?.readText()?.take(200)
       } catch (_: Exception) {
         null
       }
-      return@withContext "[FAIL] HTTP ${conn.responseCode}: ${err ?: "error"}"
+      return@withContext "[FAIL] HTTP ${finalConn.responseCode}: ${err ?: "error"}"
     }
-    val resp = org.json.JSONObject(conn.inputStream.bufferedReader().readText())
+    val resp = org.json.JSONObject(finalConn.inputStream.bufferedReader().readText())
     val tokens = resp.optJSONObject("usage")?.optInt("total_tokens", 0) ?: 0
     val results = mutableListOf("[OK] Chat: OK ($tokens tok)")
 

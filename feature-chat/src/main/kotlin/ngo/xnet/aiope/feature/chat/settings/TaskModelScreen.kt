@@ -27,10 +27,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import ngo.xnet.aiope.core.network.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ngo.xnet.aiope.core.network.*
 
 @Composable
 internal fun TaskModelScreen(providerStore: ProviderStore, onBack: () -> Unit) {
@@ -168,8 +168,9 @@ private fun TaskCard(
           // Each profile with its models
           profiles.forEach { profile ->
             var profileExpanded by remember { mutableStateOf(false) }
-            val models = providerStore.getModelCache(profile.builtinId)
-              ?: providerStore.getModelCacheStale(profile.builtinId)
+            val models = providerStore.getModelCache(profile.id)
+              ?: providerStore.getModelCacheStale(profile.id)
+              ?: providerStore.getAll().firstOrNull { it.builtinId == profile.builtinId && it.id != profile.id }?.let { providerStore.getModelCacheStale(it.id) }
               ?: ngo.xnet.aiope.core.network.ProviderTemplates.byId[profile.builtinId]?.defaultModels ?: emptyList()
             val isProfileSelected = tc.profileId == profile.id
 
@@ -255,15 +256,46 @@ private fun TaskCard(
 internal suspend fun fetchModels(baseUrl: String, apiKey: String): List<ModelDef> = withContext(Dispatchers.IO) {
   try {
     var base = baseUrl.trimEnd('/')
+
+    // Cloudflare Workers AI: use their models/search endpoint
+    if (base.contains("api.cloudflare.com") && base.contains("/ai/")) {
+      return@withContext fetchCloudflareModels(base, apiKey)
+    }
+
     val url = when {
       base.endsWith("/v1") || base.endsWith("/openai") -> "$base/models"
       else -> "$base/v1/models"
     }
     val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    conn.instanceFollowRedirects = false // Handle redirects manually to preserve auth header
     if (apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
     conn.connectTimeout = 15_000
     conn.readTimeout = 15_000
-    val body = conn.inputStream.bufferedReader().readText()
+
+    // Follow redirects manually (Android strips Authorization on cross-domain redirects)
+    var resp = conn
+    var redirects = 0
+    while (resp.responseCode in 301..308 && redirects < 5) {
+      val loc = resp.getHeaderField("Location") ?: break
+      val redirectUrl = if (loc.startsWith("http")) loc else "${java.net.URL(url).protocol}://${java.net.URL(url).host}$loc"
+      resp = java.net.URL(redirectUrl).openConnection() as java.net.HttpURLConnection
+      resp.instanceFollowRedirects = false
+      if (apiKey.isNotBlank()) resp.setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
+      resp.connectTimeout = 15_000
+      resp.readTimeout = 15_000
+      redirects++
+    }
+
+    if (resp.responseCode !in 200..299) {
+      val err = try {
+        resp.errorStream?.bufferedReader()?.readText()?.take(200)
+      } catch (_: Exception) {
+        null
+      }
+      android.util.Log.e("FetchModels", "HTTP ${resp.responseCode}: $err (url=$url)")
+      return@withContext emptyList()
+    }
+    val body = resp.inputStream.bufferedReader().readText()
     val data = org.json.JSONObject(body).optJSONArray("data") ?: return@withContext emptyList()
     (0 until data.length()).map {
       val o = data.getJSONObject(it)
@@ -292,6 +324,41 @@ internal suspend fun fetchModels(baseUrl: String, apiKey: String): List<ModelDef
     }.sortedBy { it.id }
   } catch (e: Exception) {
     android.util.Log.e("FetchModels", "Failed: ${e.message}")
+    emptyList()
+  }
+}
+
+private suspend fun fetchCloudflareModels(baseUrl: String, apiKey: String): List<ModelDef> = withContext(Dispatchers.IO) {
+  try {
+    // Extract account ID from URL: .../accounts/{id}/ai/v1 → .../accounts/{id}/ai/models/search
+    val modelsUrl = baseUrl.replace(Regex("/ai/v1$"), "/ai/models/search")
+      .replace(Regex("/ai$"), "/ai/models/search")
+    val conn = java.net.URL(modelsUrl).openConnection() as java.net.HttpURLConnection
+    if (apiKey.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
+    conn.connectTimeout = 15_000
+    conn.readTimeout = 15_000
+    if (conn.responseCode !in 200..299) return@withContext emptyList()
+    val body = conn.inputStream.bufferedReader().readText()
+    val result = org.json.JSONObject(body).optJSONArray("result") ?: return@withContext emptyList()
+    val models = mutableListOf<ModelDef>()
+    for (i in 0 until result.length()) {
+      val m = result.getJSONObject(i)
+      val name = m.optString("name", "")
+      val task = m.optJSONObject("task")?.optString("name", "") ?: ""
+      if (name.isBlank()) continue
+      when (task) {
+        "Text Generation" -> {
+          models.add(ModelDef(name, name.removePrefix("@cf/").replace("/", " "), contextWindow = 131_072))
+        }
+
+        "Text-to-Image" -> {
+          models.add(ModelDef(name, name.removePrefix("@cf/").replace("/", " "), contextWindow = 0, outputModality = "image", supportsTools = false))
+        }
+      }
+    }
+    models.sortedBy { it.id }
+  } catch (e: Exception) {
+    android.util.Log.e("FetchModels", "Cloudflare failed: ${e.message}")
     emptyList()
   }
 }

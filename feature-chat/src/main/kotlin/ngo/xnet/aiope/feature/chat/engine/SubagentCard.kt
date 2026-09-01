@@ -9,6 +9,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,11 +31,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fluid.compose.UniversalMarkdown
 
 @Composable
 fun SubagentCard(task: AgentExecutor.RunningTask) {
@@ -78,13 +82,33 @@ fun SubagentCard(task: AgentExecutor.RunningTask) {
     }
 
     if (expanded && task.result.isNotBlank()) {
-      Text(
-        task.result.take(1500),
-        fontSize = 10.sp,
-        color = Color(0xFF777777),
-        lineHeight = 13.sp,
-        fontFamily = FontFamily.Monospace,
-        modifier = Modifier.padding(top = 4.dp).heightIn(max = 120.dp).verticalScroll(rememberScrollState()),
+      val ctx = LocalContext.current
+      UniversalMarkdown(
+        content = task.result.take(4000),
+        modifier = Modifier.padding(top = 4.dp).heightIn(max = 200.dp).verticalScroll(rememberScrollState()),
+        onImageContent = { url, alt ->
+          coil.compose.AsyncImage(
+            model = url,
+            contentDescription = alt,
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(vertical = 4.dp)
+              .clip(RoundedCornerShape(8.dp))
+              .combinedClickable(onClick = {}, onLongClick = {
+                kotlin.concurrent.thread {
+                  try {
+                    val bmp = if (url.startsWith("file://")) {
+                      android.graphics.BitmapFactory.decodeFile(url.removePrefix("file://"))
+                    } else {
+                      java.net.URL(url).openStream().use { android.graphics.BitmapFactory.decodeStream(it) }
+                    }
+                    if (bmp != null) ngo.xnet.aiope.feature.chat.saveImageToGallery(ctx, bmp)
+                  } catch (_: Exception) {}
+                }
+              }),
+            contentScale = ContentScale.FillWidth,
+          )
+        },
       )
     }
   }

@@ -25,25 +25,24 @@ object ImageProcessor {
     }.joinToString(",")
   }
 
-  fun encodeImages(filesDir: File, savedPaths: String): List<String> =
-    savedPaths.split(",").filter { it.isNotBlank() }.mapNotNull { relPath ->
-      try {
-        val file = File(filesDir, relPath)
-        if (!file.exists()) return@mapNotNull null
-        val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return@mapNotNull null
-        val padded = padToSquare(bmp)
-        val scaled = android.graphics.Bitmap.createScaledBitmap(padded, 448, 448, true)
-        if (padded != bmp) padded.recycle()
-        bmp.recycle()
-        val out = java.io.ByteArrayOutputStream()
-        scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
-        scaled.recycle()
-        android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
-      } catch (e: Exception) {
-        Log.w("ImageProcessor", "image encode failed: ${e.message}")
-        null
-      }
+  fun encodeImages(filesDir: File, savedPaths: String): List<String> = savedPaths.split(",").filter { it.isNotBlank() }.mapNotNull { relPath ->
+    try {
+      val file = File(filesDir, relPath)
+      if (!file.exists()) return@mapNotNull null
+      val bmp = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return@mapNotNull null
+      val padded = padToSquare(bmp)
+      val scaled = android.graphics.Bitmap.createScaledBitmap(padded, 448, 448, true)
+      if (padded != bmp) padded.recycle()
+      bmp.recycle()
+      val out = java.io.ByteArrayOutputStream()
+      scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+      scaled.recycle()
+      android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
+    } catch (e: Exception) {
+      Log.w("ImageProcessor", "image encode failed: ${e.message}")
+      null
     }
+  }
 
   fun padToSquare(bmp: android.graphics.Bitmap): android.graphics.Bitmap {
     val w = bmp.width
