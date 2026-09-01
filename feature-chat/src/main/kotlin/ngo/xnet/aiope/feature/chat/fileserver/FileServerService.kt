@@ -155,7 +155,8 @@ class FileServerService : Service() {
 
         val method = parts[0]
         val rawPath = URLDecoder.decode(parts[1], "UTF-8")
-        val safePath = rawPath.replace("..", "").removePrefix("/")
+        val safePath = rawPath.substringBefore("?").removePrefix("/").split("/")
+          .filter { it.isNotBlank() && it != "." && it != ".." }.joinToString("/")
 
         val headers = mutableMapOf<String, String>()
         for (i in 1 until lines.size) {
@@ -168,15 +169,15 @@ class FileServerService : Service() {
         // PIN authentication check
         if (pin != null) {
           val authHeader = headers["authorization"]
-          val queryPin = rawPath.substringAfter("pin=", "").substringBefore("&").ifEmpty { null }
           val cookiePin = headers["cookie"]?.let { Regex("pin=([^;]+)").find(it)?.groupValues?.get(1) }
-          val authenticated = authHeader == "Bearer $pin" || queryPin == pin || cookiePin == pin
+          val authenticated = authHeader == "Bearer $pin" || cookiePin == pin
           if (!authenticated) {
             // Check if this is a PIN submission via POST form
             val formPin = headers["x-pin"]
             if (formPin == pin) {
               // Set cookie and redirect
-              out.write("HTTP/1.1 302 Found\r\nSet-Cookie: pin=$pin; Path=/; HttpOnly\r\nLocation: /\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+              val secureFlag = if (useHttps) "; Secure" else ""
+              out.write("HTTP/1.1 302 Found\r\nSet-Cookie: pin=$pin; Path=/; HttpOnly$secureFlag\r\nLocation: /\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
               out.flush()
               return
             }
@@ -212,6 +213,10 @@ class FileServerService : Service() {
       val boundary = "--" + contentType.substringAfter("boundary=").trim()
       val endBoundary = "$boundary--"
       val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
+      if (contentLength <= 0 || contentLength > 100_000_000) { // 100MB limit
+        sendError(out, 413, "Payload Too Large")
+        return
+      }
       val body = ByteArray(contentLength)
       var read = 0
       while (read < contentLength) {
@@ -243,7 +248,8 @@ class FileServerService : Service() {
           continue
         }
         val filename = filenameMatch.groupValues[1]
-        if (filename.isBlank()) {
+        val safeFilename = filename.split("/", "\\").lastOrNull()?.takeIf { it != "." && it != ".." }
+        if (safeFilename == null) {
           pos = nextPos
           continue
         }
@@ -251,7 +257,7 @@ class FileServerService : Service() {
         val contentStart = headerEnd + 4
         val contentEnd = nextPos - 2
         if (contentEnd > contentStart) {
-          File(uploadDir, filename).outputStream().use { it.write(body, contentStart, contentEnd - contentStart) }
+          File(uploadDir, safeFilename).outputStream().use { it.write(body, contentStart, contentEnd - contentStart) }
           savedCount++
         }
         pos = nextPos
