@@ -10,8 +10,12 @@ import android.content.Intent
 import android.net.wifi.WifiManager
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
@@ -31,6 +35,9 @@ class FileServerService : Service() {
     const val EXTRA_USE_HTTPS = "use_https"
     const val EXTRA_PIN = "pin"
     const val DEFAULT_PORT = 8080
+    const val MAX_UPLOAD_BYTES = 2_000_000_000L // 2GB cap
+    private const val SPOOL_BLOCK = 1 shl 18 // 256KB streaming chunks
+    private const val HEADER_MAX = 1 shl 14 // 16KB part-header scan limit
 
     private var instance: FileServerService? = null
     fun isRunning(): Boolean = instance != null
@@ -155,7 +162,8 @@ class FileServerService : Service() {
 
         val method = parts[0]
         val rawPath = URLDecoder.decode(parts[1], "UTF-8")
-        val safePath = rawPath.replace("..", "").removePrefix("/")
+        val safePath = rawPath.substringBefore("?").removePrefix("/").split("/")
+          .filter { it.isNotBlank() && it != "." && it != ".." }.joinToString("/")
 
         val headers = mutableMapOf<String, String>()
         for (i in 1 until lines.size) {
@@ -168,15 +176,15 @@ class FileServerService : Service() {
         // PIN authentication check
         if (pin != null) {
           val authHeader = headers["authorization"]
-          val queryPin = rawPath.substringAfter("pin=", "").substringBefore("&").ifEmpty { null }
           val cookiePin = headers["cookie"]?.let { Regex("pin=([^;]+)").find(it)?.groupValues?.get(1) }
-          val authenticated = authHeader == "Bearer $pin" || queryPin == pin || cookiePin == pin
+          val authenticated = authHeader == "Bearer $pin" || cookiePin == pin
           if (!authenticated) {
             // Check if this is a PIN submission via POST form
             val formPin = headers["x-pin"]
             if (formPin == pin) {
               // Set cookie and redirect
-              out.write("HTTP/1.1 302 Found\r\nSet-Cookie: pin=$pin; Path=/; HttpOnly\r\nLocation: /\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+              val secureFlag = if (useHttps) "; Secure" else ""
+              out.write("HTTP/1.1 302 Found\r\nSet-Cookie: pin=$pin; Path=/; HttpOnly$secureFlag\r\nLocation: /\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
               out.flush()
               return
             }
@@ -210,69 +218,147 @@ class FileServerService : Service() {
     try {
       val contentType = headers["content-type"] ?: ""
       val boundary = "--" + contentType.substringAfter("boundary=").trim()
-      val endBoundary = "$boundary--"
-      val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
-      val body = ByteArray(contentLength)
-      var read = 0
-      while (read < contentLength) {
-        val n = input.read(body, read, contentLength - read)
-        if (n < 0) break
-        read += n
+      val contentLength = headers["content-length"]?.toLongOrNull() ?: 0
+      if (contentLength <= 0 || contentLength > MAX_UPLOAD_BYTES) {
+        sendError(out, 413, "Payload Too Large")
+        return
       }
 
       val uploadDir = File(rootDir, path)
       if (!uploadDir.exists()) uploadDir.mkdirs()
 
-      val boundaryBytes = boundary.toByteArray()
-      var savedCount = 0
-      // Find each part between boundaries
-      var pos = indexOf(body, boundaryBytes, 0)
-      while (pos >= 0) {
-        val nextPos = indexOf(body, boundaryBytes, pos + boundaryBytes.size)
-        if (nextPos < 0) break
-        // Parse part headers
-        val headerEnd = indexOf(body, "\r\n\r\n".toByteArray(), pos)
-        if (headerEnd < 0 || headerEnd > nextPos) {
-          pos = nextPos
-          continue
+      // Spool the body to a temp file as it arrives so the payload is never
+      // held in memory as one blob (handles up to 2GB without OOM).
+      val spool = File.createTempFile("aiope-upload", ".tmp", cacheDir)
+      try {
+        BufferedOutputStream(FileOutputStream(spool), SPOOL_BLOCK).use { sink ->
+          val buf = ByteArray(SPOOL_BLOCK)
+          var total = 0L
+          while (total < contentLength) {
+            val want = minOf(buf.size.toLong(), contentLength - total).toInt()
+            val n = input.read(buf, 0, want)
+            if (n < 0) break
+            sink.write(buf, 0, n)
+            total += n
+          }
         }
-        val partHeaders = String(body, pos + boundaryBytes.size + 2, headerEnd - pos - boundaryBytes.size - 2)
-        val filenameMatch = Regex("filename=\"([^\"]+)\"").find(partHeaders)
-        if (filenameMatch == null) {
-          pos = nextPos
-          continue
-        }
-        val filename = filenameMatch.groupValues[1]
-        if (filename.isBlank()) {
-          pos = nextPos
-          continue
-        }
-        // File content is between header end+4 and next boundary-2 (strip trailing \r\n)
-        val contentStart = headerEnd + 4
-        val contentEnd = nextPos - 2
-        if (contentEnd > contentStart) {
-          File(uploadDir, filename).outputStream().use { it.write(body, contentStart, contentEnd - contentStart) }
-          savedCount++
-        }
-        pos = nextPos
+        val savedCount = parseMultipartFromFile(spool, boundary, uploadDir)
+        val redirectPath = if (path.isBlank()) "/" else "/$path"
+        val msg = "$savedCount file(s) uploaded"
+        out.write("HTTP/1.1 303 See Other\r\nLocation: $redirectPath\r\nContent-Length: ${msg.length}\r\nConnection: close\r\n\r\n$msg".toByteArray())
+      } finally {
+        spool.delete()
       }
-
-      val redirectPath = if (path.isBlank()) "/" else "/$path"
-      val msg = "$savedCount file(s) uploaded"
-      out.write("HTTP/1.1 303 See Other\r\nLocation: $redirectPath\r\nContent-Length: ${msg.length}\r\nConnection: close\r\n\r\n$msg".toByteArray())
     } catch (e: Exception) {
       sendError(out, 500, "Upload failed: ${e.message}")
     }
   }
 
-  private fun indexOf(data: ByteArray, pattern: ByteArray, from: Int): Int {
-    outer@ for (i in from..data.size - pattern.size) {
-      for (j in pattern.indices) {
-        if (data[i + j] != pattern[j]) continue@outer
+  // Stream-scans a spooled multipart body for boundary offsets, keeping a tail
+  // window so a marker split across chunk reads is still found.
+  private fun findBoundaryOffsets(f: File, boundary: String): List<Long> {
+    val pattern = boundary.toByteArray()
+    val bLen = pattern.size
+    val positions = mutableListOf<Long>()
+    if (bLen <= 2) return positions
+    BufferedInputStream(FileInputStream(f), SPOOL_BLOCK).use { ins ->
+      val buf = ByteArray(SPOOL_BLOCK)
+      var prev = byteArrayOf()
+      var base = 0L
+      while (true) {
+        val n = ins.read(buf)
+        if (n < 0) break
+        val data = if (prev.isEmpty()) buf.copyOf(n) else prev + buf.copyOf(n)
+        var i = 0
+        val end = data.size - bLen
+        while (i <= end) {
+          if (matchesAt(data, i, pattern)) {
+            positions.add(base + i)
+            i += bLen
+          } else {
+            i++
+          }
+        }
+        val keep = data.size - (bLen - 1)
+        if (keep > 0) {
+          prev = data.copyOfRange(keep, data.size)
+          base += keep
+        } else {
+          prev = data
+        }
       }
-      return i
+    }
+    return positions
+  }
+
+  private fun parseMultipartFromFile(f: File, boundary: String, uploadDir: File): Int {
+    val pattern = boundary.toByteArray()
+    val bLen = pattern.size
+    val positions = findBoundaryOffsets(f, boundary)
+    RandomAccessFile(f, "r").use { raf ->
+      var saved = 0
+      for (k in 1 until positions.size) {
+        val prev = positions[k - 1]
+        val next = positions[k]
+
+        // Locate the end of the part headers ("\r\n\r\n")
+        val headerStart = prev + bLen + 2 // skip "--boundary\r\n"
+        val headerEnd = findHeaderEnd(raf, headerStart, next)
+        if (headerEnd < 0) continue
+
+        val headerLen = (headerEnd - headerStart).toInt()
+        val headerText = ByteArray(headerLen)
+        raf.seek(headerStart)
+        raf.readFully(headerText)
+        val partHeaders = String(headerText, Charsets.UTF_8)
+        val filenameMatch = Regex("filename=\"([^\"]+)\"").find(partHeaders) ?: continue
+        val filename = filenameMatch.groupValues[1]
+        val safeFilename = filename.split("/", "\\").lastOrNull()?.takeIf { it != "." && it != ".." }
+        if (safeFilename == null) continue
+
+        val contentStart = headerEnd + 4 // skip "\r\n\r\n"
+        val contentEnd = next - 2 // strip trailing "\r\n"
+        if (contentEnd <= contentStart) continue
+
+        // Stream content out to the destination file
+        FileOutputStream(File(uploadDir, safeFilename)).use { outFs ->
+          raf.seek(contentStart)
+          val copyBuf = ByteArray(SPOOL_BLOCK)
+          var remaining = contentEnd - contentStart
+          while (remaining > 0) {
+            val toRead = minOf(copyBuf.size.toLong(), remaining).toInt()
+            raf.readFully(copyBuf, 0, toRead)
+            outFs.write(copyBuf, 0, toRead)
+            remaining -= toRead
+          }
+        }
+        saved++
+      }
+      return saved
+    }
+  }
+
+  private fun findHeaderEnd(raf: RandomAccessFile, start: Long, limit: Long): Long {
+    val maxRead = (limit - start).coerceAtMost(HEADER_MAX.toLong())
+    if (maxRead < 4) return -1
+    val buf = ByteArray(maxRead.toInt())
+    raf.seek(start)
+    raf.readFully(buf)
+    for (i in 0..buf.size - 4) {
+      if (buf[i] == '\r'.code.toByte() && buf[i + 1] == '\n'.code.toByte() &&
+        buf[i + 2] == '\r'.code.toByte() && buf[i + 3] == '\n'.code.toByte()
+      ) {
+        return start + i
+      }
     }
     return -1
+  }
+
+  private fun matchesAt(data: ByteArray, pos: Int, pattern: ByteArray): Boolean {
+    for (j in pattern.indices) {
+      if (data[pos + j] != pattern[j]) return false
+    }
+    return true
   }
 
   private fun sendDirectoryListing(out: BufferedOutputStream, dir: File, path: String) {
