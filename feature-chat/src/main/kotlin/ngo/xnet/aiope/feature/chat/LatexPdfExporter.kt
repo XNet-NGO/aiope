@@ -2,47 +2,175 @@ package ngo.xnet.aiope.feature.chat
 
 import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.os.Bundle
+import android.os.CancellationSignal
+import android.os.Handler
+import android.os.Looper
+import android.os.ParcelFileDescriptor
+import android.print.PageRange
 import android.print.PrintAttributes
+import android.print.PrintDocumentAdapter
 import android.print.PrintManager
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Exports LaTeX document content to PDF via WebView + KaTeX rendering.
  */
 object LatexPdfExporter {
 
+  /**
+   * Opens the system print dialog for the given LaTeX content (user picks
+   * "Save as PDF" or a printer). Safe to call from any thread — the WebView
+   * work is marshalled onto the main thread, and the WebView is only
+   * destroyed after the print job finishes, so the dialog can never race
+   * the renderer.
+   */
   fun export(context: Context, latexContent: String) {
-    val html = buildHtml(latexContent)
-    val webView = WebView(context)
-    webView.settings.javaScriptEnabled = true
-    webView.webViewClient = object : WebViewClient() {
-      override fun onPageFinished(view: WebView, url: String) {
-        // Wait for KaTeX to render, then check readiness via JS
-        view.evaluateJavascript("document.querySelector('.katex') !== null || document.readyState === 'complete'") { ready ->
-          val delay = if (ready == "true") 300L else 1000L
-          view.postDelayed({
-            val printManager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
-            val adapter = view.createPrintDocumentAdapter("AIOPE_LaTeX_Export")
-            printManager.print(
-              "AIOPE LaTeX Export",
-              adapter,
-              PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.NA_LETTER).build(),
-            )
-            // Destroy WebView after print dialog is shown
-            view.postDelayed({ view.destroy() }, 5000)
-          }, delay)
+    val activity = context.findActivity()
+    if (activity == null) {
+      Toast.makeText(context, "PDF export requires an active screen", Toast.LENGTH_LONG).show()
+      return
+    }
+    // WebView creation + printing must happen on the main thread.
+    Handler(Looper.getMainLooper()).post { doExport(activity, latexContent) }
+  }
+
+  private fun doExport(activity: Activity, latexContent: String) {
+    var webView: WebView? = null
+    var host: FrameLayout? = null
+    val printed = AtomicBoolean(false)
+    try {
+      val html = buildHtml(latexContent)
+      val web = WebView(activity)
+      webView = web
+      web.settings.javaScriptEnabled = true
+
+      // Give the WebView real dimensions and attach it to the window so the
+      // print renderer produces content. An unattached / zero-size WebView
+      // yields a blank PDF on most devices. It is parked off-screen so the
+      // user never sees it flash up.
+      val w = (8.5f * 160).toInt() // ~US Letter width @ 160dpi
+      val h = (11f * 160).toInt()
+      val hostLocal = FrameLayout(activity)
+      host = hostLocal
+      hostLocal.addView(web, FrameLayout.LayoutParams(w, h))
+      hostLocal.translationY = 100000f
+      (activity.window?.decorView as? ViewGroup)?.addView(hostLocal, FrameLayout.LayoutParams(w, h))
+
+      web.measure(
+        View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY),
+      )
+      web.layout(0, 0, w, h)
+
+      val doPrint = Runnable {
+        if (printed.compareAndSet(false, true)) {
+          print(activity, web, hostLocal)
         }
       }
+
+      web.webViewClient = object : WebViewClient() {
+        override fun onPageFinished(view: WebView?, url: String?) {
+          // Give KaTeX a moment to render, then open the system print dialog.
+          view?.postDelayed(doPrint, 1200)
+        }
+
+        override fun onReceivedError(
+          view: WebView?,
+          request: WebResourceRequest?,
+          error: WebResourceError?,
+        ) {
+          // CDN hiccups must not block printing — the dialog still opens.
+        }
+      }
+      web.loadDataWithBaseURL("https://cdn.jsdelivr.net/", html, "text/html", "UTF-8", null)
+
+      // Safety net: if the page never finishes loading (offline / slow CDN),
+      // force the print dialog open anyway instead of silently doing nothing.
+      Handler(Looper.getMainLooper()).postDelayed(doPrint, 12_000)
+    } catch (t: Throwable) {
+      cleanup(webView, host)
+      printed.set(true) // Prevent delayed callbacks from firing print
+      Toast.makeText(activity, "PDF export failed: ${t.message}", Toast.LENGTH_LONG).show()
     }
-    webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+  }
+
+  private fun print(activity: Activity, webView: WebView, host: FrameLayout) {
+    try {
+      val jobName = "AIOPE Conversation"
+      val delegate = webView.createPrintDocumentAdapter(jobName)
+      val adapter = object : PrintDocumentAdapter() {
+        override fun onStart() = delegate.onStart()
+
+        override fun onLayout(
+          oldAttributes: PrintAttributes?,
+          newAttributes: PrintAttributes?,
+          cancellationSignal: CancellationSignal?,
+          callback: PrintDocumentAdapter.LayoutResultCallback?,
+          extras: Bundle?,
+        ) = delegate.onLayout(oldAttributes, newAttributes, cancellationSignal, callback, extras)
+
+        override fun onWrite(
+          pages: Array<PageRange>?,
+          destination: ParcelFileDescriptor?,
+          cancellationSignal: CancellationSignal?,
+          callback: PrintDocumentAdapter.WriteResultCallback?,
+        ) = delegate.onWrite(pages, destination, cancellationSignal, callback)
+
+        override fun onFinish() {
+          try {
+            delegate.onFinish()
+          } catch (t: Throwable) {
+            Toast.makeText(activity, "Print may have failed: ${t.message}", Toast.LENGTH_SHORT).show()
+          }
+          cleanup(webView, host)
+        }
+      }
+      val printManager = activity.getSystemService(Context.PRINT_SERVICE) as PrintManager
+      printManager.print(
+        jobName,
+        adapter,
+        PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.NA_LETTER).build(),
+      )
+    } catch (t: Throwable) {
+      cleanup(webView, host)
+      Toast.makeText(activity, "PDF export failed: ${t.message}", Toast.LENGTH_LONG).show()
+    }
+  }
+
+  private fun cleanup(webView: WebView?, host: FrameLayout?) {
+    try {
+      (host?.parent as? ViewGroup)?.removeView(host)
+    } catch (_: Throwable) {}
+    try {
+      webView?.destroy()
+    } catch (_: Throwable) {}
+  }
+
+  /** Unwrap ContextWrapper chains (e.g. ContextThemeWrapper) to find the Activity. */
+  private fun Context.findActivity(): Activity? {
+    var c: Context? = this
+    while (c is ContextWrapper) {
+      if (c is Activity) return c
+      c = c.baseContext
+    }
+    return null
   }
 
   fun shareFile(context: Context, file: File) {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     val intent = Intent(Intent.ACTION_SEND).apply {
       type = "application/pdf"
       putExtra(Intent.EXTRA_STREAM, uri)
@@ -171,8 +299,8 @@ $body
     s = s.replace(Regex("\\\\centering"), "")
 
     // Strip remaining unknown environments and commands
-    s = s.replace(Regex("\\\\begin\\{[^}]*}(\\[[^]]*])?"), "")
-    s = s.replace(Regex("\\\\end\\{[^}]*}"), "")
+    s = s.replace(Regex("\\\\begin\\{[^}]*\\}(\\[[^]]*])?"), "")
+    s = s.replace(Regex("\\\\end\\{[^}]*\\}"), "")
     s = s.replace(Regex("\\\\[a-zA-Z]+\\{([^}]*)\\}"), "$1")
     s = s.replace(Regex("\\\\[a-zA-Z]+\\b"), "")
 

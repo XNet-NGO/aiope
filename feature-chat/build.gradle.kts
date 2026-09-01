@@ -7,10 +7,19 @@ plugins {
   id("com.google.devtools.ksp")
 }
 
+val localKeyMap: Map<String, String> = rootProject.file("local.properties")
+  .takeIf { it.exists() }?.readLines()
+  ?.filter { it.contains("=") && !it.startsWith("#") }
+  ?.associate { it.substringBefore("=").trim() to it.substringAfter("=").trim() }
+  ?: emptyMap()
+fun apiKey(name: String): String = localKeyMap[name] ?: findProperty(name)?.toString() ?: System.getenv(name) ?: ""
+
 android {
   namespace = "ngo.xnet.aiope.feature.chat"
   defaultConfig {
-    buildConfigField("String", "GATEWAY_KEY", "\"${project.findProperty("GATEWAY_KEY") ?: ""}\"")
+    buildConfigField("String", "GATEWAY_KEY", "\"${apiKey("GATEWAY_KEY")}\"")
+    buildConfigField("String", "AI_STUDIO_KEY", "\"${apiKey("AI_STUDIO_KEY")}\"")
+    buildConfigField("String", "CLOUDFLARE_AI_KEY", "\"${apiKey("CLOUDFLARE_AI_KEY")}\"")
   }
   buildFeatures { buildConfig = true }
 }
@@ -51,7 +60,7 @@ dependencies {
   implementation("com.google.android.gms:play-services-location:21.4.0")
 
   // maps
-  implementation("org.ramani-maps:ramani-maplibre:0.10.0")
+  implementation("org.ramani-maps:ramani-maplibre:0.13.0")
   implementation("com.caverock:androidsvg-aar:1.4")
 
   // room
@@ -76,6 +85,12 @@ dependencies {
   implementation("androidx.datastore:datastore-preferences:1.2.1")
 
   // exoplayer for video backgrounds
-  implementation("androidx.media3:media3-exoplayer:1.6.1")
-  implementation("androidx.media3:media3-ui:1.6.1")
+  implementation("androidx.media3:media3-exoplayer:1.11.0")
+  implementation("androidx.media3:media3-ui:1.11.0")
+
+  // BouncyCastle for self-signed cert generation (file server HTTPS)
+  implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
+
+  // Testing
+  testImplementation("junit:junit:4.13.2")
 }

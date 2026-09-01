@@ -5,13 +5,13 @@ import ngo.xnet.aiope.core.model.RemoteToolBridge
 import ngo.xnet.aiope.core.network.ModelTask
 import ngo.xnet.aiope.core.network.ProviderProfile
 import ngo.xnet.aiope.core.network.TaskModelStore
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import ngo.xnet.aiope.feature.chat.LocationData
 import ngo.xnet.aiope.feature.chat.db.ChatDao
 import ngo.xnet.aiope.feature.chat.location.LocationProvider
 import ngo.xnet.aiope.feature.chat.settings.McpManager
 import ngo.xnet.aiope.feature.chat.settings.ProviderStore
 import ngo.xnet.aiope.feature.chat.settings.ToolStore
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 
 class ToolExecutor(
   private val app: Application,
@@ -50,7 +50,7 @@ class ToolExecutor(
       val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
         baseUrl = profile.effectiveApiBase(),
         apiKey = profile.apiKey,
-        model = effectiveModel
+        model = effectiveModel,
       )
       val embedFn: (String) -> FloatArray? = { text -> cloudEmbed.embed(text) }
       ragEngine = org.xnet.aiope.inference.RagEngine(app, embedFn)
@@ -66,13 +66,13 @@ class ToolExecutor(
     td("list_directory", "List directory", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
     td("get_location", "Get the device's current GPS location. Call this FIRST when the user asks about nearby places or 'closest' anything, then use the coordinates with search_location.", """{"type":"object","properties":{}}"""),
     td("open_intent", "Open a URL, app, or navigation intent from the device. Use for opening maps, web pages, dialing, etc. Examples: 'https://google.com', 'geo:43.6,-116.3', 'google.navigation:q=123+Main+St', 'tel:5551234567'", """{"type":"object","properties":{"uri":{"type":"string","description":"URI to open. Supports https://, geo:, google.navigation:q=, tel:, mailto:, etc."}},"required":["uri"]}"""),
-    td("fetch_url", "Fetch a URL. Returns extracted text and any images found as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them to the user.", """{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text+images from HTML"}},"required":["url"]}"""),
+    td("fetch_url", "Fetch a URL. Returns extracted text and any images found as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them to the user.", """{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"Optional: 'raw' for raw response, 'text' (default) for extracted text+images from HTML"},"offset":{"type":"integer","description":"Character offset to start reading from for pagination"},"limit":{"type":"integer","description":"Maximum number of characters to return"}},"required":["url"]}"""),
     td("query_data", "Query live real-time data. Returns JSON and any images as ![alt](url) markdown. Include these ![alt](url) images directly in your response to display them. Automatically uses device GPS for location-based queries. Pass 'extra' for searches (nasa_media, nasa_tech) or station IDs (tides, ocean_temp) or breed IDs (cat_breed). Available categories: ${fetchDataCategories()}", """{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query, station ID, or breed ID depending on category"}},"required":["category"]}"""),
     td("search_location", "Search for any place, address, landmark, or business/amenity. For nearby searches ('closest pizza'), call get_location first to establish position. Handles addresses, landmarks, cities, and business/amenity searches (restaurants, cafes, gas stations, etc).", """{"type":"object","properties":{"query":{"type":"string","description":"What to search for. Examples: '1600 Pennsylvania Ave, Washington DC', 'Eiffel Tower', 'pizza in Boise, ID', 'Starbucks near Meridian, Idaho', 'gas station'"}},"required":["query"]}"""),
     td("search_web", "Search the web for current information, news, answers, or any topic. Returns results with titles, URLs, and snippets. Use when the user asks about recent events, facts you're unsure of, or anything requiring up-to-date information.", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}"""),
     td("search_images", "Search for images on the web. Returns image URLs with titles. Use when the user asks to find photos, pictures, or images of something.", """{"type":"object","properties":{"query":{"type":"string","description":"Image search query"}},"required":["query"]}"""),
     td("browser_navigate", "Navigate the in-app browser to a URL. Opens a real WebView you can then interact with via browser_click, browser_fill, browser_eval, browser_content, browser_elements.", """{"type":"object","properties":{"url":{"type":"string","description":"URL to navigate to"}},"required":["url"]}"""),
-    td("browser_content", "Get the current page text content, URL, and title from the in-app browser.", """{"type":"object","properties":{}}"""),
+    td("browser_content", "Get the current page text content, URL, and title from the in-app browser.", """{"type":"object","properties":{"offset":{"type":"integer","description":"Character offset to start reading from for pagination"},"limit":{"type":"integer","description":"Maximum number of characters to return"}},"required":[]}"""),
     td("browser_elements", "List all interactive elements (links, buttons, inputs) on the current browser page with their selectors.", """{"type":"object","properties":{}}"""),
     td("browser_click", "Click an element in the browser by CSS selector. IMPORTANT: Call browser_elements first to discover available selectors before clicking.", """{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of element to click"}},"required":["selector"]}"""),
     td("browser_fill", "Fill an input field in the browser by CSS selector. IMPORTANT: Call browser_elements first to discover available selectors before filling.", """{"type":"object","properties":{"selector":{"type":"string","description":"CSS selector of input element"},"value":{"type":"string","description":"Text to fill"}},"required":["selector","value"]}"""),
@@ -104,19 +104,54 @@ class ToolExecutor(
     td("rag_search", "Search the local on-device knowledge base using semantic similarity. Returns relevant document chunks with scores.", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"},"top_k":{"type":"integer","description":"Number of results (default 5)"}},"required":["query"]}"""),
     td("rag_index", "Index a document into the local knowledge base for semantic search.", """{"type":"object","properties":{"title":{"type":"string","description":"Document title"},"content":{"type":"string","description":"Text content to index"}},"required":["title","content"]}"""),
     td("orchestrate", "Execute a multi-agent pipeline (DAG). Each stage dispatches a named agent from the roster with its configured tools. Stages without depends_on run in parallel. Results from completed stages are passed as context to dependent stages.", """{"type":"object","properties":{"task":{"type":"string","description":"Overall task description"},"stages":{"type":"array","description":"Pipeline stages","items":{"type":"object","properties":{"name":{"type":"string","description":"Unique stage name"},"agent":{"type":"string","description":"Agent from roster: Architect, Coder, Researcher, QA, DevOps, Security, Writer, or Reviewer"},"prompt":{"type":"string","description":"Detailed task for this stage"},"depends_on":{"type":"array","items":{"type":"string"},"description":"Names of stages this depends on"}},"required":["name","agent","prompt"]}}},"required":["task","stages"]}"""),
+    td("todo_write", "Write your persistent task list. Call BEFORE starting any multi-step task to plan it, then UPDATE it as you work (status 'in_progress' when starting an item, 'completed' when done). Replaces the whole list unless merge=true, which updates matching ids and appends new ones while keeping the rest.", """{"type":"object","properties":{"todos":{"type":"array","description":"Todo items","items":{"type":"object","properties":{"id":{"type":"string","description":"Short stable id, e.g. '1' or 'setup'"},"content":{"type":"string"},"status":{"type":"string","enum":["pending","in_progress","completed","cancelled"]}},"required":["id","content"]}},"merge":{"type":"boolean","description":"true = upsert by id keeping others; omit/false = full replace"}},"required":["todos"]}"""),
+    td("todo_read", "Read your current persistent todo list grouped by status, with counts.", """{"type":"object","properties":{}}"""),
+    td("edit_file", "Targeted find/replace inside a text file. Prefer over write_file for small changes: pass exact old_string copied from the file (including indentation). Errors clearly when old_string is not found or matches multiple times unless replace_all=true.", """{"type":"object","properties":{"path":{"type":"string"},"old_string":{"type":"string","description":"Exact text to find"},"new_string":{"type":"string","description":"Replacement text (empty string deletes)"},"replace_all":{"type":"boolean","description":"Replace every occurrence instead of requiring uniqueness"}},"required":["path","old_string","new_string"]}"""),
+    td("search_files", "Search a directory tree without shelling out. target='content' (default) greps file contents with regex returning path:line:text matches; target='files' matches file NAMES against the pattern. Optional glob narrows which files are searched (e.g. '*.kt'). Skips .git, node_modules, build dirs.", """{"type":"object","properties":{"path":{"type":"string","description":"Directory to search"},"pattern":{"type":"string","description":"Regex pattern"},"target":{"type":"string","enum":["content","files"],"description":"'content' greps file contents, 'files' matches names"},"glob":{"type":"string","description":"Optional path/filename glob filter like '*.md'"},"limit":{"type":"integer","description":"Max results (default 50)"}},"required":["path","pattern"]}"""),
+    td("http_request", "Generic HTTP client for calling APIs directly: choose method, headers, body and timeout. Returns HTTP status, key response headers, and the body truncated to ~20KB. Prefer fetch_url for simply reading web pages.", """{"type":"object","properties":{"url":{"type":"string"},"method":{"type":"string","enum":["GET","POST","PUT","PATCH","DELETE"],"description":"Default GET"},"headers":{"type":"object","description":"e.g. {'Content-Type':'application/json','Authorization':'Bearer ...'}"},"body":{"type":"string","description":"Request body string (POST/PUT/PATCH/DELETE)"},"timeout_seconds":{"type":"integer","description":"Default 30, max 300"}},"required":["url"]}"""),
+    td("schedule_task", "Schedule this device's agent to run a prompt automatically in the background (recurring monitoring, reminders-with-action, daily digests). schedule_type: 'interval' every interval_value interval_unit (min|hour|day); 'daily'/'weekly'/'monthly' fire at time_hour:time_minute ('weekly' also days_of_week like '2,3,4,5,6' where 1=Sunday; 'monthly' uses day_of_month 1-28); 'once' fires ~60 seconds later. max_runs caps executions (0=unlimited). tools: comma-separated subset of search_web, fetch_url, http_request, run_sh, ssh_exec, send_notification, set_alarm, memory_store, memory_recall, read_file, write_file, list_directory, datetime_now. Each run reports via notification.", """{"type":"object","properties":{"prompt":{"type":"string","description":"What the scheduled agent should do each run"},"schedule_type":{"type":"string","enum":["once","interval","daily","weekly","monthly"],"description":"Recurrence model"},"interval_value":{"type":"integer","description":"Every N units (interval type, default 30)"},"interval_unit":{"type":"string","enum":["min","hour","day"]},"time_hour":{"type":"integer","description":"Hour 0-23 (daily/weekly/monthly)"},"time_minute":{"type":"integer","description":"Minute 0-59"},"days_of_week":{"type":"string","description":"Weekly: comma list 1=Sun..7=Sat, e.g. '1,4'"},"day_of_month":{"type":"integer","description":"Monthly: day 1-28"},"max_runs":{"type":"integer","description":"Stop after N runs (0 = unlimited)"},"tools":{"type":"string","description":"Comma-separated tool subset allowed during background runs"}},"required":["prompt","schedule_type"]}"""),
+    td("cancel_schedule", "Cancel and delete a scheduled agent task by its id (get ids from list_schedules). Also cancels its pending alarm.", """{"type":"object","properties":{"task_id":{"type":"string","description":"Task id from list_schedules"}},"required":["task_id"]}"""),
+    td("list_schedules", "List all scheduled agent tasks with their recurrence description, next run time, and run progress.", """{"type":"object","properties":{}}"""),
+    td("datetime_now", "Get the current date and time: local timestamp, timezone with UTC offset, day of week, and epoch ms. Use for any time-related question or time math.", """{"type":"object","properties":{}}"""),
   ) + (remoteToolBridge?.buildToolDefs()?.map { td(it.name, it.description, it.parameters) } ?: emptyList()).filter { toolStore.isToolEnabled(it.name) && it.name !in getAgentMode().disabledTools } + toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
     var defs = mcpManager.getToolDefs(server.id)
     if (defs.isEmpty()) {
       // Auto-discover on first use (cache is in-memory, lost on restart)
       try {
         mcpManager.discoverTools(server)
-      } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}") }
+      } catch (e: Exception) {
+        android.util.Log.w("ToolExec", "op failed: ${e.message}")
+      }
       defs = mcpManager.getToolDefs(server.id)
     }
     defs
   }.filter { toolStore.isToolEnabled(it.name) }
 
   private fun td(name: String, desc: String, params: String) = StreamingOrchestrator.ToolDef(name, desc, org.json.JSONObject(params))
+
+  /**
+   * Explains an inaccessible path in terms of Android's storage rules so the model can recover
+   * instead of retrying blindly. Scoped storage (Android 10+) hides other apps' data, and shared
+   * storage outside the app sandbox needs All-Files access on Android 11+.
+   */
+  private fun storageHint(f: java.io.File): String {
+    val path = f.absolutePath
+    val sandbox = app.filesDir.absolutePath
+    val extSandbox = app.getExternalFilesDir(null)?.absolutePath
+    val inSandbox = path.startsWith(sandbox) || (extSandbox != null && path.startsWith(extSandbox))
+    if (inSandbox) return ""
+    val hasAllFiles = android.os.Build.VERSION.SDK_INT < 30 || android.os.Environment.isExternalStorageManager()
+    val shared = path.startsWith("/sdcard") || path.startsWith("/storage/emulated")
+    return when {
+      shared && !hasAllFiles ->
+        " — shared storage needs All-Files access (Android 11+): grant it in Settings > Apps > AIOPE > Permissions, or use the app sandbox at $sandbox."
+
+      path.startsWith("/data/data") || path.startsWith("/data/user") ->
+        " — scoped storage (Android 10+) blocks other apps' private data on non-rooted devices. Use $sandbox instead."
+
+      else -> " — path is outside AIOPE's sandbox ($sandbox); Android may deny access."
+    }
+  }
 
   private fun fetchDataCategories(): String {
     cachedDataCategories?.let { return it }
@@ -130,7 +165,8 @@ class ToolExecutor(
       val list = (0 until cats.length()).map { cats.getString(it) }.filter { it != "search_web" && it != "image_search" }.joinToString(", ")
       cachedDataCategories = list
       list
-    } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}")
+    } catch (e: Exception) {
+      android.util.Log.w("ToolExec", "op failed: ${e.message}")
       "air_quality, alerts, apod, asteroids, astronauts, cat, cat_breed, cat_breeds, cme, earth_events, earth_image, earthquakes, earthquakes_significant, epic, fires, geomagnetic, impact_risk, ip_location, iss, nasa_media, nasa_tech, ocean_temp, solar, solar_flares, sunrise_sunset, tides, time, uv, weather, weather_hourly"
     }
   }
@@ -138,30 +174,45 @@ class ToolExecutor(
   private val destructiveTools = setOf(
     "run_sh", "run_proot", "write_file", "send_sms", "delete_sms",
     "delete_event", "ssh_exec", "browser_eval", "browser_click", "browser_fill",
+    "edit_file", "schedule_task", "cancel_schedule",
   )
 
   suspend fun execute(name: String, args: Map<String, Any?>): String {
     if (!toolStore.isToolEnabled(name)) return "Tool '$name' is disabled."
     if (name in destructiveTools && getAgentMode() == AgentMode.CHAT) {
-      return "⚠️ Tool '$name' is destructive and blocked in Chat mode. The user must switch to Build mode or enable Auto-Run to allow this action."
+      return "⚠️ Tool '$name' is destructive and blocked in Chat mode. The user must switch to Build mode to allow this action."
     }
     return when (name) {
       "run_sh" -> {
         val timeout = ((args["timeout"] as? Number)?.toLong() ?: 300) * 1000
-        ngo.xnet.aiope.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+        ToolProgressBus.update("run_sh", message = args["command"]?.toString()?.take(60) ?: "")
+        val result = ngo.xnet.aiope.core.terminal.shell.ShellExecutor.exec(args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+        ToolProgressBus.clear()
+        result
       }
 
-      "run_proot" -> if (!ngo.xnet.aiope.core.terminal.shell.ProotBootstrap.isInstalled(app)) {
+      "run_proot" -> if (android.os.Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) {
+        "The proot/Alpine environment ships arm64-v8a native binaries only; this device is ${android.os.Build.SUPPORTED_ABIS.joinToString()}. Use run_sh instead."
+      } else if (!ngo.xnet.aiope.core.terminal.shell.ProotBootstrap.isInstalled(app)) {
         "Alpine not installed. Set up proot in Settings first."
       } else {
         val timeout = ((args["timeout"] as? Number)?.toLong() ?: 300) * 1000
-        ngo.xnet.aiope.core.terminal.shell.ProotExecutor.exec(app, args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+        ToolProgressBus.update("run_proot", message = args["command"]?.toString()?.take(60) ?: "")
+        val result = ngo.xnet.aiope.core.terminal.shell.ProotExecutor.exec(app, args["command"]?.toString() ?: "", timeoutMs = timeout).let { if (it.length > shellOutputLimit) it.take(shellOutputLimit) + "\n...(truncated)" else it }
+        ToolProgressBus.clear()
+        result
       }
 
       "read_file" -> try {
-        java.io.File(args["path"].toString()).readText().let { if (it.length > fileReadLimit) "File too large" else it }
+        val f = java.io.File(args["path"].toString())
+        when {
+          f.isDirectory -> "Error: '${f.path}' is a directory — use list_directory."
+          !f.exists() -> "Error: file not found: ${f.path}${storageHint(f)}"
+          !f.canRead() -> "Error: cannot read ${f.path}${storageHint(f)}"
+          else -> f.readText().let { if (it.length > fileReadLimit) "File too large" else it }
+        }
       } catch (e: Exception) {
-        "Error: ${e.message}"
+        "Error: ${e.message}${storageHint(java.io.File(args["path"].toString()))}"
       }
 
       "write_file" -> try {
@@ -170,13 +221,21 @@ class ToolExecutor(
         f.writeText(args["content"].toString())
         "OK: Written ${args["content"].toString().length} bytes to ${f.absolutePath}"
       } catch (e: Exception) {
-        "FAILED write_file: ${args["path"]} — ${e.message}"
+        "FAILED write_file: ${args["path"]} — ${e.message}${storageHint(java.io.File(args["path"].toString()))}"
       }
 
       "list_directory" -> try {
-        java.io.File(args["path"].toString()).listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" } ?: "Empty"
+        val d = java.io.File(args["path"].toString())
+        when {
+          !d.exists() -> "Error: path not found: ${d.path}${storageHint(d)}"
+
+          !d.isDirectory -> "Error: '${d.path}' is a file — use read_file."
+
+          else -> d.listFiles()?.joinToString("\n") { "${if (it.isDirectory) "d" else "-"} ${it.name}" }
+            ?: "Error: cannot list ${d.path}${storageHint(d)}"
+        }
       } catch (e: Exception) {
-        "Error: ${e.message}"
+        "Error: ${e.message}${storageHint(java.io.File(args["path"].toString()))}"
       }
 
       "open_intent" -> try {
@@ -188,6 +247,13 @@ class ToolExecutor(
       }
 
       "get_location" -> {
+        if (!PermissionHelper.hasPermission(app, android.Manifest.permission.ACCESS_FINE_LOCATION) &&
+          !PermissionHelper.hasPermission(app, android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        ) {
+          if (!PermissionHelper.ensurePermission(app, android.Manifest.permission.ACCESS_FINE_LOCATION)) {
+            return@execute "Location permission denied. Grant location access to AIOPE in Android Settings."
+          }
+        }
         val loc = locationProvider.getFreshLocation() ?: locationProvider.getLastLocation()
         if (loc != null) {
           lastLocationData = LocationData(loc.latitude, loc.longitude, if (loc.hasAltitude()) loc.altitude else null, if (loc.hasSpeed()) loc.speed.toDouble() else null, if (loc.hasBearing()) loc.bearing.toDouble() else null, loc.accuracy.toDouble())
@@ -212,7 +278,7 @@ class ToolExecutor(
 
       "browser_navigate" -> getBrowser().navigate(args["url"]?.toString() ?: "")
 
-      "browser_content" -> getBrowser().getPageContent()
+      "browser_content" -> getBrowser().getPageContent((args["offset"] as? Number)?.toInt() ?: 0, (args["limit"] as? Number)?.toInt())
 
       "browser_elements" -> getBrowser().getElements()
 
@@ -337,7 +403,7 @@ class ToolExecutor(
           }
           if (cal.timeInMillis <= System.currentTimeMillis()) cal.add(java.util.Calendar.DAY_OF_YEAR, 1)
           val am = app.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
-          val pi = android.app.PendingIntent.getBroadcast(app, h * 100 + m, android.content.Intent("ngo.xnet.aiope.ALARM"), android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+          val pi = android.app.PendingIntent.getBroadcast(app, h * 100 + m, android.content.Intent("ngo.xnet.aiope.ALARM").setPackage(app.packageName), android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
           am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
         }
         val h = (args["hour"] as? Number)?.toInt()
@@ -504,15 +570,19 @@ class ToolExecutor(
         "Error: ${e.message}"
       }
 
-
       "rag_search" -> {
         val query = args["query"]?.toString() ?: return "Error: query required"
         val topK = (args["top_k"] as? Number)?.toInt() ?: 5
         try {
           val results = getRagEngine().search(query, topK)
-          if (results.isEmpty()) "No results found in knowledge base."
-          else results.joinToString("\n\n") { "[${String.format("%.2f", it.score)}] ${it.title}\n${it.text}" }
-        } catch (e: Exception) { "RAG error: ${e.message}" }
+          if (results.isEmpty()) {
+            "No results found in knowledge base."
+          } else {
+            results.joinToString("\n\n") { "[${String.format("%.2f", it.score)}] ${it.title}\n${it.text}" }
+          }
+        } catch (e: Exception) {
+          "RAG error: ${e.message}"
+        }
       }
 
       "rag_index" -> {
@@ -521,7 +591,9 @@ class ToolExecutor(
         try {
           val docId = getRagEngine().indexDocument(title, content)
           "Indexed document '$title' (id: $docId)"
-        } catch (e: Exception) { "RAG index error: ${e.message}" }
+        } catch (e: Exception) {
+          "RAG index error: ${e.message}"
+        }
       }
 
       "orchestrate" -> {
@@ -536,7 +608,117 @@ class ToolExecutor(
 
       "ssh_start", "ssh_exec", "ssh_exit" -> {
         val rtp = remoteToolBridge ?: return@execute "Remote tools not available. feature-remote not initialized."
-         rtp.execute(name, args)
+        if (name == "ssh_exec") ToolProgressBus.update("ssh_exec", message = args["command"]?.toString()?.take(60) ?: "")
+        val result = rtp.execute(name, args)
+        if (name == "ssh_exec") ToolProgressBus.clear()
+        result
+      }
+
+      "todo_write" -> executeTodoWrite(args)
+
+      "todo_read" -> formatTodos(loadTodos())
+
+      "datetime_now" -> {
+        val now = java.time.ZonedDateTime.now()
+        "Now: ${now.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss"))}\nTimezone: ${now.zone.id} (${now.offset})\nDay of week: ${now.dayOfWeek}\nEpoch ms: ${System.currentTimeMillis()}"
+      }
+
+      "edit_file" -> try {
+        val path = args["path"]?.toString() ?: return@execute "Error: path required"
+        val oldStr = args["old_string"]?.toString() ?: return@execute "Error: old_string required"
+        val newStr = args["new_string"]?.toString() ?: ""
+        if (oldStr.isEmpty()) return@execute "Error: old_string cannot be empty"
+        val replaceAll = args["replace_all"] as? Boolean ?: false
+        val f = java.io.File(path)
+        if (!f.isFile) return@execute "Error: file not found: $path${storageHint(f)}"
+        if (!f.canWrite()) return@execute "Error: cannot write $path${storageHint(f)}"
+        val text = f.readText()
+        val count = text.split(oldStr).size - 1
+        if (count == 0) return@execute "Error: old_string not found in $path. read_file first and copy the exact text including whitespace."
+        if (count > 1 && !replaceAll) return@execute "Error: old_string matches $count times in $path. Include more surrounding context to make it unique, or pass replace_all=true."
+        val updated = if (replaceAll) text.replace(oldStr, newStr) else text.replaceFirst(oldStr, newStr)
+        f.writeText(updated)
+        "OK: Replaced $count occurrence(s) in $path (${updated.length} bytes written)"
+      } catch (e: Exception) {
+        "FAILED edit_file: ${args["path"]} — ${e.message}"
+      }
+
+      "search_files" -> try {
+        executeSearchFiles(args)
+      } catch (e: Exception) {
+        "Error: ${e.message}"
+      }
+
+      "http_request" -> executeHttpRequest(args)
+
+      "schedule_task" -> {
+        val prompt = args["prompt"]?.toString() ?: return@execute "Error: prompt required"
+        val type = (args["schedule_type"]?.toString() ?: "interval").lowercase()
+        if (type !in setOf("once", "interval", "daily", "weekly", "monthly")) {
+          return@execute "Error: invalid schedule_type '$type'. Use once, interval, daily, weekly, or monthly."
+        }
+        val unit = when ((args["interval_unit"]?.toString() ?: "min").lowercase()) {
+          "hour" -> "hour"
+          "day" -> "day"
+          else -> "min"
+        }
+        // Keep in sync with workerToolCatalog in AgentRunWorker.kt (file-private there).
+        val allowedTools = setOf(
+          "search_web", "fetch_url", "http_request", "run_sh", "ssh_exec", "send_notification",
+          "set_alarm", "memory_store", "memory_recall", "read_file", "write_file", "list_directory", "datetime_now",
+        )
+        val tools = (args["tools"]?.toString() ?: "").split(",").map { it.trim() }.filter { it in allowedTools }.joinToString(",")
+        val task = ngo.xnet.aiope.feature.chat.db.ScheduledTaskEntity(
+          prompt = prompt,
+          tools = tools,
+          scheduleType = type,
+          intervalValue = (args["interval_value"] as? Number)?.toInt() ?: 30,
+          intervalUnit = unit,
+          timeHour = (args["time_hour"] as? Number)?.toInt() ?: 0,
+          timeMinute = (args["time_minute"] as? Number)?.toInt() ?: 0,
+          daysOfWeek = args["days_of_week"]?.toString() ?: "",
+          dayOfMonth = (args["day_of_month"] as? Number)?.toInt() ?: 1,
+          maxRuns = (args["max_runs"] as? Number)?.toInt() ?: 0,
+        )
+        try {
+          val armed = AgentScheduler.schedule(app, task)
+          chatDao.insertScheduledTask(armed)
+          val exactNote = if (!AgentScheduler.canScheduleExact(app)) {
+            "\nNote: exact alarms are not permitted on this device, so runs use inexact timing and may be delayed by Doze. Enable \"Alarms & reminders\" for AIOPE in Android Settings for precise timing."
+          } else {
+            ""
+          }
+          if (!armed.enabled) {
+            "Error: schedule produced no next run. Check max_runs and schedule parameters."
+          } else {
+            "Scheduled task created.\nID: ${armed.id}\nPrompt: ${prompt.take(120)}\nSchedule: ${AgentScheduler.describe(armed)}\nNext run: ${AgentScheduler.formatTime(armed.nextRun)}\nTools: ${tools.ifBlank { "(none - reasoning only)" }}\nRuns report via notification.$exactNote"
+          }
+        } catch (e: Exception) {
+          "Error: ${e.message}"
+        }
+      }
+
+      "cancel_schedule" -> {
+        val id = args["task_id"]?.toString() ?: return@execute "Error: task_id required"
+        val task = chatDao.getScheduledTaskById(id)
+        if (task == null) {
+          "No scheduled task with id: $id. Use list_schedules to see ids."
+        } else {
+          AgentScheduler.cancel(app, id)
+          chatDao.deleteScheduledTask(id)
+          "Cancelled scheduled task '$id': ${task.prompt.take(80)}"
+        }
+      }
+
+      "list_schedules" -> {
+        val tasks = chatDao.getScheduledTasks()
+        if (tasks.isEmpty()) {
+          "No scheduled agent tasks."
+        } else {
+          tasks.joinToString("\n\n") { t ->
+            "- [${t.id}] \"${t.prompt.take(80)}\"\n  Schedule: ${AgentScheduler.describe(t)} | status: ${t.status} | ${if (t.enabled) "enabled" else "disabled"}\n  Next: ${AgentScheduler.formatTime(t.nextRun)} | Last: ${AgentScheduler.formatTime(t.lastRun)} | Runs: ${t.runsCompleted}${if (t.maxRuns > 0) "/${t.maxRuns}" else ""}${if (t.tools.isNotBlank()) "\n  Tools: ${t.tools}" else ""}"
+          }
+        }
       }
 
       else -> mcpManager.executeTool(name, args) ?: "Unknown tool: $name"
@@ -545,6 +727,7 @@ class ToolExecutor(
 
   private fun executeFetchUrl(args: Map<String, Any?>): String = try {
     val fetchUrl = java.net.URL(args["url"].toString())
+    ToolProgressBus.update("fetch_url", message = fetchUrl.host)
     val mode = args["mode"]?.toString() ?: "text"
     val req = okhttp3.Request.Builder().url(fetchUrl)
       .header("User-Agent", "Mozilla/5.0 (Linux; Android) AIOPE/2.0").build()
@@ -576,10 +759,21 @@ class ToolExecutor(
       val text = android.text.Html.fromHtml(cleaned, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim()
       (if (imgs.isNotEmpty()) imgs.distinct().take(20).joinToString("\n") + "\n\n" else "") + text
     }
-    if (result.length > fetchLimit) result.take(fetchLimit) + "\n...(truncated)" else result
+    val offset = (args["offset"] as? Number)?.toInt() ?: 0
+    val limit = (args["limit"] as? Number)?.toInt()
+
+    val safeOffset = offset.coerceIn(0, result.length)
+    val actualLimit = limit ?: result.length
+    val end = (safeOffset + actualLimit).coerceAtMost(result.length)
+
+    var trimmed = result.substring(safeOffset, end)
+    if (end < result.length) {
+      trimmed += "\n...(truncated. Use offset=$end to read more)"
+    }
+    "Content Length: ${result.length}\nShowing: $safeOffset to $end\n\n$trimmed"
   } catch (e: Exception) {
     "Error: ${e.message}"
-  }
+  }.also { ToolProgressBus.clear() }
 
   private suspend fun searxQuery(query: String, categories: String = ""): String {
     if (query.isBlank()) return "Error: query required"
@@ -592,7 +786,9 @@ class ToolExecutor(
       .build()
     val body = try {
       httpClient.newCall(req).execute().use { if (it.isSuccessful) it.body?.string() ?: "" else "" }
-    } catch (_: Exception) { "" }
+    } catch (_: Exception) {
+      ""
+    }
     if (body.isBlank()) return ddgFallback(query, categories)
     val json = org.json.JSONObject(body)
     val results = json.optJSONArray("results") ?: return ddgFallback(query, categories)
@@ -617,7 +813,9 @@ class ToolExecutor(
       .build()
     val html = try {
       httpClient.newCall(req).execute().use { it.body?.string() ?: "" }
-    } catch (_: Exception) { return "Error: search unavailable" }
+    } catch (_: Exception) {
+      return "Error: search unavailable"
+    }
     val pattern = Regex("""<a rel="nofollow" class="result__a" href="[^"]*uddg=([^&"]+)[^"]*">(.+?)</a>""")
     val snippetPattern = Regex("""<a class="result__snippet"[^>]*>(.+?)</a>""")
     val links = pattern.findAll(html).take(10).toList()
@@ -635,19 +833,23 @@ class ToolExecutor(
 
   private suspend fun executeSearchWeb(query: String): String = try {
     searxQuery(query)
-  } catch (e: Exception) { "Error: ${e.message}" }
+  } catch (e: Exception) {
+    "Error: ${e.message}"
+  }
 
   private suspend fun executeSearchImages(query: String): String = try {
     searxQuery(query, "images")
-  } catch (e: Exception) { "Error: ${e.message}" }
+  } catch (e: Exception) {
+    "Error: ${e.message}"
+  }
 
   private suspend fun executeQueryData(args: Map<String, Any?>): String = try {
     val cat = args["category"]?.toString() ?: ""
     val extra = args["extra"]?.toString() ?: ""
     val needsLoc = cat in setOf("weather", "weather_hourly", "alerts", "air_quality", "uv", "solar", "sunrise_sunset", "time")
     val (lat, lon) = if (needsLoc) {
-      val loc = lastLocationData ?:
-        locationProvider.getLastLocation()?.let { l ->
+      val loc = lastLocationData
+        ?: locationProvider.getLastLocation()?.let { l ->
           lastLocationData = LocationData(l.latitude, l.longitude, null, null, null, l.accuracy.toDouble())
           lastLocationData
         }
@@ -674,13 +876,23 @@ class ToolExecutor(
       val (profile, modelId) = resolveTaskModel(ModelTask.IMAGE_GENERATION)
       val p = profile.copy(selectedModelId = modelId)
       val base = p.effectiveApiBase().trimEnd('/')
-      val jsonBody = org.json.JSONObject().apply {
-        put("model", modelId)
-        put("prompt", prompt)
-        put("response_format", "b64_json")
-        put("seed", System.currentTimeMillis())
-      }.toString()
-      val req = okhttp3.Request.Builder().url("$base/images/generations")
+
+      // Cloudflare uses /ai/run/{model} instead of /images/generations
+      val (url, jsonBody) = if (base.contains("api.cloudflare.com") && base.contains("/ai/")) {
+        val cfBase = base.replace(Regex("/ai/v1$"), "/ai").replace(Regex("/v1$"), "")
+        "$cfBase/run/$modelId" to org.json.JSONObject().apply {
+          put("prompt", prompt)
+        }.toString()
+      } else {
+        "$base/images/generations" to org.json.JSONObject().apply {
+          put("model", modelId)
+          put("prompt", prompt)
+          put("response_format", "b64_json")
+          put("seed", System.currentTimeMillis())
+        }.toString()
+      }
+
+      val req = okhttp3.Request.Builder().url(url)
         .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), jsonBody))
         .apply { if (p.apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${p.apiKey}") }.build()
       val imgClient = httpClient.newBuilder().readTimeout(300, java.util.concurrent.TimeUnit.SECONDS).build()
@@ -785,7 +997,8 @@ class ToolExecutor(
       } else {
         searchPlaces(query)
       }
-    } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}")
+    } catch (e: Exception) {
+      android.util.Log.w("ToolExec", "op failed: ${e.message}")
       try {
         searchPlaces(query)
       } catch (e: Exception) {
@@ -821,7 +1034,9 @@ class ToolExecutor(
         val body = json.optJSONObject("data")?.toString() ?: raw
         if (body.contains("features")) return parseGeoapifyResults(body, query)
       }
-    } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}") }
+    } catch (e: Exception) {
+      android.util.Log.w("ToolExec", "op failed: ${e.message}")
+    }
     val apiKey = providerStore.getGeoapifyKey()
     if (apiKey.isBlank()) return "Place search unavailable. Configure location search on the gateway or set a Geoapify key in Settings."
     val conn = httpClient.newCall(okhttp3.Request.Builder().url("https://api.geoapify.com/v2/places?categories=commercial,catering,service,entertainment,leisure,sport,tourism,accommodation,education,healthcare&conditions=named&filter=circle:$lng,$lat,5000&bias=proximity:$lng,$lat&limit=5&name=$encoded&apiKey=$apiKey").build()).execute()
@@ -866,7 +1081,8 @@ class ToolExecutor(
     val imgs = mutableListOf<String>()
     extractImageUrls(org.json.JSONTokener(json).nextValue(), imgs)
     if (imgs.isNotEmpty()) imgs.distinct().take(20).joinToString("\n") + "\n\n" + json else json
-  } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}")
+  } catch (e: Exception) {
+    android.util.Log.w("ToolExec", "op failed: ${e.message}")
     json
   }
 
@@ -887,7 +1103,8 @@ class ToolExecutor(
   private fun parseTime(s: String): Long = try {
     val fmts = listOf("yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm", "MM/dd/yyyy HH:mm", "MMM d yyyy h:mm a", "h:mm a")
     fmts.firstNotNullOfOrNull { fmt -> runCatching { java.text.SimpleDateFormat(fmt, java.util.Locale.US).parse(s)?.time }.getOrNull() } ?: s.toLong()
-  } catch (e: Exception) { android.util.Log.w("ToolExec", "op failed: ${e.message}")
+  } catch (e: Exception) {
+    android.util.Log.w("ToolExec", "op failed: ${e.message}")
     System.currentTimeMillis() + 3600000
   }
 
@@ -897,5 +1114,169 @@ class ToolExecutor(
     val dLon = Math.toRadians(lon2 - lon1)
     val a = Math.sin(dLat / 2).let { it * it } + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.sin(dLon / 2).let { it * it }
     return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  }
+
+  // ---- Agent todo list (todo_write / todo_read) ----
+  // Uses its own prefs file: ToolStore wipes "aiope_tools" during migration.
+
+  private val todoPrefs by lazy { app.getSharedPreferences("aiope_agent_state", android.content.Context.MODE_PRIVATE) }
+
+  private fun loadTodos(): org.json.JSONArray = try {
+    org.json.JSONArray(todoPrefs.getString("cuo_todos", "[]"))
+  } catch (_: Exception) {
+    org.json.JSONArray()
+  }
+
+  private fun executeTodoWrite(args: Map<String, Any?>): String = try {
+    val incoming = when (val raw = args["todos"]) {
+      is org.json.JSONArray -> raw
+      is String -> org.json.JSONArray(raw)
+      else -> return "Error: 'todos' array required"
+    }
+    if (incoming.length() == 0 && args["merge"] != true) {
+      todoPrefs.edit().remove("cuo_todos").apply()
+      return "OK: Todo list cleared."
+    }
+    val validStatuses = setOf("pending", "in_progress", "completed", "cancelled")
+    fun normalized(src: org.json.JSONObject): org.json.JSONObject {
+      val status = src.optString("status", "pending").lowercase()
+      return org.json.JSONObject()
+        .put("id", src.optString("id"))
+        .put("content", src.optString("content"))
+        .put("status", if (status in validStatuses) status else "pending")
+    }
+    val out = org.json.JSONArray()
+    if (args["merge"] == true) {
+      val unmatched = (0 until incoming.length()).map { incoming.getJSONObject(it) }.toMutableList()
+      val existing = loadTodos()
+      for (i in 0 until existing.length()) {
+        val e = existing.getJSONObject(i)
+        val match = unmatched.firstOrNull { it.optString("id") == e.optString("id") }
+        if (match != null) {
+          out.put(normalized(match))
+          unmatched.remove(match)
+        } else {
+          out.put(e)
+        }
+      }
+      unmatched.forEach { out.put(normalized(it)) }
+    } else {
+      for (i in 0 until incoming.length()) out.put(normalized(incoming.getJSONObject(i)))
+    }
+    todoPrefs.edit().putString("cuo_todos", out.toString()).apply()
+    "OK: Todo list saved (${out.length()} item(s))."
+  } catch (e: Exception) {
+    "Error: ${e.message}"
+  }
+
+  private fun formatTodos(arr: org.json.JSONArray): String {
+    if (arr.length() == 0) return "No todos. Use todo_write to plan multi-step work."
+    val order = listOf("pending", "in_progress", "completed", "cancelled")
+    val grouped = mutableMapOf<String, MutableList<String>>()
+    order.forEach { grouped[it] = mutableListOf() }
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      grouped.getOrPut(o.optString("status", "pending")) { mutableListOf() }.add("[${o.optString("id")}] ${o.optString("content")}")
+    }
+    val body = order.filter { grouped[it]!!.isNotEmpty() }.joinToString("\n") { st -> "$st:\n" + grouped[st]!!.joinToString("\n") { "  - $it" } }
+    val done = grouped["completed"]!!.size
+    val cancelled = grouped["cancelled"]!!.size
+    val open = arr.length() - done - cancelled
+    return "$body\n\n${arr.length()} total | $open open | $done completed | $cancelled cancelled"
+  }
+
+  // ---- File tree search (search_files) ----
+
+  private fun executeSearchFiles(args: Map<String, Any?>): String {
+    val rootPath = args["path"]?.toString() ?: return "Error: path required"
+    val pattern = args["pattern"]?.toString() ?: return "Error: pattern required"
+    val target = (args["target"]?.toString() ?: "content").lowercase()
+    if (target !in setOf("content", "files")) return "Error: target must be 'content' or 'files'"
+    val limit = ((args["limit"] as? Number)?.toInt() ?: 50).coerceIn(1, 500)
+    val skipDirs = setOf(".git", "node_modules", "build")
+    val regex = try {
+      Regex(pattern, RegexOption.IGNORE_CASE)
+    } catch (e: Exception) {
+      return "Error: invalid regex '$pattern': ${e.message}"
+    }
+    val globRegex = args["glob"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { g ->
+      try {
+        Regex("^" + g.replace("**/", "\u0001").replace(".", "\\.").replace("*", "[^/]*").replace("\u0001", "(?:.*/)?") + "$")
+      } catch (_: Exception) {
+        null
+      }
+    }
+    val root = java.io.File(rootPath)
+    if (!root.exists()) return "Error: path not found: $rootPath${storageHint(root)}"
+    if (!root.isDirectory) return "Error: '$rootPath' is a file, not a directory."
+    if (!root.canRead()) return "Error: cannot read $rootPath${storageHint(root)}"
+    val matches = mutableListOf<String>()
+    val walker = root.walkTopDown().maxDepth(10).onEnter { it.name !in skipDirs }.filter { it.isFile }.iterator()
+    while (matches.size < limit && walker.hasNext()) {
+      val file = walker.next()
+      val rel = file.absolutePath.removePrefix(root.absolutePath).trimStart('/')
+      if (globRegex != null && !globRegex.matches(rel) && !globRegex.matches(file.name)) continue
+      if (target == "files") {
+        if (regex.containsMatchIn(file.name)) matches.add(rel)
+      } else {
+        if (file.length() > 1_000_000) continue
+        try {
+          file.useLines { lines ->
+            lines.forEachIndexed { idx, line ->
+              if (matches.size >= limit) return@useLines
+              if (regex.containsMatchIn(line)) matches.add("$rel:${idx + 1}: ${line.trim().take(200)}")
+            }
+          }
+        } catch (_: Exception) {
+          // Binary or unreadable file — skip.
+        }
+      }
+    }
+    val what = if (target == "files") "file(s) named" else "match(es) for"
+    return if (matches.isEmpty()) {
+      "No $what '$pattern' under $rootPath"
+    } else {
+      "Found ${matches.size} $what '$pattern' under $rootPath:\n${matches.joinToString("\n")}"
+    }
+  }
+
+  // ---- Generic HTTP client (http_request) ----
+
+  private suspend fun executeHttpRequest(args: Map<String, Any?>): String = try {
+    val url = args["url"]?.toString() ?: return "Error: url required"
+    val method = (args["method"]?.toString() ?: "GET").uppercase()
+    if (method !in setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")) return "Error: unsupported method: $method"
+    val timeoutSec = ((args["timeout_seconds"] as? Number)?.toLong() ?: 30L).coerceIn(1L, 300L)
+    val headerMap = mutableMapOf<String, String>()
+    when (val h = args["headers"]) {
+      is org.json.JSONObject -> h.keys().forEach { k -> headerMap[k] = h.optString(k) }
+      is Map<*, *> -> h.forEach { (k, v) -> headerMap[k.toString()] = v.toString() }
+    }
+    val bodyText = args["body"]?.toString() ?: ""
+    val client = httpClient.newBuilder().callTimeout(timeoutSec, java.util.concurrent.TimeUnit.SECONDS).build()
+    val contentType = headerMap.entries.firstOrNull { it.key.equals("Content-Type", true) }?.value ?: "text/plain"
+    val builder = okhttp3.Request.Builder().url(url)
+    if (method != "GET" && method != "HEAD") {
+      val reqBody = okhttp3.RequestBody.create(contentType.toMediaTypeOrNull(), bodyText)
+      when (method) {
+        "POST" -> builder.post(reqBody)
+        "PUT" -> builder.put(reqBody)
+        "PATCH" -> builder.patch(reqBody)
+        "DELETE" -> if (bodyText.isEmpty()) builder.delete() else builder.delete(reqBody)
+      }
+    }
+    headerMap.forEach { (k, v) -> builder.header(k, v) }
+    ToolProgressBus.update("http_request", message = "$method $url".take(60))
+    val resp = client.newCall(builder.build()).execute()
+    resp.use { r ->
+      val bodyStr = r.body?.string() ?: ""
+      val selHeaders = listOf("Content-Type", "Content-Length", "Location", "Cache-Control", "Set-Cookie").mapNotNull { h -> r.header(h)?.let { "$h: ${it.take(200)}" } }.joinToString("\n")
+      val trunc = bodyStr.take(20480)
+      val note = if (bodyStr.length > 20480) "\n...(truncated, ${bodyStr.length} bytes total)" else ""
+      "HTTP ${r.code} ${r.message}\n$selHeaders\n\n$trunc$note"
+    }.also { ToolProgressBus.clear() }
+  } catch (e: Exception) {
+    ToolProgressBus.clear()
+    "Error: ${e.message}"
   }
 }

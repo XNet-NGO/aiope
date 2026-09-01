@@ -49,6 +49,15 @@ jobs:
           keyPassword=${{ secrets.KEY_PASSWORD }}
           EOF
 
+      - name: Tune Gradle JVM for runner (prevent OOM)
+        run: |
+          mkdir -p "$HOME/.gradle"
+          cat > "$HOME/.gradle/gradle.properties" <<'EOF'
+          org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -XX:+UseParallelGC
+          kotlin.daemon.jvmargs=-Xmx1g -XX:MaxMetaspaceSize=512m
+          org.gradle.workers.max=2
+          EOF
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 

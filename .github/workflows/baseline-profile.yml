@@ -30,6 +30,9 @@ jobs:
 
     # Operating system where the job gets to be executed
     runs-on: macos-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     # Job steps
     steps:

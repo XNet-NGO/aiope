@@ -214,7 +214,7 @@ public final class TerminalRow {
       // Shift the rest of the line left.
       System.arraycopy(text, oldNextColumnIndex, text, newNextColumnIndex, mSpaceUsed - oldNextColumnIndex);
     }
-    mSpaceUsed += javaCharDifference;
+    mSpaceUsed = (short) (mSpaceUsed + javaCharDifference);
 
     // Store char. A combining character is stored at the end of the existing contents so that it modifies them:
     //noinspection ResultOfMethodCallIgnored - since we already now how many java chars is used.

@@ -54,8 +54,7 @@ class McpManager(private val toolStore: ToolStore) {
     }
   }
 
-  private fun sanitizePrefix(name: String): String =
-    name.lowercase().replace(Regex("[^a-z0-9]"), "_").take(16).trimEnd('_')
+  private fun sanitizePrefix(name: String): String = name.lowercase().replace(Regex("[^a-z0-9]"), "_").take(16).trimEnd('_')
 
   fun getCachedTools(serverId: String): List<McpToolMeta> = toolCache[serverId] ?: emptyList()
 
@@ -114,7 +113,26 @@ class McpManager(private val toolStore: ToolStore) {
     sendNotification(server, "notifications/initialized")
   }
 
-  private fun sendRequest(server: McpServerConfig, method: String, params: JSONObject? = null): JSONObject {
+  private fun sendRequest(serverIn: McpServerConfig, method: String, params: JSONObject? = null): JSONObject {
+    // Auto-refresh OAuth2 token if expired
+    val server = if (serverIn.authType == McpAuthType.OAUTH2 && serverIn.isTokenExpired() && serverIn.oauthRefreshToken.isNotBlank()) {
+      try {
+        val result = McpOAuth2.fetchToken(
+          tokenUrl = serverIn.oauthTokenUrl,
+          clientId = serverIn.oauthClientId,
+          clientSecret = serverIn.oauthClientSecret,
+          scopes = serverIn.oauthScopes,
+          refreshToken = serverIn.oauthRefreshToken,
+        )
+        val refreshed = serverIn.copy(oauthAccessToken = result.accessToken, oauthRefreshToken = result.refreshToken, oauthTokenExpiry = result.expiresAt)
+        toolStore.updateMcpServer(refreshed)
+        refreshed
+      } catch (_: Exception) {
+        serverIn
+      }
+    } else {
+      serverIn
+    }
     val body = JSONObject().apply {
       put("jsonrpc", "2.0")
       put("id", ++reqId)
@@ -127,7 +145,7 @@ class McpManager(private val toolStore: ToolStore) {
       setRequestProperty("Content-Type", "application/json")
       setRequestProperty("Accept", if (server.transport == McpTransport.SSE) "text/event-stream" else "application/json, text/event-stream")
       sessions[server.id]?.let { setRequestProperty("Mcp-Session-Id", it) }
-      server.headers.forEach { (k, v) -> setRequestProperty(k, v) }
+      server.effectiveHeaders().forEach { (k, v) -> setRequestProperty(k, v) }
       connectTimeout = 10_000
       readTimeout = 60_000
     }
@@ -167,7 +185,7 @@ class McpManager(private val toolStore: ToolStore) {
         doOutput = true
         setRequestProperty("Content-Type", "application/json")
         sessions[server.id]?.let { setRequestProperty("Mcp-Session-Id", it) }
-        server.headers.forEach { (k, v) -> setRequestProperty(k, v) }
+        server.effectiveHeaders().forEach { (k, v) -> setRequestProperty(k, v) }
         connectTimeout = 5_000
         readTimeout = 5_000
       }
