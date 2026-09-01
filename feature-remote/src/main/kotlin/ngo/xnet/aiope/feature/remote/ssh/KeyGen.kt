@@ -22,6 +22,7 @@ object KeyGen {
 
   private fun generateEd25519(): Pair<String, String> {
     val kpg = KeyPairGenerator.getInstance("Ed25519")
+    kpg.initialize(255, java.security.SecureRandom())
     val kp = kpg.generateKeyPair()
     val privPem = encodePkcs8Pem(kp.private.encoded)
     val pub = kp.public as EdECPublicKey
@@ -31,7 +32,7 @@ object KeyGen {
 
   private fun generateRsa(): Pair<String, String> {
     val kpg = KeyPairGenerator.getInstance("RSA")
-    kpg.initialize(4096)
+    kpg.initialize(4096, java.security.SecureRandom())
     val kp = kpg.generateKeyPair()
     val privPem = encodePkcs8Pem(kp.private.encoded)
     val pub = kp.public as RSAPublicKey
