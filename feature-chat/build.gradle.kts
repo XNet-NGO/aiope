@@ -29,6 +29,7 @@ dependencies {
   implementation(project(":core-model"))
   implementation(project(":core-terminal"))
   implementation(project(":core-inference"))
+  implementation(project(":core-auth"))
 
   implementation(libs.androidx.lifecycle.runtimeCompose)
   implementation(libs.androidx.lifecycle.viewModelCompose)

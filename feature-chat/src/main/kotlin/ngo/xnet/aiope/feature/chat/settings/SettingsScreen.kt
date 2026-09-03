@@ -31,7 +31,7 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: 
       when (screen) {
         "list" -> ProfileList(
           providerStore, chatDao,
-          onAgent = { screen = "agent" }, onTasks = { screen = "tasks" }, onTools = { screen = "tools" }, onMcp = { screen = "mcp" }, onServers = { screen = "servers" }, onVoice = { screen = "voice" }, onTheme = { screen = "theme" }, onProviders = { screen = "providers" }, onRag = { screen = "rag" }, onBack = onBack,
+          onAgent = { screen = "agent" }, onTasks = { screen = "tasks" }, onTools = { screen = "tools" }, onMcp = { screen = "mcp" }, onServers = { screen = "servers" }, onVoice = { screen = "voice" }, onTheme = { screen = "theme" }, onProviders = { screen = "providers" }, onRag = { screen = "rag" }, onSecurity = { screen = "security" }, onBack = onBack,
         )
 
         "voice" -> VoiceSettingsScreen(onBack = { screen = "list" })
@@ -45,6 +45,8 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: 
         "rag" -> RagScreen(onBack = { screen = "list" })
 
         "mcp" -> McpServerScreen(toolStore, onBack = { screen = "list" })
+
+        "security" -> SecuritySettingsScreen(onBack = { screen = "list" })
 
         "servers" -> serversContent?.invoke { screen = "list" }
 

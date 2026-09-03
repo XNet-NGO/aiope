@@ -44,6 +44,7 @@ internal fun ProfileList(
   onTheme: () -> Unit = {},
   onProviders: () -> Unit = {},
   onRag: () -> Unit = {},
+  onSecurity: () -> Unit = {},
   onBack: () -> Unit,
 ) {
   val theme = ngo.xnet.aiope.feature.chat.theme.LocalThemeState.current
@@ -79,6 +80,12 @@ internal fun ProfileList(
           headlineContent = { Text("MCP Servers") },
           supportingContent = { Text("Add remote tool servers via Model Context Protocol", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
           modifier = Modifier.clickable { onMcp() },
+        )
+        HorizontalDivider()
+        ListItem(
+          headlineContent = { Text("Security") },
+          supportingContent = { Text("Optional sign-in factors: biometric, security key, TOTP", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+          modifier = Modifier.clickable { onSecurity() },
         )
         HorizontalDivider()
         ListItem(

@@ -8,11 +8,11 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import dagger.hilt.android.AndroidEntryPoint
 import ngo.xnet.aiope.core.navigation.AppComposeNavigator
 import ngo.xnet.aiope.feature.chat.settings.ProviderStore
@@ -21,7 +21,7 @@ import ngo.xnet.aiope.ui.AiopeMain
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
   @Inject lateinit var composeNavigator: AppComposeNavigator
 

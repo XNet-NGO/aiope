@@ -27,11 +27,13 @@ fun AiopeMain(composeNavigator: AppComposeNavigator, providerStore: ProviderStor
       if (showSplash) {
         SplashScreen { showSplash = false }
       } else {
-        val navHostController = rememberNavController()
-        LaunchedEffect(Unit) {
-          composeNavigator.handleNavigationCommands(navHostController)
+        ngo.xnet.aiope.feature.chat.settings.AuthGate {
+          val navHostController = rememberNavController()
+          LaunchedEffect(Unit) {
+            composeNavigator.handleNavigationCommands(navHostController)
+          }
+          AiopeNavHost(navHostController = navHostController, composeNavigator = composeNavigator, providerStore = providerStore, toolStore = toolStore, chatDao = chatDao)
         }
-        AiopeNavHost(navHostController = navHostController, composeNavigator = composeNavigator, providerStore = providerStore, toolStore = toolStore, chatDao = chatDao)
       }
     }
   }
