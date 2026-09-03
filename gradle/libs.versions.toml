@@ -2,6 +2,7 @@
 androidGradlePlugin = "9.3.2"
 androidxActivity = "1.13.0"
 androidxAppCompat = "1.8.0"
+androidxBiometric = "1.1.0"
 androidxComposeBom = "2026.08.00"
 androidxComposeConstraintLayout = "1.1.2"
 androidxComposeNavigation = "2.9.7"
@@ -22,6 +23,7 @@ okhttp = "5.5.0"
 jtokkit = "1.1.0"
 spotless = "8.10.0"
 pdfboxAndroid = "2.0.27.0"
+yubikit = "3.2.0"
 
 [libraries]
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "androidxComposeBom" }
@@ -57,6 +59,12 @@ okhttp-sse = { group = "com.squareup.okhttp3", name = "okhttp-sse", version.ref 
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 jtokkit = { group = "com.knuddels", name = "jtokkit", version.ref = "jtokkit" }
 pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfboxAndroid" }
+
+# Optional, opt-in auth factors (no Google Play Services)
+androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "androidxBiometric" }
+yubikit-android = { group = "com.yubico.yubikit", name = "android", version.ref = "yubikit" }
+yubikit-fido = { group = "com.yubico.yubikit", name = "fido", version.ref = "yubikit" }
+yubikit-oath = { group = "com.yubico.yubikit", name = "oath", version.ref = "yubikit" }
 
 # markdown
 
