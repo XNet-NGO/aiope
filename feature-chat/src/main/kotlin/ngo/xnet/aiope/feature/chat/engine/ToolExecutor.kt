@@ -58,9 +58,8 @@ class ToolExecutor(
     return ragEngine!!
   }
 
-  fun buildToolDefs() = listOf(
-    td("run_sh", "Execute Android shell command. Set timeout appropriately: 10-30s for simple commands (ls, cat, echo), 60-120s for network operations, 300-600s for builds/installs.", """{"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute"},"timeout":{"type":"integer","description":"Timeout in seconds. Default 300. Use 10-30 for quick commands, 300-600 for builds."}},"required":["command"]}"""),
-    td("run_proot", "Execute a command in the Alpine Linux proot environment. Use for apk, python, gcc, etc. Set timeout appropriately for the command.", """{"type":"object","properties":{"command":{"type":"string","description":"Command to execute in Alpine"},"timeout":{"type":"integer","description":"Timeout in seconds. Default 300. Use 60 for apk, 600 for builds."}},"required":["command"]}"""),
+  fun buildToolDefs() = if (getAgentMode().disablesAllTools) emptyList() else listOf(
+    td("run_sh", "Execute Android shell command. Set timeout appropriately: 10-30s for simple commands (ls, cat, echo), 60-120s for network operations, 300-600s for builds/installs.", """{"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute"},"timeout":{"type":"integer","description":"Timeout in seconds. Default 300. Use 10-30 for quick commands, 300-600 for builds."}},"required":["command"]}"""),    td("run_proot", "Execute a command in the Alpine Linux proot environment. Use for apk, python, gcc, etc. Set timeout appropriately for the command.", """{"type":"object","properties":{"command":{"type":"string","description":"Command to execute in Alpine"},"timeout":{"type":"integer","description":"Timeout in seconds. Default 300. Use 60 for apk, 600 for builds."}},"required":["command"]}"""),
     td("read_file", "Read file contents", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
     td("write_file", "Write file", """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}"""),
     td("list_directory", "List directory", """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""),
@@ -874,49 +873,34 @@ class ToolExecutor(
     val prompt = args["prompt"]?.toString() ?: return "Error: prompt required"
     return try {
       val (profile, modelId) = resolveTaskModel(ModelTask.IMAGE_GENERATION)
-      val p = profile.copy(selectedModelId = modelId)
-      val base = p.effectiveApiBase().trimEnd('/')
-
-      // Cloudflare uses /ai/run/{model} instead of /images/generations
-      val (url, jsonBody) = if (base.contains("api.cloudflare.com") && base.contains("/ai/")) {
-        val cfBase = base.replace(Regex("/ai/v1$"), "/ai").replace(Regex("/v1$"), "")
-        "$cfBase/run/$modelId" to org.json.JSONObject().apply {
-          put("prompt", prompt)
-        }.toString()
-      } else {
-        "$base/images/generations" to org.json.JSONObject().apply {
-          put("model", modelId)
-          put("prompt", prompt)
-          put("response_format", "b64_json")
-          put("seed", System.currentTimeMillis())
-        }.toString()
+      val base = profile.effectiveApiBase().trimEnd('/')
+      // Optional reference images for image-to-image. Accept a list of file:// paths or plain paths.
+      @Suppress("UNCHECKED_CAST")
+      val refPaths: List<String> = when (val v = args["image_paths"]) {
+        is List<*> -> v.mapNotNull { it?.toString() }
+        is String -> if (v.isBlank()) emptyList() else v.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        else -> emptyList()
       }
-
-      val req = okhttp3.Request.Builder().url(url)
-        .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), jsonBody))
-        .apply { if (p.apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${p.apiKey}") }.build()
-      val imgClient = httpClient.newBuilder().readTimeout(300, java.util.concurrent.TimeUnit.SECONDS).build()
-      val resp = imgClient.newCall(req).execute()
-      val body = resp.use { it.body?.string() ?: "" }
-      if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}: ${body.take(200)}")
-      val json = org.json.JSONObject(body)
-      val b64 = json.optJSONObject("result")?.optString("image") ?: json.optJSONArray("data")?.optJSONObject(0)?.optString("b64_json") ?: ""
-      val imageUrl = json.optJSONArray("data")?.optJSONObject(0)?.optString("url") ?: ""
-      val bytes = if (b64.isNotBlank()) {
-        android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-      } else if (imageUrl.isNotBlank()) {
-        java.net.URL(imageUrl).readBytes()
-      } else {
-        throw Exception("No image in response")
+      val refBytes = refPaths.mapNotNull { p ->
+        try {
+          val path = p.removePrefix("file://")
+          java.io.File(path).takeIf { it.exists() }?.readBytes()
+        } catch (_: Exception) { null }
       }
-      val dir = java.io.File(app.filesDir, "generated")
-      dir.mkdirs()
-      val file = java.io.File(dir, "img_${System.currentTimeMillis()}.png")
-      file.writeBytes(bytes)
-      "Image generated successfully.\nFile: file://${file.absolutePath}\nDisplay: ![generated image](file://${file.absolutePath})"
+      val bytes = ImageGenTester.generateBytes(base, modelId, profile.apiKey, prompt, refBytes)
+      saveGeneratedImage(bytes)
     } catch (e: Exception) {
       "Image generation FAILED.\nError: ${e.message}"
     }
+  }
+
+  /** Persist generated image bytes and return the tool result string. */
+  private fun saveGeneratedImage(bytes: ByteArray): String {
+    val dir = java.io.File(app.filesDir, "generated")
+    dir.mkdirs()
+    val file = java.io.File(dir, "img_${System.currentTimeMillis()}.png")
+    file.writeBytes(bytes)
+    return "![generated image](file://${file.absolutePath})"
   }
 
   private suspend fun executeAnalyzeImage(args: Map<String, Any?>): String {

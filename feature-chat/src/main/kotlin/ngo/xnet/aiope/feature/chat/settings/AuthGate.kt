@@ -55,11 +55,11 @@ fun AuthGate(content: @Composable () -> Unit) {
     val observer = LifecycleEventObserver { _, event ->
       when (event) {
         Lifecycle.Event.ON_STOP -> {
-          if (!authInFlight) backgroundedAt = System.currentTimeMillis()
+          if (!authInFlight && !AuthInterop.active()) backgroundedAt = System.currentTimeMillis()
         }
         Lifecycle.Event.ON_START -> {
           val since = backgroundedAt
-          if (!authInFlight && since > 0L && System.currentTimeMillis() - since > GRACE_MS) {
+          if (!authInFlight && !AuthInterop.active() && since > 0L && System.currentTimeMillis() - since > GRACE_MS) {
             unlocked = false
           }
           backgroundedAt = 0L

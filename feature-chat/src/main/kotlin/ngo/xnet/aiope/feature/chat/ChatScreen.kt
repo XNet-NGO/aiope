@@ -14,6 +14,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -83,7 +87,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
           onToggleBrowser = { viewModel.toggleBrowser() },
           onToggleAgentPanel = { viewModel.toggleAgentPanel() },
           onOpenSettings = onOpenSettings,
-          onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
+          onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.activeModelIdForMode() },
           onSwitchModel = { viewModel.switchModel(it) },
           onChats = { showConversations = true },
           onShareChat = { showShareSheet = true },
@@ -147,7 +151,7 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
           onToggleBrowser = { viewModel.toggleBrowser() },
           onToggleAgentPanel = { viewModel.toggleAgentPanel() },
           onOpenSettings = onOpenSettings,
-          onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.providerStore.getActive().selectedModelId },
+          onGetModels = { viewModel.getModelList() }, onGetActiveModelId = { viewModel.activeModelIdForMode() },
           onSwitchModel = { viewModel.switchModel(it) },
           onChats = { showConversations = true },
           onShareChat = { showShareSheet = true },
@@ -568,8 +572,11 @@ private fun MessageList(
 
 @Composable
 private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit = {}, isStreaming: Boolean, editText: String = "", onEditTextChange: (String) -> Unit = {}, autoRun: Boolean = false, onAutoRunChange: (Boolean) -> Unit = {}, supportsRealtimeVoice: Boolean = false, isInRealtimeVoice: Boolean = false, isVoiceListening: Boolean = false, isVoiceSpeaking: Boolean = false, onToggleVoice: () -> Unit = {}) {
-  var text by remember { mutableStateOf("") }
-  val pendingImages = remember { mutableStateListOf<String>() }
+  var text by rememberSaveable { mutableStateOf("") }
+  val pendingImages = rememberSaveable(saver = listSaver<SnapshotStateList<String>, String>(
+    save = { it.toList() },
+    restore = { it.toMutableStateList() },
+  )) { mutableStateListOf<String>() }
 
   LaunchedEffect(editText) {
     if (editText.isNotBlank()) {
@@ -582,6 +589,7 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
   val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
     androidx.activity.result.contract.ActivityResultContracts.GetContent(),
   ) { uri ->
+    ngo.xnet.aiope.feature.chat.settings.AuthInterop.end()
     uri?.let {
       val mime = context.contentResolver.getType(it) ?: ""
       if (mime.startsWith("image/")) {
@@ -655,18 +663,19 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
     Spacer(Modifier.height(4.dp))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
       // Attach — opens system file picker (all types)
-      IconButton(onClick = { launcher.launch("*/*") }) {
+      IconButton(onClick = { ngo.xnet.aiope.feature.chat.settings.AuthInterop.begin(); launcher.launch("*/*") }) {
         Icon(Icons.Default.AttachFile, "Attach", tint = MaterialTheme.colorScheme.onSurface)
       }
       // Camera — capture photo
       val cameraUri = remember { mutableStateOf<android.net.Uri?>(null) }
       val photoLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.TakePicture(),
-      ) { success -> if (success) cameraUri.value?.let { pendingImages.add(it.toString()) } }
+      ) { success -> ngo.xnet.aiope.feature.chat.settings.AuthInterop.end(); if (success) cameraUri.value?.let { pendingImages.add(it.toString()) } }
       IconButton(onClick = {
         val file = java.io.File(context.cacheDir, "photo_${System.currentTimeMillis()}.jpg")
         val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         cameraUri.value = uri
+        ngo.xnet.aiope.feature.chat.settings.AuthInterop.begin()
         photoLauncher.launch(uri)
       }) {
         Icon(Icons.Default.CameraAlt, "Camera", tint = MaterialTheme.colorScheme.onSurface)
@@ -674,6 +683,7 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
       val speechLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
       ) { result ->
+        ngo.xnet.aiope.feature.chat.settings.AuthInterop.end()
         if (result.resultCode == android.app.Activity.RESULT_OK) {
           val spoken = result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
           if (!spoken.isNullOrBlank()) {
@@ -686,8 +696,9 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
           putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         }
         try {
+          ngo.xnet.aiope.feature.chat.settings.AuthInterop.begin()
           speechLauncher.launch(intent)
-        } catch (_: Exception) {}
+        } catch (_: Exception) { ngo.xnet.aiope.feature.chat.settings.AuthInterop.end() }
       }) {
         Icon(Icons.Default.Mic, "Voice", tint = MaterialTheme.colorScheme.onSurface)
       }
@@ -757,22 +768,24 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
 @Composable
 private fun ConversationSheet(viewModel: ChatViewModel, onDismiss: () -> Unit) {
   val conversations by viewModel.conversations.collectAsStateWithLifecycle()
+  val mode by viewModel.agentMode.collectAsStateWithLifecycle()
+  val isMedia = mode == ngo.xnet.aiope.feature.chat.engine.AgentMode.MEDIA
   ModalBottomSheet(onDismissRequest = onDismiss) {
     Row(
       Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      Text("Conversations", style = MaterialTheme.typography.titleSmall)
+      Text(if (isMedia) "Media Conversations" else "Conversations", style = MaterialTheme.typography.titleSmall)
       Row {
         TextButton(onClick = {
           viewModel.newConversation()
           onDismiss()
-        }) { Text("+ New Chat") }
+        }) { Text(if (isMedia) "+ New Media Chat" else "+ New Chat") }
       }
     }
     if (conversations.isEmpty()) {
-      Text("No conversations yet.", Modifier.padding(16.dp))
+      Text(if (isMedia) "No media conversations yet." else "No conversations yet.", Modifier.padding(16.dp))
     }
     conversations.forEach { conv ->
       ListItem(
