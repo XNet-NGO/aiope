@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import ngo.xnet.aiope.core.network.ModelConfig
 import ngo.xnet.aiope.core.network.ModelDef
+import ngo.xnet.aiope.core.network.ProviderCategory
 import ngo.xnet.aiope.core.network.ProviderProfile
 import ngo.xnet.aiope.core.network.ProviderTemplates
 import ngo.xnet.aiope.feature.chat.db.ChatDao
@@ -16,6 +17,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val KEY_ACTIVE_MEDIA = "active_media_provider"
 
 @Singleton
 class ProviderStore @Inject constructor(
@@ -91,6 +94,26 @@ class ProviderStore @Inject constructor(
     save(default)
     setActive(default.id)
     fetchModelsAsync(default)
+
+    // Seed a Media Generation provider (gateway) with the one verified image model, and make it
+    // the active media provider so Media mode works out of the box.
+    val media = ProviderProfile(
+      id = "default_gateway_media",
+      builtinId = "aiope_gateway",
+      label = "AIOPE Gateway (Media)",
+      apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
+      apiBase = "https://inf.xnet.ngo/v1",
+      selectedModelId = "cloudflare/@cf-black-forest-labs-flux-1-schnell",
+      category = ProviderCategory.MEDIA,
+      modelConfigs = mapOf(
+        "cloudflare/@cf-black-forest-labs-flux-1-schnell" to ModelConfig(
+          modelId = "cloudflare/@cf-black-forest-labs-flux-1-schnell",
+          toolsOverride = false, reasoningEffort = null, contextTokens = 0, autoCompact = false,
+        ),
+      ),
+    )
+    save(media)
+    setActiveMedia(media.id)
   }
 
   /** One-time migration from SharedPreferences */
@@ -146,6 +169,24 @@ class ProviderStore @Inject constructor(
     dao.clearActiveProvider()
     dao.setActiveProvider(id)
   }
+
+  /**
+   * Media-generation active slot. Stored in settings_kv (no DB migration) so it is independent
+   * of the text active slot (which remains the DB `isActive` flag used by chat/tools).
+   */
+  fun getActiveMedia(): ProviderProfile? = runBlocking(Dispatchers.IO) {
+    val id = dao.getSetting(KEY_ACTIVE_MEDIA)
+    val all = getAll()
+    (id?.let { mid -> all.firstOrNull { it.id == mid } })
+      ?: all.firstOrNull { it.category == ProviderCategory.MEDIA }
+  }
+
+  fun setActiveMedia(id: String) = runBlocking(Dispatchers.IO) {
+    dao.upsertSetting(SettingsKvEntity(KEY_ACTIVE_MEDIA, id))
+  }
+
+  fun getByCategory(category: ProviderCategory): List<ProviderProfile> =
+    getAll().filter { it.category == category }
 
   fun saveModelCache(cacheKey: String, models: List<ModelDef>) {
     val arr = JSONArray()

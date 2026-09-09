@@ -382,20 +382,78 @@ class ChatViewModel @Inject constructor(
   private val _browserMaximized = MutableStateFlow(false)
   val browserMaximized = _browserMaximized.asStateFlow()
 
+  // Two conversation lanes. Chat/Plan/Build SHARE the chat lane; Media has its own isolated lane
+  // so no chat/plan/build history ever bleeds into media generation (and vice versa).
+  private var chatConversationId: String
+    get() = savedState["chatConversationId"] ?: UUID.randomUUID().toString().also { savedState["chatConversationId"] = it }
+    set(value) { savedState["chatConversationId"] = value }
+
+  private var mediaConversationId: String
+    get() = savedState["mediaConversationId"] ?: UUID.randomUUID().toString().also { savedState["mediaConversationId"] = it }
+    set(value) { savedState["mediaConversationId"] = value }
+
+  /** Whether the active lane is Media. */
+  private val isMediaLane: Boolean get() = _agentMode.value == ngo.xnet.aiope.feature.chat.engine.AgentMode.MEDIA
+
+  /** The active conversation id for the current lane. */
   private var conversationId: String
-    get() = savedState["conversationId"] ?: UUID.randomUUID().toString().also { savedState["conversationId"] = it }
-    set(value) {
-      savedState["conversationId"] = value
-    }
+    get() = if (isMediaLane) mediaConversationId else chatConversationId
+    set(value) { if (isMediaLane) mediaConversationId = value else chatConversationId = value }
+
+  /** agentName tag used to mark/filter media-lane conversations in the DB. */
+  private val MEDIA_TAG = "media"
+  private fun laneTag(): String = if (isMediaLane) MEDIA_TAG else "default"
 
   val _modelLabel = MutableStateFlow("")
   val modelLabel: String get() = _modelLabel.value
 
-  private val _agentMode = MutableStateFlow(ngo.xnet.aiope.feature.chat.engine.AgentMode.CHAT)
+  private val _agentMode = MutableStateFlow(
+    savedState.get<String>("agentMode")?.let { runCatching { ngo.xnet.aiope.feature.chat.engine.AgentMode.valueOf(it) }.getOrNull() }
+      ?: ngo.xnet.aiope.feature.chat.engine.AgentMode.CHAT,
+  )
   val agentMode: kotlinx.coroutines.flow.StateFlow<ngo.xnet.aiope.feature.chat.engine.AgentMode> = _agentMode
   fun setAgentMode(mode: ngo.xnet.aiope.feature.chat.engine.AgentMode) {
+    val wasMedia = isMediaLane
     _agentMode.value = mode
+    savedState["agentMode"] = mode.name
+    // The model picker follows the mode's provider category, so refresh the label on switch.
+    refreshModelLabel()
+    // Crossing the Media boundary swaps conversation lanes; reload that lane's messages.
+    if (wasMedia != isMediaLane) {
+      switchToLaneConversation()
+    }
   }
+
+  /** Load (or create) the active lane's most recent conversation and its messages. */
+  private fun switchToLaneConversation() {
+    viewModelScope.launch {
+      val media = isMediaLane
+      val all = chatDao.getConversations().filter { (it.agentName == MEDIA_TAG) == media }
+      val target = all.firstOrNull { chatDao.getMessages(it.id).isEmpty() } ?: all.firstOrNull()
+      if (target != null) {
+        conversationId = target.id
+        loadConversationMessages(target.id)
+      } else {
+        // No conversation in this lane yet — start a fresh one.
+        conversationId = UUID.randomUUID().toString()
+        _messages.value = emptyList()
+        chatDao.insertConversation(ConversationEntity(id = conversationId, agentName = laneTag()))
+      }
+      refreshConversations()
+    }
+  }
+
+  /**
+   * The provider the model picker + generation operate on for the current mode. Chat/Plan/Build
+   * share the active TEXT provider; Media uses the active MEDIA provider. This makes the picker
+   * independent of the Chat/Plan/Build distinction.
+   */
+  private fun providerForMode(): ProviderProfile =
+    if (_agentMode.value.providerCategory == ngo.xnet.aiope.core.network.ProviderCategory.MEDIA) {
+      providerStore.getActiveMedia() ?: providerStore.getActive()
+    } else {
+      providerStore.getActive()
+    }
 
   private val _autoRun = MutableStateFlow(false)
   val autoRun = _autoRun.asStateFlow()
@@ -405,19 +463,22 @@ class ChatViewModel @Inject constructor(
   private var autoRunRounds = 0
 
   fun switchModel(modelId: String) {
-    val p = providerStore.getActive()
+    val p = providerForMode()
     providerStore.save(p.copy(selectedModelId = modelId))
     _modelLabel.value = modelId.substringAfterLast('/').ifBlank { p.label.ifBlank { "No model" } }
   }
 
   private fun refreshModelLabel() {
-    val p = providerStore.getActive()
+    val p = providerForMode()
     val id = p.selectedModelId.substringAfterLast('/')
     _modelLabel.value = id.ifBlank { p.label.ifBlank { "No model" } }
   }
 
+  /** Model id currently selected for the active mode's provider (drives the picker's checkmark). */
+  fun activeModelIdForMode(): String = providerForMode().selectedModelId
+
   fun getModelList(): List<ModelDef> {
-    val p = providerStore.getActive()
+    val p = providerForMode()
     return providerStore.getModelCache(p.id)
       ?: providerStore.getModelCacheStale(p.id)
       ?: providerStore.getAll().firstOrNull { it.builtinId == p.builtinId && it.id != p.id }?.let { providerStore.getModelCacheStale(it.id) }
@@ -435,8 +496,8 @@ class ChatViewModel @Inject constructor(
     // Pre-connect voice WebSocket for instant mic start
     preConnectVoice()
     viewModelScope.launch {
-      // Reuse last conversation if it exists, or find an empty one
-      val all = chatDao.getConversations()
+      // Startup is in Chat mode → only consider chat-lane (non-media) conversations.
+      val all = chatDao.getConversations().filter { it.agentName != MEDIA_TAG }
       val empty = all.firstOrNull { chatDao.getMessages(it.id).isEmpty() }
       if (empty != null) {
         conversationId = empty.id
@@ -457,7 +518,7 @@ class ChatViewModel @Inject constructor(
         }
         _messages.value = msgs
       } else {
-        chatDao.insertConversation(ConversationEntity(id = conversationId))
+        chatDao.insertConversation(ConversationEntity(id = conversationId, agentName = "default"))
       }
       refreshConversations()
     }
@@ -468,7 +529,8 @@ class ChatViewModel @Inject constructor(
     _messages.value = emptyList()
     toolExecutor.lastLocationData = null
     viewModelScope.launch {
-      chatDao.insertConversation(ConversationEntity(id = conversationId))
+      // Tag the conversation with the current lane so the list can filter media vs chat.
+      chatDao.insertConversation(ConversationEntity(id = conversationId, agentName = laneTag()))
       refreshConversations()
     }
   }
@@ -476,6 +538,10 @@ class ChatViewModel @Inject constructor(
   fun loadConversation(id: String) {
     conversationId = id
     toolExecutor.lastLocationData = null
+    loadConversationMessages(id)
+  }
+
+  private fun loadConversationMessages(id: String) {
     viewModelScope.launch {
       val msgs = chatDao.getMessages(id).map {
         val uris = if (it.imagePaths.isNotBlank()) {
@@ -595,13 +661,20 @@ class ChatViewModel @Inject constructor(
   }
 
   private suspend fun refreshConversations() {
-    _conversations.value = chatDao.getConversations()
+    val media = isMediaLane
+    _conversations.value = chatDao.getConversations().filter { (it.agentName == MEDIA_TAG) == media }
   }
 
   // LLM client — resolves task model, then creates client
 
   /** Resolve provider + model for a given task. Falls back to active profile. */
   private fun resolveTaskModel(task: ngo.xnet.aiope.core.network.ModelTask): Pair<ProviderProfile, String> {
+    // Media-generation tasks are driven by the active Media Generation provider when one is set.
+    if (task == ngo.xnet.aiope.core.network.ModelTask.IMAGE_GENERATION) {
+      providerStore.getActiveMedia()?.let { media ->
+        if (media.selectedModelId.isNotBlank()) return media to media.selectedModelId
+      }
+    }
     val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(getApplication())
     val tc = taskStore.getTaskConfig(task)
     val profile = tc.profileId?.let { providerStore.getById(it) } ?: providerStore.getActive()
@@ -751,7 +824,32 @@ class ChatViewModel @Inject constructor(
       val assistantMsg = ChatMessage(role = Role.ASSISTANT, content = "")
       _messages.value = _messages.value + assistantMsg
 
-      val p = providerStore.getActive()
+      // MEDIA mode: skip the chat completion entirely and call the image-generation endpoint
+      // directly with the user's prompt. Chat models can't natively return images, so streaming
+      // a completion just makes them hallucinate a fake tool-call; direct generation is correct.
+      if (_agentMode.value == ngo.xnet.aiope.feature.chat.engine.AgentMode.MEDIA) {
+        // If the user attached image(s), pass them as reference images for image-to-image.
+        val filesDir = getApplication<android.app.Application>().filesDir
+        val refPaths = if (savedPaths.isNotBlank()) {
+          savedPaths.split(",").map { rel -> java.io.File(filesDir, rel.trim()).absolutePath }
+        } else emptyList()
+        val genArgs = mutableMapOf<String, Any?>("prompt" to text)
+        if (refPaths.isNotEmpty()) genArgs["image_paths"] = refPaths
+        val genResult = toolExecutor.execute("image_generate", genArgs)
+        val generated = Regex("""file:///[^\s)]+\.(png|jpg|jpeg|webp)""").findAll(genResult).map { it.value }.toList()
+        // genResult is either the markdown image (success) or an error string. The assistant
+        // renderer displays the markdown image; no raw file path is shown either way.
+        val updated = _messages.value.toMutableList()
+        updated[updated.lastIndex] = updated.last().copy(content = genResult, imageUris = generated)
+        _messages.value = updated
+        chatDao.insertMessage(
+          MessageEntity(id = updated.last().id, conversationId = conversationId, role = Role.ASSISTANT.value, content = genResult, imagePaths = generated.joinToString(",")),
+        )
+        _isStreaming.value = false
+        return@launch
+      }
+
+      val p = providerForMode()
       val mc = p.activeModelConfig()
 
       // Validate provider is configured before attempting API call

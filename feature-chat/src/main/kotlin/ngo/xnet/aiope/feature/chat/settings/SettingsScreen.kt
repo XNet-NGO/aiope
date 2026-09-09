@@ -20,9 +20,11 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: 
   var editId by remember { mutableStateOf<String?>(null) }
   var profiles by remember { mutableStateOf(providerStore.getAll()) }
   var activeId by remember { mutableStateOf(providerStore.getActive().id) }
+  var activeMediaId by remember { mutableStateOf(providerStore.getActiveMedia()?.id ?: "") }
   fun refresh() {
     profiles = providerStore.getAll()
     activeId = providerStore.getActive().id
+    activeMediaId = providerStore.getActiveMedia()?.id ?: ""
   }
 
   Box(Modifier.fillMaxSize()) {
@@ -89,14 +91,23 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: 
         "providers" -> ProviderListScreen(
           profiles,
           activeId,
+          activeMediaId,
           providerStore,
-          onSelect = {
+          onSelectText = {
             providerStore.setActive(it.id)
             activeId = it.id
+          },
+          onSelectMedia = {
+            providerStore.setActiveMedia(it.id)
+            activeMediaId = it.id
           },
           onEdit = {
             editId = it.id
             screen = "edit"
+          },
+          onChangeCategory = { p, cat ->
+            providerStore.save(p.copy(category = cat))
+            refresh()
           },
           onAdd = { screen = "pick" },
           onBack = { screen = "list" },

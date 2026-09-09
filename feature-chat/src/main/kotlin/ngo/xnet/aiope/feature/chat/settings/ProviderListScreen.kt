@@ -8,9 +8,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import ngo.xnet.aiope.core.network.ProviderCategory
 import ngo.xnet.aiope.core.network.ProviderProfile
 import ngo.xnet.aiope.core.network.ProviderTemplates
 
@@ -18,20 +22,26 @@ import ngo.xnet.aiope.core.network.ProviderTemplates
 @Composable
 internal fun ProviderListScreen(
   profiles: List<ProviderProfile>,
-  activeId: String,
+  activeTextId: String,
+  activeMediaId: String,
   providerStore: ProviderStore,
-  onSelect: (ProviderProfile) -> Unit,
+  onSelectText: (ProviderProfile) -> Unit,
+  onSelectMedia: (ProviderProfile) -> Unit,
   onEdit: (ProviderProfile) -> Unit,
+  onChangeCategory: (ProviderProfile, ProviderCategory) -> Unit,
   onAdd: () -> Unit,
   onBack: () -> Unit,
 ) {
-  val _bgActive = ngo.xnet.aiope.feature.chat.theme.LocalThemeState.current.useBackground
+  val bgActive = ngo.xnet.aiope.feature.chat.theme.LocalThemeState.current.useBackground
+  val textProfiles = profiles.filter { it.category == ProviderCategory.TEXT }
+  val mediaProfiles = profiles.filter { it.category == ProviderCategory.MEDIA }
+
   Scaffold(
-    containerColor = if (_bgActive) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.background,
+    containerColor = if (bgActive) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.background,
     contentColor = MaterialTheme.colorScheme.onSurface,
     topBar = {
       TopAppBar(
-        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = if (ngo.xnet.aiope.feature.chat.theme.LocalThemeState.current.useBackground) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.MaterialTheme.colorScheme.surface),
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = if (bgActive) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surface),
         title = { Text("Providers") },
         navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
         actions = { IconButton(onClick = onAdd) { Icon(Icons.Default.Add, "Add") } },
@@ -39,20 +49,84 @@ internal fun ProviderListScreen(
     },
   ) { pad ->
     LazyColumn(Modifier.fillMaxSize().padding(pad)) {
-      items(profiles) { p ->
-        val builtin = ProviderTemplates.byId[p.builtinId]
-        ListItem(
-          headlineContent = { Text(p.label.ifBlank { builtin?.displayName ?: "Custom" }) },
-          supportingContent = {
-            Text(
-              "${p.effectiveApiBase().removePrefix("https://").removePrefix("http://").take(40)}  •  ${p.selectedModelId.ifBlank { "no model" }}",
-              style = MaterialTheme.typography.bodySmall,
-            )
-          },
-          trailingContent = { if (p.id == activeId) Text("✔", color = MaterialTheme.colorScheme.primary) },
-          modifier = Modifier.combinedClickable(onClick = { onSelect(p) }, onLongClick = { onEdit(p) }),
-        )
-      }
+      section(
+        title = ProviderCategory.TEXT.displayName,
+        subtitle = "Chat, tools, and vision. One active profile drives conversations.",
+        profiles = textProfiles,
+        activeId = activeTextId,
+        emptyHint = "No text providers. Add one or move a provider here.",
+        onSelect = onSelectText,
+        onEdit = onEdit,
+        moveLabel = "Move to Media Generation",
+        onMove = { onChangeCategory(it, ProviderCategory.MEDIA) },
+      )
+
+      item { Spacer(Modifier.height(8.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp)) }
+
+      section(
+        title = ProviderCategory.MEDIA.displayName,
+        subtitle = "Image/video generation. One active profile drives media tools.",
+        profiles = mediaProfiles,
+        activeId = activeMediaId,
+        emptyHint = "No media providers. Move an image/video provider here.",
+        onSelect = onSelectMedia,
+        onEdit = onEdit,
+        moveLabel = "Move to Multimodal Text",
+        onMove = { onChangeCategory(it, ProviderCategory.TEXT) },
+      )
+    }
+  }
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+private fun androidx.compose.foundation.lazy.LazyListScope.section(
+  title: String,
+  subtitle: String,
+  profiles: List<ProviderProfile>,
+  activeId: String,
+  emptyHint: String,
+  onSelect: (ProviderProfile) -> Unit,
+  onEdit: (ProviderProfile) -> Unit,
+  moveLabel: String,
+  onMove: (ProviderProfile) -> Unit,
+) {
+  item {
+    Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)) {
+      Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+      Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+  }
+  if (profiles.isEmpty()) {
+    item {
+      Text(emptyHint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+    }
+  } else {
+    items(profiles.size) { idx ->
+      val p = profiles[idx]
+      val builtin = ProviderTemplates.byId[p.builtinId]
+      var menuOpen by remember { mutableStateOf(false) }
+      ListItem(
+        headlineContent = { Text(p.label.ifBlank { builtin?.displayName ?: "Custom" }) },
+        supportingContent = {
+          Text(
+            "${p.effectiveApiBase().removePrefix("https://").removePrefix("http://").take(40)}  •  ${p.selectedModelId.ifBlank { "no model" }}",
+            style = MaterialTheme.typography.bodySmall,
+          )
+        },
+        trailingContent = {
+          Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            if (p.id == activeId) Text("✔", color = MaterialTheme.colorScheme.primary)
+            Box {
+              IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.SwapHoriz, "Move") }
+              DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(text = { Text(moveLabel) }, onClick = { menuOpen = false; onMove(p) })
+                DropdownMenuItem(text = { Text("Edit") }, onClick = { menuOpen = false; onEdit(p) })
+              }
+            }
+          }
+        },
+        modifier = Modifier.combinedClickable(onClick = { onSelect(p) }, onLongClick = { onEdit(p) }),
+      )
     }
   }
 }

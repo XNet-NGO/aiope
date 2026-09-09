@@ -94,6 +94,17 @@ data class ModelDef(
   val sampleRate: Int = 16000,
 )
 
+/** Which section a provider belongs to in settings. */
+enum class ProviderCategory(val id: String, val displayName: String) {
+  TEXT("text", "Multimodal Text"),
+  MEDIA("media", "Media Generation"),
+  ;
+
+  companion object {
+    fun from(id: String?): ProviderCategory = entries.firstOrNull { it.id == id } ?: TEXT
+  }
+}
+
 /** Provider profile — only connection info + selected model + per-model configs */
 data class ProviderProfile(
   val id: String = java.util.UUID.randomUUID().toString(),
@@ -104,6 +115,7 @@ data class ProviderProfile(
   val selectedModelId: String = "",
   val isActive: Boolean = false,
   val modelConfigs: Map<String, ModelConfig> = emptyMap(),
+  val category: ProviderCategory = ProviderCategory.TEXT,
 ) {
   fun effectiveModel(): String = selectedModelId
   fun effectiveApiBase(): String = apiBase.ifBlank {
@@ -122,6 +134,7 @@ data class ProviderProfile(
     put("apiBase", apiBase)
     put("selectedModelId", selectedModelId)
     put("isActive", isActive)
+    put("category", category.id)
     if (modelConfigs.isNotEmpty()) {
       val mc = JSONObject()
       modelConfigs.forEach { (k, v) -> mc.put(k, v.toJson()) }
@@ -145,6 +158,7 @@ data class ProviderProfile(
         selectedModelId = j.optString("selectedModelId"),
         isActive = j.optBoolean("isActive"),
         modelConfigs = mc,
+        category = ProviderCategory.from(j.optString("category", "text")),
       )
     }
   }
@@ -171,32 +185,8 @@ object ProviderTemplates {
       defaultModels = listOf(
         ModelDef("google-ai-studio/models-gemma-4-31b-it", "Gemma 4 31B IT", 256_000),
         ModelDef(
-          "cf-image/flux-1-schnell",
-          "FLUX Schnell",
-          outputModality = "image",
-          supportsTools = false,
-        ),
-        ModelDef(
-          "cf-image/flux-2-dev",
-          "FLUX 2 Dev",
-          outputModality = "image",
-          supportsTools = false,
-        ),
-        ModelDef(
-          "cf-image/sdxl-lightning",
-          "SDXL Lightning",
-          outputModality = "image",
-          supportsTools = false,
-        ),
-        ModelDef(
-          "cf-image/dreamshaper-8",
-          "Dreamshaper 8",
-          outputModality = "image",
-          supportsTools = false,
-        ),
-        ModelDef(
-          "cf-image/leonardo-phoenix",
-          "Leonardo Phoenix",
+          "cloudflare/@cf-black-forest-labs-flux-1-schnell",
+          "FLUX.1 Schnell",
           outputModality = "image",
           supportsTools = false,
         ),
