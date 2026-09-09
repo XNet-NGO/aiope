@@ -20,6 +20,9 @@ import kotlinx.coroutines.launch
 import ngo.xnet.aiope.core.auth.AuthFactor
 import ngo.xnet.aiope.core.auth.AuthResult
 
+/** Grace window before a backgrounded app re-locks, to tolerate brief app-switches and prompts. */
+private const val GRACE_MS = 3000L
+
 /**
  * Enforces the optional app-launch gate. If the gate is inactive (user hasn't opted in or has no
  * factor enrolled), [content] renders immediately. Otherwise the user must pass one enrolled
@@ -39,12 +42,30 @@ fun AuthGate(content: @Composable () -> Unit) {
   }
 
   var unlocked by rememberSaveable { mutableStateOf(false) }
+  // Tracks an in-flight auth prompt (biometric/security key). The system biometric UI briefly
+  // sends the host activity through ON_STOP; we must NOT treat that as "backgrounded".
+  var authInFlight by remember { mutableStateOf(false) }
+  // Timestamp (ms) when the app was last stopped, to enforce a grace window.
+  var backgroundedAt by rememberSaveable { mutableStateOf(0L) }
 
-  // Re-lock whenever the app leaves the foreground, so returning requires authenticating again.
+  // Re-lock only when the app is genuinely backgrounded beyond a short grace window — not when
+  // a biometric/security-key prompt temporarily covers the activity.
   val lifecycleOwner = LocalLifecycleOwner.current
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
-      if (event == Lifecycle.Event.ON_STOP) unlocked = false
+      when (event) {
+        Lifecycle.Event.ON_STOP -> {
+          if (!authInFlight) backgroundedAt = System.currentTimeMillis()
+        }
+        Lifecycle.Event.ON_START -> {
+          val since = backgroundedAt
+          if (!authInFlight && since > 0L && System.currentTimeMillis() - since > GRACE_MS) {
+            unlocked = false
+          }
+          backgroundedAt = 0L
+        }
+        else -> {}
+      }
     }
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -66,12 +87,14 @@ fun AuthGate(content: @Composable () -> Unit) {
   LaunchedEffect(Unit) {
     val act = activity ?: return@LaunchedEffect
     if (AuthFactor.BIOMETRIC in factors) {
+      authInFlight = true
       when (val r = repo.verify(act, AuthFactor.BIOMETRIC)) {
         is AuthResult.Success, is AuthResult.Enrolled -> unlocked = true
         is AuthResult.Cancelled -> error = "Authentication cancelled."
         is AuthResult.Unavailable -> error = "Unavailable: ${r.reason}"
         is AuthResult.Failure -> error = r.reason
       }
+      authInFlight = false
     }
   }
 
@@ -92,12 +115,14 @@ fun AuthGate(content: @Composable () -> Unit) {
         Button(onClick = {
           val act = activity ?: return@Button
           scope.launch {
+            authInFlight = true
             when (val r = repo.verify(act, AuthFactor.BIOMETRIC)) {
               is AuthResult.Success, is AuthResult.Enrolled -> unlocked = true
               is AuthResult.Cancelled -> error = "Authentication cancelled."
               is AuthResult.Unavailable -> error = "Unavailable: ${r.reason}"
               is AuthResult.Failure -> error = r.reason
             }
+            authInFlight = false
           }
         }) { Text("Unlock with biometrics") }
         Spacer(Modifier.height(16.dp))
@@ -109,12 +134,14 @@ fun AuthGate(content: @Composable () -> Unit) {
           error = ""
           awaitingKey = true
           scope.launch {
+            authInFlight = true
             when (val r = repo.verify(act, AuthFactor.SECURITY_KEY)) {
               is AuthResult.Success, is AuthResult.Enrolled -> unlocked = true
               is AuthResult.Cancelled -> error = "Authentication cancelled."
               is AuthResult.Unavailable -> error = "Unavailable: ${r.reason}"
               is AuthResult.Failure -> error = r.reason
             }
+            authInFlight = false
             awaitingKey = false
           }
         }) { Text("Unlock with security key") }
