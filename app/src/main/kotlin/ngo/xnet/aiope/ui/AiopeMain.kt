@@ -10,6 +10,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
@@ -23,7 +24,7 @@ import ngo.xnet.aiope.navigation.AiopeNavHost
 fun AiopeMain(composeNavigator: AppComposeNavigator, providerStore: ProviderStore, toolStore: ToolStore, chatDao: ChatDao) {
   ngo.xnet.aiope.feature.chat.theme.ThemeProvider {
     Surface(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-      var showSplash by remember { mutableStateOf(true) }
+      var showSplash by rememberSaveable { mutableStateOf(true) }
       if (showSplash) {
         SplashScreen { showSplash = false }
       } else {
