@@ -57,8 +57,7 @@ dependencies {
   implementation("ru.noties:jlatexmath-android-font-cyrillic:0.2.0")
   implementation("ru.noties:jlatexmath-android-font-greek:0.2.0")
 
-  // location
-  implementation("com.google.android.gms:play-services-location:21.4.0")
+  // location — uses AOSP android.location.LocationManager (no GMS dependency)
 
   // maps
   implementation("org.ramani-maps:ramani-maplibre:0.13.0")
