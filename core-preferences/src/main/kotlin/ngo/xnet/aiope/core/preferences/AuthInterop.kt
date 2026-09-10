@@ -1,16 +1,16 @@
-package ngo.xnet.aiope.feature.chat.settings
+package ngo.xnet.aiope.core.preferences
 
 /**
  * Bridge so in-app flows that briefly leave the app (system file/image pickers, share sheets,
- * OAuth, etc.) can tell [AuthGate] not to treat the excursion as a security "backgrounding".
- * Without this, launching the file picker re-locks the app and drops transient UI state.
+ * OAuth, etc.) can tell the app-lock gate not to treat the excursion as a security "backgrounding".
+ * Without this, launching a picker re-locks the app and drops transient UI state.
+ *
+ * Lives in core-preferences so any feature module (chat, remote, …) can signal it.
  */
 object AuthInterop {
-  /** True while an in-app launcher/picker is active. AuthGate skips re-lock while set. */
   @Volatile
   var suppressLock: Boolean = false
 
-  /** Timestamp of the last suppression release, to also cover the brief return window. */
   @Volatile
   var lastSuppressAt: Long = 0L
 
