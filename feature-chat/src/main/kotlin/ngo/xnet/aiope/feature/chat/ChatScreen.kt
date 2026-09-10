@@ -589,7 +589,7 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
   val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
     androidx.activity.result.contract.ActivityResultContracts.GetContent(),
   ) { uri ->
-    ngo.xnet.aiope.feature.chat.settings.AuthInterop.end()
+    ngo.xnet.aiope.core.preferences.AuthInterop.end()
     uri?.let {
       val mime = context.contentResolver.getType(it) ?: ""
       if (mime.startsWith("image/")) {
@@ -663,19 +663,19 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
     Spacer(Modifier.height(4.dp))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
       // Attach — opens system file picker (all types)
-      IconButton(onClick = { ngo.xnet.aiope.feature.chat.settings.AuthInterop.begin(); launcher.launch("*/*") }) {
+      IconButton(onClick = { ngo.xnet.aiope.core.preferences.AuthInterop.begin(); launcher.launch("*/*") }) {
         Icon(Icons.Default.AttachFile, "Attach", tint = MaterialTheme.colorScheme.onSurface)
       }
       // Camera — capture photo
       val cameraUri = remember { mutableStateOf<android.net.Uri?>(null) }
       val photoLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.TakePicture(),
-      ) { success -> ngo.xnet.aiope.feature.chat.settings.AuthInterop.end(); if (success) cameraUri.value?.let { pendingImages.add(it.toString()) } }
+      ) { success -> ngo.xnet.aiope.core.preferences.AuthInterop.end(); if (success) cameraUri.value?.let { pendingImages.add(it.toString()) } }
       IconButton(onClick = {
         val file = java.io.File(context.cacheDir, "photo_${System.currentTimeMillis()}.jpg")
         val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         cameraUri.value = uri
-        ngo.xnet.aiope.feature.chat.settings.AuthInterop.begin()
+        ngo.xnet.aiope.core.preferences.AuthInterop.begin()
         photoLauncher.launch(uri)
       }) {
         Icon(Icons.Default.CameraAlt, "Camera", tint = MaterialTheme.colorScheme.onSurface)
@@ -683,7 +683,7 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
       val speechLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
       ) { result ->
-        ngo.xnet.aiope.feature.chat.settings.AuthInterop.end()
+        ngo.xnet.aiope.core.preferences.AuthInterop.end()
         if (result.resultCode == android.app.Activity.RESULT_OK) {
           val spoken = result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
           if (!spoken.isNullOrBlank()) {
@@ -696,9 +696,9 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
           putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         }
         try {
-          ngo.xnet.aiope.feature.chat.settings.AuthInterop.begin()
+          ngo.xnet.aiope.core.preferences.AuthInterop.begin()
           speechLauncher.launch(intent)
-        } catch (_: Exception) { ngo.xnet.aiope.feature.chat.settings.AuthInterop.end() }
+        } catch (_: Exception) { ngo.xnet.aiope.core.preferences.AuthInterop.end() }
       }) {
         Icon(Icons.Default.Mic, "Voice", tint = MaterialTheme.colorScheme.onSurface)
       }

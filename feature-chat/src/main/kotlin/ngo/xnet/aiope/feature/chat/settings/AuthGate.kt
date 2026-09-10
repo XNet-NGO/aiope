@@ -19,6 +19,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import ngo.xnet.aiope.core.auth.AuthFactor
 import ngo.xnet.aiope.core.auth.AuthResult
+import ngo.xnet.aiope.core.preferences.AuthInterop
 
 /** Grace window before a backgrounded app re-locks, to tolerate brief app-switches and prompts. */
 private const val GRACE_MS = 3000L

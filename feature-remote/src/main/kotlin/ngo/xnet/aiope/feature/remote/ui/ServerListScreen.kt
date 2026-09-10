@@ -336,19 +336,66 @@ private fun ServerEditSheet(
       )
 
       val scope = rememberCoroutineScope()
-      OutlinedButton(onClick = {
-        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-          try {
-            val kp = ngo.xnet.aiope.feature.remote.ssh.KeyGen.generate()
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-              privateKey = kp.first
-              publicKey = kp.second
-            }
-          } catch (e: Exception) {
-            android.util.Log.e("KeyGen", "Failed: ${e.message}", e)
+      val context = androidx.compose.ui.platform.LocalContext.current
+
+      // Upload key files from device storage (alongside paste/generate). Reads the file text into
+      // the respective field. AuthInterop suppresses the app-lock while the picker is open.
+      val privateKeyPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+      ) { uri ->
+        ngo.xnet.aiope.core.preferences.AuthInterop.end()
+        uri?.let {
+          scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val content = try {
+              context.contentResolver.openInputStream(it)?.bufferedReader()?.readText()
+            } catch (e: Exception) { null }
+            content?.let { c -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { privateKey = c.trim() } }
           }
         }
-      }) { Text("Generate Keypair") }
+      }
+      val publicKeyPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+      ) { uri ->
+        ngo.xnet.aiope.core.preferences.AuthInterop.end()
+        uri?.let {
+          scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val content = try {
+              context.contentResolver.openInputStream(it)?.bufferedReader()?.readText()
+            } catch (e: Exception) { null }
+            content?.let { c -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { publicKey = c.trim() } }
+          }
+        }
+      }
+
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedButton(
+          onClick = {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+              try {
+                val kp = ngo.xnet.aiope.feature.remote.ssh.KeyGen.generate()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                  privateKey = kp.first
+                  publicKey = kp.second
+                }
+              } catch (e: Exception) {
+                android.util.Log.e("KeyGen", "Failed: ${e.message}", e)
+              }
+            }
+          },
+          modifier = Modifier.weight(1f),
+        ) { Text("Generate Keypair") }
+        OutlinedButton(
+          onClick = {
+            ngo.xnet.aiope.core.preferences.AuthInterop.begin()
+            privateKeyPicker.launch("*/*")
+          },
+          modifier = Modifier.weight(1f),
+        ) {
+          Icon(Icons.Default.Upload, null, Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text("Upload Key")
+        }
+      }
 
       OutlinedTextField(
         value = privateKey,
@@ -368,6 +415,17 @@ private fun ServerEditSheet(
         maxLines = 4,
         textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
       )
+      OutlinedButton(
+        onClick = {
+          ngo.xnet.aiope.core.preferences.AuthInterop.begin()
+          publicKeyPicker.launch("*/*")
+        },
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Icon(Icons.Default.Upload, null, Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("Upload Public Key File")
+      }
 
       Spacer(Modifier.height(8.dp))
 
