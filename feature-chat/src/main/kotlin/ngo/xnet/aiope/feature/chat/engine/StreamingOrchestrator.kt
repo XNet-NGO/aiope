@@ -71,6 +71,21 @@ class StreamingOrchestrator(
         lower.contains("software caused connection abort") ||
         lower.contains("recvfrom failed")
     }
+
+    /**
+     * Retryable HTTP status codes: rate limiting (429) and transient server errors
+     * (500, 502, 503, 504). These are temporary and safe to retry with backoff.
+     */
+    private fun isRetryableHttp(msg: String): Boolean {
+      val m = Regex("HTTP (\\d{3})").find(msg)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return false
+      return m == 429 || m == 500 || m == 502 || m == 503 || m == 504
+    }
+
+    /** Exponential backoff with jitter: ~1s, 2s, 4s (+/- up to 500ms), capped. */
+    private fun backoffMs(attempt: Int): Long {
+      val base = (1000L shl (attempt - 1)).coerceAtMost(8000L)
+      return base + (0..500).random()
+    }
   }
 
   fun stream(
@@ -394,14 +409,16 @@ class StreamingOrchestrator(
         val sseDone = sseDoneRef.get()
         if (sseError == null || sseDone) break
 
-        // Non-retryable errors (HTTP 4xx, auth failures, etc.)
-        if (!isTransientReset(sseError) || sseError.startsWith("HTTP 4")) break
+        // Retry transient network resets AND retryable HTTP statuses (429 rate-limit, 5xx).
+        // Everything else (4xx auth/validation, etc.) is non-retryable.
+        val retryable = isTransientReset(sseError) || isRetryableHttp(sseError)
+        if (!retryable) break
 
-        // Retry
+        // Retry with exponential backoff + jitter
         if (retries < MAX_RETRIES) {
           retries++
-          val delay = 1000L * retries // 1s, 2s, 3s
-          android.util.Log.i("AIOPE2", "Retrying SSE (attempt ${retries + 1}, had ${contentSoFar.length} chars): $sseError")
+          val delay = backoffMs(retries)
+          android.util.Log.i("AIOPE2", "Retrying SSE in ${delay}ms (attempt ${retries + 1}, had ${contentSoFar.length} chars): $sseError")
           Thread.sleep(delay)
           continue
         }

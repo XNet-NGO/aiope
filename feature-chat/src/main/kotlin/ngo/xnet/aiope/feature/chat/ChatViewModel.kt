@@ -53,6 +53,27 @@ class ChatViewModel @Inject constructor(
 
   private var streamingJob: kotlinx.coroutines.Job? = null
 
+  // Safety net: a network/stream failure (e.g. host unresolvable when the network drops on
+  // backgrounding) must never crash the process. Log, surface an error on the message, and stop.
+  private val streamExceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
+    android.util.Log.e("AIOPE2", "Streaming coroutine failed (recovered): ${e.message}", e)
+    _isStreaming.value = false
+    viewModelScope.launch(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+      val last = _messages.value.lastOrNull()
+      if (last != null && last.role == Role.ASSISTANT) {
+        val note = "\n\n_(interrupted: ${e.message ?: "connection lost"})_"
+        val updated = _messages.value.toMutableList()
+        updated[updated.lastIndex] = last.copy(content = last.content + note)
+        _messages.value = updated
+        withContext(Dispatchers.IO) {
+          try {
+            chatDao.insertMessage(MessageEntity(id = last.id, conversationId = conversationId, role = Role.ASSISTANT.value, content = updated.last().content))
+          } catch (_: Exception) {}
+        }
+      }
+    }
+  }
+
   // Realtime voice state
   private val _isInRealtimeVoice = MutableStateFlow(false)
   val isInRealtimeVoice = _isInRealtimeVoice.asStateFlow()
@@ -82,8 +103,10 @@ class ChatViewModel @Inject constructor(
   }
 
   /** Toggle realtime voice mode */
+  private var voiceStarting = false
+
   fun toggleRealtimeVoice() {
-    if (_isInRealtimeVoice.value) {
+    if (_isInRealtimeVoice.value || voiceStarting) {
       stopRealtimeVoice()
     } else {
       startRealtimeVoice()
@@ -132,6 +155,12 @@ class ChatViewModel @Inject constructor(
 
   /** Start realtime voice conversation */
   private fun startRealtimeVoice() {
+    if (_isInRealtimeVoice.value || voiceStarting) {
+      android.util.Log.i("AIOPE2", "startRealtimeVoice ignored (already active/starting)")
+      return
+    }
+    voiceStarting = true
+    ngo.xnet.aiope.core.preferences.VoiceBridge.isActive = true
     val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(getApplication())
     val (profileId, modelId) = taskStore.resolve(ngo.xnet.aiope.core.network.ModelTask.REALTIME_SPEECH, providerStore)
     val profile = if (profileId != null) providerStore.getAll().find { it.id == profileId } ?: providerStore.getActive() else providerStore.getActive()
@@ -177,6 +206,7 @@ class ChatViewModel @Inject constructor(
           tools = toolExecutor.buildToolDefs(),
         )
         this@ChatViewModel.realtimeStream = realtimeStream
+        voiceStarting = false
 
         var currentTurnText = StringBuilder()
         realtimeStream.createStream().collect { event ->
@@ -333,6 +363,8 @@ class ChatViewModel @Inject constructor(
   private fun stopRealtimeVoice() {
     // Save session handle for future resumption
     realtimeStream?.lastSessionHandle?.let { voiceSessionHandle = it }
+    voiceStarting = false
+    ngo.xnet.aiope.core.preferences.VoiceBridge.isActive = false
     viewModelScope.launch(Dispatchers.Main) {
       _isInRealtimeVoice.value = false
       _isVoiceListening.value = false
@@ -340,6 +372,11 @@ class ChatViewModel @Inject constructor(
     }
     realtimeStreamingJob?.cancel()
     realtimeStreamingJob = null
+    // Explicitly close BOTH sockets. The pre-connected stream's flow is never collected, so its
+    // awaitClose never runs — without an explicit stop() it stays open and the agent keeps talking
+    // ("can't hang up"). Stop and null both.
+    try { realtimeStream?.stop() } catch (_: Exception) {}
+    try { preConnectedStream?.stop() } catch (_: Exception) {}
     realtimeStream = null
     preConnectedStream = null
     try {
@@ -532,6 +569,37 @@ class ChatViewModel @Inject constructor(
       // Tag the conversation with the current lane so the list can filter media vs chat.
       chatDao.insertConversation(ConversationEntity(id = conversationId, agentName = laneTag()))
       refreshConversations()
+    }
+  }
+
+  /** Screen context captured when AIOPE was invoked as the assistant over another app. */
+  private var pendingAssistContext: String? = null
+
+  /**
+   * Consume any pending assist invocation (from AssistBridge): capture the foreground screen
+   * context to enrich the next prompt, and auto-start voice if the assistant was triggered.
+   * Called by the UI when the activity resumes.
+   */
+  fun checkAssistInvocation() {
+    ngo.xnet.aiope.core.preferences.AssistBridge.takeContext()?.let { ctx ->
+      if (ctx.isNotBlank()) pendingAssistContext = ctx.take(4000)
+    }
+    // Overlay/assist toggle: start if inactive, stop if active. One authoritative owner (this VM).
+    val toggle = ngo.xnet.aiope.core.preferences.VoiceBridge.takeToggleRequest()
+    val startFromAssist = ngo.xnet.aiope.core.preferences.AssistBridge.takeStartVoice()
+    if (toggle || startFromAssist) {
+      android.util.Log.i("AIOPE2", "assist: voice toggle=$toggle start=$startFromAssist active=${_isInRealtimeVoice.value}")
+      viewModelScope.launch(Dispatchers.Main) {
+        try {
+          if (toggle) {
+            toggleRealtimeVoice() // start or stop based on current state
+          } else if (!_isInRealtimeVoice.value) {
+            toggleRealtimeVoice() // assist explicitly starts
+          }
+        } catch (e: Exception) {
+          android.util.Log.e("AIOPE2", "assist voice toggle failed: ${e.message}", e)
+        }
+      }
     }
   }
 
@@ -802,7 +870,7 @@ class ChatViewModel @Inject constructor(
     _messages.value = _messages.value + userMsg
 
     cancelStreaming()
-    streamingJob = viewModelScope.launch(Dispatchers.IO) {
+    streamingJob = viewModelScope.launch(Dispatchers.IO + streamExceptionHandler) {
       // Save images to disk
       val savedPaths = ngo.xnet.aiope.feature.chat.engine.ImageProcessor.saveImagesToDisk(
         getApplication<android.app.Application>().filesDir,
@@ -898,6 +966,12 @@ class ChatViewModel @Inject constructor(
           }
         }
         chatMessages.addAll(trimmed)
+        // Enrich with assist screen context (captured when invoked as the assistant over another
+        // app). Added as a one-shot system note, then cleared so it doesn't persist across turns.
+        pendingAssistContext?.let { ctx ->
+          chatMessages.add("system" to "The user invoked you as the assistant while viewing another app. Visible screen context:\n$ctx")
+          pendingAssistContext = null
+        }
         chatMessages.add("user" to text)
 
         val isTaskModel = imageUris.isNotEmpty()
@@ -1141,7 +1215,7 @@ class ChatViewModel @Inject constructor(
     val remaining = msgs.drop(idx + 1)
 
     cancelStreaming()
-    streamingJob = viewModelScope.launch(Dispatchers.IO) {
+    streamingJob = viewModelScope.launch(Dispatchers.IO + streamExceptionHandler) {
       _isStreaming.value = true
       try {
         val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.SUMMARY)
@@ -1251,6 +1325,28 @@ $transcript
     val streamStartMs = System.currentTimeMillis()
     var lastUsage: ngo.xnet.aiope.feature.chat.engine.UsageInfo? = null
 
+    // Persist the partial content to the DB as it streams (throttled) so an incomplete message
+    // survives a process kill / backgrounding and reappears on reload. The assistant message is
+    // the last one in the list; capture its id + the active conversation now.
+    val streamMsgId = _messages.value.lastOrNull()?.id
+    val streamConvId = conversationId
+    var lastPersistMs = 0L
+    suspend fun persistPartial(force: Boolean) {
+      if (streamMsgId == null) return
+      val now = System.currentTimeMillis()
+      if (!force && now - lastPersistMs < 1200) return
+      lastPersistMs = now
+      val content = sb.toString()
+      if (content.isBlank()) return
+      withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+        try {
+          chatDao.insertMessage(
+            MessageEntity(id = streamMsgId, conversationId = streamConvId, role = Role.ASSISTANT.value, content = content),
+          )
+        } catch (_: Exception) {}
+      }
+    }
+
     try {
       orchestrator.stream(messages, imageBase64s).collect { chunk ->
         chunk.reasoning?.let { r ->
@@ -1312,6 +1408,7 @@ $transcript
               )
             }
           }
+          persistPartial(force = chunk.isDone)
         }
       }
     } finally {
@@ -1335,6 +1432,7 @@ $transcript
           )
         }
       }
+      persistPartial(force = true)
     }
     return StreamResult(sb.toString(), lastUsage, System.currentTimeMillis() - streamStartMs)
   }
@@ -1345,7 +1443,7 @@ $transcript
       return
     }
     cancelStreaming()
-    streamingJob = viewModelScope.launch(Dispatchers.IO) {
+    streamingJob = viewModelScope.launch(Dispatchers.IO + streamExceptionHandler) {
       _isStreaming.value = true
       val assistantMsg = ChatMessage(role = Role.ASSISTANT, content = "")
       _messages.value = _messages.value + assistantMsg

@@ -66,6 +66,8 @@ class MainActivity : FragmentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
 
+    handleAssistIntent(intent)
+
     // Request permissions on first launch
     val needed = runtimePermissions.filter {
       ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -100,5 +102,35 @@ class MainActivity : FragmentActivity() {
     startForegroundService(Intent(this, AiopeForegroundService::class.java))
 
     setContent { AiopeMain(composeNavigator = composeNavigator, providerStore = providerStore, toolStore = toolStore, chatDao = chatDao) }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleAssistIntent(intent)
+  }
+
+  /**
+   * When launched via the assist gesture (ACTION_ASSIST) or the floating voice button, capture any
+   * assist context the system provides about the foreground app and flag that voice should start.
+   * The chat layer reads these from AssistBridge to enrich the prompt and auto-open voice.
+   */
+  private fun handleAssistIntent(intent: Intent?) {
+    intent ?: return
+    val isAssist = intent.action == Intent.ACTION_ASSIST
+    val startVoice = intent.getBooleanExtra(AssistantOverlayService.EXTRA_START_VOICE, false) || isAssist
+    if (startVoice) ngo.xnet.aiope.core.preferences.AssistBridge.startVoice = true
+
+    // Assist context: the assistant may receive a snapshot of the foreground app's visible text.
+    if (isAssist) {
+      val sb = StringBuilder()
+      try {
+        (intent.getParcelableExtra(Intent.EXTRA_ASSIST_CONTEXT) as? Bundle)?.let { b ->
+          b.keySet().forEach { k -> b.getCharSequence(k)?.let { sb.append(it).append('\n') } }
+        }
+        intent.getCharSequenceExtra(Intent.EXTRA_ASSIST_INPUT_HINT_KEYBOARD)?.let { sb.append(it).append('\n') }
+      } catch (_: Exception) {}
+      if (sb.isNotBlank()) ngo.xnet.aiope.core.preferences.AssistBridge.pendingContext = sb.toString().trim()
+    }
   }
 }

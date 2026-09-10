@@ -22,7 +22,16 @@ class AiopeForegroundService : Service() {
   override fun onCreate() {
     super.onCreate()
     createChannel()
-    startForeground(NOTIFICATION_ID, buildNotification())
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+      startForeground(
+        NOTIFICATION_ID,
+        buildNotification(),
+        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+          android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+      )
+    } else {
+      startForeground(NOTIFICATION_ID, buildNotification())
+    }
     wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
       .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "aiope::background")
       .apply { acquire() }

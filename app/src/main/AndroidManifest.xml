@@ -13,6 +13,8 @@
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.READ_CALENDAR" />
@@ -48,6 +50,12 @@
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
+      <!-- Assist capability: qualifies AIOPE for the ASSISTANT (default assistant) role and
+           lets it respond to the assist gesture / long-press home. -->
+      <intent-filter>
+        <action android:name="android.intent.action.ASSIST" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
     </activity>
 
     <provider
@@ -62,6 +70,11 @@
 
     <service
       android:name=".AiopeForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse|dataSync" />
+
+    <service
+      android:name=".AssistantOverlayService"
       android:exported="false"
       android:foregroundServiceType="specialUse" />
 

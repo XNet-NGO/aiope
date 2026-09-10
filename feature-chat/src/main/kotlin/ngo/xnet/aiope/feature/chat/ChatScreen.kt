@@ -41,6 +41,17 @@ import kotlinx.coroutines.launch
 fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () -> Unit = {}) {
   val messages by viewModel.messages.collectAsStateWithLifecycle()
   val isStreaming by viewModel.isStreaming.collectAsStateWithLifecycle()
+
+  // When the activity resumes (incl. after an assist-gesture / voice-button launch), consume any
+  // pending assist invocation: capture screen context + auto-start voice.
+  val assistLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+  androidx.compose.runtime.DisposableEffect(assistLifecycleOwner) {
+    val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+      if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) viewModel.checkAssistInvocation()
+    }
+    assistLifecycleOwner.lifecycle.addObserver(obs)
+    onDispose { assistLifecycleOwner.lifecycle.removeObserver(obs) }
+  }
   val isInRealtimeVoice by viewModel.isInRealtimeVoice.collectAsStateWithLifecycle()
   val isVoiceListening by viewModel.isVoiceListening.collectAsStateWithLifecycle()
   val isVoiceSpeaking by viewModel.isVoiceSpeaking.collectAsStateWithLifecycle()
