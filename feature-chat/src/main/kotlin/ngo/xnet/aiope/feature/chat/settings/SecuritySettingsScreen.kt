@@ -51,6 +51,26 @@ internal fun SecuritySettingsScreen(onBack: () -> Unit) {
   var totpUri by remember { mutableStateOf<String?>(null) }
   var totpCode by remember { mutableStateOf("") }
   var awaitingKey by remember { mutableStateOf(false) }
+
+  // Assistant (default digital assistant) role state.
+  var assistantAvailable by remember { mutableStateOf(AssistantRole.isAvailable(context)) }
+  var assistantHeld by remember { mutableStateOf(AssistantRole.isHeld(context)) }
+  val assistantRoleLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+    androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+  ) { result ->
+    ngo.xnet.aiope.core.preferences.AuthInterop.end()
+    assistantHeld = AssistantRole.isHeld(context)
+    status = if (result.resultCode == android.app.Activity.RESULT_OK || assistantHeld) {
+      "AIOPE is now the device assistant."
+    } else {
+      "Assistant role not granted."
+    }
+  }
+  // Refresh held status whenever this screen composes (e.g. returning from system settings).
+  androidx.compose.runtime.LaunchedEffect(Unit) {
+    assistantHeld = AssistantRole.isHeld(context)
+    assistantAvailable = AssistantRole.isAvailable(context)
+  }
   var keyJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
   fun toggle(factor: AuthFactor, enable: Boolean) {
@@ -196,6 +216,83 @@ internal fun SecuritySettingsScreen(onBack: () -> Unit) {
             checked = state.appLockEnabled,
             enabled = state.hasAnyFactor,
             onCheckedChange = { repo.setAppLock(it) },
+          )
+        },
+      )
+
+      if (assistantAvailable) {
+        HorizontalDivider(Modifier.padding(top = 8.dp))
+        ListItem(
+          headlineContent = { Text("Set AIOPE as device assistant") },
+          supportingContent = {
+            Text(
+              if (assistantHeld) "AIOPE is the default assistant. Assist gesture / long-press home opens AIOPE."
+              else "Make AIOPE the default digital assistant (assist gesture, long-press home).",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          },
+          trailingContent = {
+            if (assistantHeld) {
+              Text("✔", color = MaterialTheme.colorScheme.primary)
+            } else {
+              TextButton(onClick = {
+                val intent = AssistantRole.requestIntent(context)
+                if (intent != null) {
+                  ngo.xnet.aiope.core.preferences.AuthInterop.begin()
+                  assistantRoleLauncher.launch(intent)
+                } else {
+                  status = "Assistant role unavailable on this device."
+                }
+              }) { Text("Set") }
+            }
+          },
+        )
+      }
+
+      // Floating voice button (overlay over other apps).
+      HorizontalDivider(Modifier.padding(top = 8.dp))
+      var overlayEnabled by remember { mutableStateOf(VoiceOverlayControl.isRunning) }
+      val overlayPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+      ) { _ ->
+        ngo.xnet.aiope.core.preferences.AuthInterop.end()
+        if (android.provider.Settings.canDrawOverlays(context)) {
+          VoiceOverlayControl.start(context); overlayEnabled = true
+          status = "Floating voice button enabled."
+        } else {
+          status = "Overlay permission not granted."
+        }
+      }
+      ListItem(
+        headlineContent = { Text("Floating voice button") },
+        supportingContent = {
+          Text(
+            "Show a draggable mic over other apps to talk to AIOPE from anywhere.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        },
+        trailingContent = {
+          Switch(
+            checked = overlayEnabled,
+            onCheckedChange = { on ->
+              if (on) {
+                if (android.provider.Settings.canDrawOverlays(context)) {
+                  VoiceOverlayControl.start(context); overlayEnabled = true
+                } else {
+                  ngo.xnet.aiope.core.preferences.AuthInterop.begin()
+                  overlayPermLauncher.launch(
+                    android.content.Intent(
+                      android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                      android.net.Uri.parse("package:${context.packageName}"),
+                    ),
+                  )
+                }
+              } else {
+                VoiceOverlayControl.stop(context); overlayEnabled = false
+              }
+            },
           )
         },
       )
