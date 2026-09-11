@@ -1,0 +1,6 @@
+v4.11.0 — Headless voice & assist screen capture
+
+• Voice moved into a process-scoped controller shared by in-app, overlay, and assist paths.
+• Floating mic starts/stops live voice headlessly (no app foregrounding) and changes color by state.
+• Assist gesture captures the current screen as prompt context and starts voice headlessly.
+• Build: reduced Gradle memory footprint.

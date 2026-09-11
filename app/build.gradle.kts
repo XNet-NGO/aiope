@@ -52,7 +52,25 @@ android {
     release {
       isShrinkResources = true
       isMinifyEnabled = true
-      signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+      // Alt-store distribution (Obtainium/IzzyOnDroid/F-Droid) requires a STABLE release
+      // signature so updates install over prior versions. Never silently fall back to the
+      // debug key for a real release build — fail loudly so we don't ship an unstable signature.
+      val releaseSigning = signingConfigs.findByName("release")
+      if (releaseSigning != null) {
+        signingConfig = releaseSigning
+      } else {
+        val allowUnsigned = (project.findProperty("allowUnsignedRelease") as String?) == "true"
+        if (allowUnsigned) {
+          logger.warn("WARNING: release keystore.properties missing — falling back to DEBUG signing (allowUnsignedRelease=true). DO NOT distribute this build.")
+          signingConfig = signingConfigs.getByName("debug")
+        } else {
+          throw GradleException(
+            "Release keystore.properties not found. A stable release signature is required for " +
+              "distribution. Provide keystore.properties, or pass -PallowUnsignedRelease=true to " +
+              "build a debug-signed (non-distributable) release for local testing only.",
+          )
+        }
+      }
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
   }

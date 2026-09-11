@@ -286,6 +286,34 @@ MCP (Model Context Protocol) support for extending the AI with external tool ser
 
 Or download the latest APK from [Releases](https://github.com/XNet-NGO/AIOPE/releases).
 
+### Install (no Google Play required)
+
+AIOPE is distributed outside Google Play. All builds are signed with the same release key, so updates install cleanly over previous versions regardless of source.
+
+**Obtainium (recommended — auto-updates from GitHub Releases)**
+
+1. Install [Obtainium](https://github.com/ImranR98/Obtainium).
+2. Add App → paste the repository URL:
+   `https://github.com/XNet-NGO/aiope`
+3. Obtainium tracks each GitHub Release and prompts you when a new version is published.
+
+**Direct APK**
+
+Download the latest `AIOPE-vX.Y.Z-release.apk` from [Releases](https://github.com/XNet-NGO/AIOPE/releases) and install it (enable "install unknown apps" for your browser/file manager if prompted).
+
+**F-Droid client (self-hosted repo)**
+
+AIOPE is licensed under the BSL 1.1 (not an OSI-approved license until it converts to Apache 2.0 in 2030), so it is not on the official F-Droid repository. A self-hosted F-Droid-compatible repository can be added in the F-Droid client if/when published; store listing metadata lives under `fastlane/metadata/android/`.
+
+To verify a downloaded APK is authentic, check the signing certificate fingerprint (SHA-256):
+
+```
+apksigner verify --print-certs AIOPE-*.apk
+```
+
+It must match the official release certificate:
+`CN=XNET, OU=Dev, O=XNET, L=Boise, ST=Idaho, C=US`
+
 ### Requirements
 
 - Android 8.0+ (API 26)
