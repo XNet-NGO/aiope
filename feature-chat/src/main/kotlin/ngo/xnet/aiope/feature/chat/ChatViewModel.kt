@@ -39,6 +39,7 @@ class ChatViewModel @Inject constructor(
   val providerStore: ProviderStore,
   val toolStore: ToolStore,
   private val remoteToolBridge: RemoteToolBridge,
+  private val voiceController: ngo.xnet.aiope.feature.chat.engine.VoiceSessionController,
 ) : AndroidViewModel(application) {
 
   private val connectivityManager = application.getSystemService(android.net.ConnectivityManager::class.java)
@@ -102,16 +103,60 @@ class ChatViewModel @Inject constructor(
     _isStreaming.value = false
   }
 
-  /** Toggle realtime voice mode */
-  private var voiceStarting = false
-
+  /** Toggle realtime voice mode (delegates to the process-scoped controller). */
   fun toggleRealtimeVoice() {
-    if (_isInRealtimeVoice.value || voiceStarting) {
-      stopRealtimeVoice()
-    } else {
-      startRealtimeVoice()
+    wireVoiceController()
+    voiceController.toggle()
+  }
+
+  private var voiceWired = false
+  /** Register this ViewModel's collaborators with the singleton voice controller (once). */
+  private fun wireVoiceController() {
+    if (voiceWired) return
+    voiceWired = true
+    voiceController.markWiredByViewModel()
+    voiceController._providerStore = providerStore
+    voiceController.toolExecutorProvider = { toolExecutor }
+    voiceController.conversationIdProvider = { conversationId }
+    voiceController.messageSink = { id, role, content ->
+      viewModelScope.launch(Dispatchers.IO) {
+        try {
+          chatDao.insertMessage(MessageEntity(id = id, conversationId = conversationId, role = role, content = content))
+        } catch (_: Exception) {}
+      }
+    }
+    // Mirror controller state -> UI flows.
+    viewModelScope.launch {
+      voiceController.state.collect { s ->
+        _isInRealtimeVoice.value = s != ngo.xnet.aiope.feature.chat.engine.VoiceState.IDLE
+        _isVoiceListening.value = s == ngo.xnet.aiope.feature.chat.engine.VoiceState.LISTENING
+        _isVoiceSpeaking.value = s == ngo.xnet.aiope.feature.chat.engine.VoiceState.SPEAKING
+      }
+    }
+    // Mirror controller turn events -> visible message list (live).
+    viewModelScope.launch {
+      voiceController.turns.collect { t ->
+        when (t) {
+          is ngo.xnet.aiope.feature.chat.engine.VoiceTurn.UserTranscript ->
+            _messages.value = _messages.value + ChatMessage(id = t.id, role = Role.USER, content = t.text)
+          is ngo.xnet.aiope.feature.chat.engine.VoiceTurn.AssistantDelta -> {
+            val msgs = _messages.value.toMutableList()
+            val last = msgs.lastOrNull()
+            if (last != null && last.role == Role.ASSISTANT && last.id == t.id) {
+              msgs[msgs.lastIndex] = last.copy(content = last.content + t.text)
+            } else {
+              msgs.add(ChatMessage(id = t.id, role = Role.ASSISTANT, content = t.text))
+            }
+            _messages.value = msgs
+          }
+          is ngo.xnet.aiope.feature.chat.engine.VoiceTurn.Error ->
+            _messages.value = _messages.value + ChatMessage(role = Role.ASSISTANT, content = "⚠️ Voice error: ${t.message}")
+        }
+      }
     }
   }
+
+  private var voiceStarting = false
 
   // Pre-connected voice session for instant start
   private var preConnectedStream: RealtimeStreaming? = null
@@ -530,8 +575,8 @@ class ChatViewModel @Inject constructor(
     refreshModelLabel()
     ngo.xnet.aiope.feature.chat.browser.BrowserServer.start { getBrowser() }
     getBrowser() // preload WebView on main thread
-    // Pre-connect voice WebSocket for instant mic start
-    preConnectVoice()
+    // Voice is owned by VoiceSessionController now; wire it once so external triggers work.
+    wireVoiceController()
     viewModelScope.launch {
       // Startup is in Chat mode → only consider chat-lane (non-media) conversations.
       val all = chatDao.getConversations().filter { it.agentName != MEDIA_TAG }
@@ -848,9 +893,10 @@ class ChatViewModel @Inject constructor(
   private var lastSendHash = 0
 
   fun send(text: String, imageUris: List<String> = emptyList()) {
-    // If in live voice session, route through the WebSocket instead of text chat
-    if (_isInRealtimeVoice.value && realtimeStream != null) {
-      sendToLiveVoice(text, imageUris)
+    // If in a live voice session, route text through the voice controller instead of text chat.
+    if (voiceController.isActive) {
+      _messages.value = _messages.value + ChatMessage(role = Role.USER, content = text)
+      voiceController.sendText(text)
       return
     }
 

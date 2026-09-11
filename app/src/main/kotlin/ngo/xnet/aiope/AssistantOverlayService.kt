@@ -16,6 +16,8 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * A small draggable floating mic button drawn over other apps via SYSTEM_ALERT_WINDOW. Tapping it
@@ -29,6 +31,24 @@ class AssistantOverlayService : Service() {
 
   private var windowManager: WindowManager? = null
   private var bubble: View? = null
+  private var bubbleBg: android.graphics.drawable.GradientDrawable? = null
+  private val scope = kotlinx.coroutines.CoroutineScope(
+    kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main,
+  )
+
+  private fun controller() =
+    dagger.hilt.android.EntryPointAccessors.fromApplication(
+      applicationContext,
+      VoiceOverlayEntryPoint::class.java,
+    ).voiceController()
+
+  /** Bubble color per voice state. */
+  private fun colorFor(state: ngo.xnet.aiope.feature.chat.engine.VoiceState): Int = when (state) {
+    ngo.xnet.aiope.feature.chat.engine.VoiceState.IDLE -> 0xFF1E88E5.toInt()      // blue
+    ngo.xnet.aiope.feature.chat.engine.VoiceState.STARTING -> 0xFFF9A825.toInt()  // amber
+    ngo.xnet.aiope.feature.chat.engine.VoiceState.LISTENING -> 0xFF43A047.toInt() // green
+    ngo.xnet.aiope.feature.chat.engine.VoiceState.SPEAKING -> 0xFF8E24AA.toInt()  // purple
+  }
 
   companion object {
     private const val CHANNEL_ID = "aiope_overlay"
@@ -58,12 +78,14 @@ class AssistantOverlayService : Service() {
     windowManager = wm
 
     val size = (56 * resources.displayMetrics.density).toInt()
+    val bg = android.graphics.drawable.GradientDrawable().apply {
+      shape = android.graphics.drawable.GradientDrawable.OVAL
+      setColor(colorFor(ngo.xnet.aiope.feature.chat.engine.VoiceState.IDLE))
+    }
+    bubbleBg = bg
     val iv = ImageView(this).apply {
       setImageResource(android.R.drawable.ic_btn_speak_now)
-      background = android.graphics.drawable.GradientDrawable().apply {
-        shape = android.graphics.drawable.GradientDrawable.OVAL
-        setColor(0xFF1E88E5.toInt())
-      }
+      background = bg
       setPadding(size / 4, size / 4, size / 4, size / 4)
       alpha = 0.9f
     }
@@ -104,20 +126,34 @@ class AssistantOverlayService : Service() {
 
     runCatching { wm.addView(iv, params) }
     bubble = iv
+
+    // Live-tint the bubble based on the shared voice state.
+    scope.launch {
+      controller().state.collect { s ->
+        bubbleBg?.setColor(colorFor(s))
+        iv.alpha = if (s == ngo.xnet.aiope.feature.chat.engine.VoiceState.IDLE) 0.9f else 1f
+      }
+    }
   }
 
   private fun launchVoice() {
-    // Toggle: if voice is active, request stop; otherwise request start. The ViewModel is the
-    // single owner and consumes VoiceBridge.requestToggle on resume.
-    ngo.xnet.aiope.core.preferences.VoiceBridge.requestToggle = true
-    val intent = Intent(this, MainActivity::class.java).apply {
-      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-      putExtra(EXTRA_START_VOICE, false)
+    // Headless: toggle the process-scoped voice controller directly, without launching the
+    // activity. The controller is a Hilt @Singleton, reachable via an app EntryPoint.
+    try {
+      controller().toggle()
+    } catch (e: Exception) {
+      android.util.Log.e("AIOPE2", "overlay voice toggle failed: ${e.message}", e)
     }
-    startActivity(intent)
+  }
+
+  @dagger.hilt.EntryPoint
+  @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+  interface VoiceOverlayEntryPoint {
+    fun voiceController(): ngo.xnet.aiope.feature.chat.engine.VoiceSessionController
   }
 
   override fun onDestroy() {
+    runCatching { scope.cancel() }
     bubble?.let { b -> runCatching { windowManager?.removeView(b) } }
     bubble = null
     super.onDestroy()
