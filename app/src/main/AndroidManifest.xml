@@ -50,12 +50,6 @@
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
-      <!-- Assist capability: qualifies AIOPE for the ASSISTANT (default assistant) role and
-           lets it respond to the assist gesture / long-press home. -->
-      <intent-filter>
-        <action android:name="android.intent.action.ASSIST" />
-        <category android:name="android.intent.category.DEFAULT" />
-      </intent-filter>
     </activity>
 
     <provider
@@ -77,6 +71,38 @@
       android:name=".AssistantOverlayService"
       android:exported="false"
       android:foregroundServiceType="specialUse" />
+
+    <!-- Voice assistant: the always-on interaction service (gated by BIND_VOICE_INTERACTION),
+         its session service, and a stub recognition service required by the metadata. -->
+    <service
+      android:name=".AiopeVoiceInteractionService"
+      android:exported="true"
+      android:permission="android.permission.BIND_VOICE_INTERACTION">
+      <meta-data
+        android:name="android.voice_interaction"
+        android:resource="@xml/voice_interaction_service" />
+      <intent-filter>
+        <action android:name="android.service.voice.VoiceInteractionService" />
+      </intent-filter>
+    </service>
+
+    <service
+      android:name=".AiopeVoiceInteractionSessionService"
+      android:exported="true"
+      android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+    <service
+      android:name=".AiopeRecognitionService"
+      android:exported="true"
+      android:permission="android.permission.BIND_VOICE_INTERACTION">
+      <intent-filter>
+        <action android:name="android.speech.RecognitionService" />
+      </intent-filter>
+      <meta-data
+        android:name="android.speech"
+        android:resource="@xml/recognition_service" />
+    </service>
+
 
     <service
       android:name="ngo.xnet.aiope.feature.chat.fileserver.FileServerService"
