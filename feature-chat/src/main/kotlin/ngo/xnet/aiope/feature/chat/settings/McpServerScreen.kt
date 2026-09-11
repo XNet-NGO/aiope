@@ -106,20 +106,15 @@ internal fun McpServerScreen(toolStore: ToolStore, onBack: () -> Unit) {
               style = MaterialTheme.typography.bodySmall,
               color = cs.onSurfaceVariant,
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
-              referral,
-              style = MaterialTheme.typography.bodySmall,
-              color = cs.primary,
-              modifier = Modifier.clickable {
-                runCatching {
-                  ctx.startActivity(
-                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(referral))
-                      .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                  )
-                }
-              },
-            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = {
+              runCatching {
+                ctx.startActivity(
+                  android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(referral))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+              }
+            }) { Text("Sign up for Vinkius") }
           }
         }
       }

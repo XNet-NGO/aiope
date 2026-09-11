@@ -49,6 +49,36 @@ internal fun ProviderListScreen(
     },
   ) { pad ->
     LazyColumn(Modifier.fillMaxSize().padding(pad)) {
+      item {
+        val cs = MaterialTheme.colorScheme
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val referral = "https://novita.ai/?ref=nwq4otq&utm_source=affiliate"
+        fun open(url: String) = runCatching {
+          ctx.startActivity(
+            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+              .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+          )
+        }
+        Card(
+          Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+          colors = CardDefaults.cardColors(containerColor = cs.surfaceVariant),
+        ) {
+          Column(Modifier.padding(14.dp)) {
+            Text("Need an API key? Try Novita AI", style = MaterialTheme.typography.titleSmall, color = cs.onSurface)
+            Spacer(Modifier.height(6.dp))
+            Text(
+              "AIOPE includes a disabled \"Novita AI\" provider below — an OpenAI-compatible " +
+                "inference cloud with 100+ open models at low cost. Create an account, generate an " +
+                "API key, then open the Novita provider here, paste your key, tap Fetch models to " +
+                "auto-detect what's available, pick one, and enable it.",
+              style = MaterialTheme.typography.bodySmall,
+              color = cs.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(onClick = { open(referral) }) { Text("Sign up for Novita") }
+          }
+        }
+      }
       section(
         title = ProviderCategory.TEXT.displayName,
         subtitle = "Chat, tools, and vision. One active profile drives conversations.",

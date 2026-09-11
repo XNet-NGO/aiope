@@ -32,6 +32,33 @@ class ProviderStore @Inject constructor(
     }
     seedTaskDefaults()
     ensureLiveModel()
+    seedNovitaByok()
+  }
+
+  /**
+   * Seed a disabled, empty-key Novita provider once (BYOK). Users paste their own Novita API key
+   * to activate it. No key is shipped, and NO models are pre-seeded: the provider editor
+   * auto-detects models from Novita's live /models endpoint (base ends in /openai) once a key is
+   * present, so the model list and per-model capabilities come from the real API rather than a
+   * guessed default. Guarded by a settings flag so user deletion is respected.
+   */
+  private fun seedNovitaByok() = runBlocking(Dispatchers.IO) {
+    val seededKey = "seeded_novita_byok"
+    if (dao.getSetting(seededKey)?.toBooleanStrictOrNull() == true) return@runBlocking
+    if (getAll().none { it.id == "novita_byok" }) {
+      val novita = ProviderProfile(
+        id = "novita_byok",
+        builtinId = "custom",
+        label = "Novita AI",
+        apiKey = "", // BYOK — user supplies their own key
+        apiBase = "https://api.novita.ai/v3/openai", // OpenAI-compatible; /models is auto-detected
+        selectedModelId = "", // chosen by the user after models auto-load
+        isActive = false,
+        modelConfigs = emptyMap(), // no guessed defaults — detected from the live API
+      )
+      save(novita)
+    }
+    dao.upsertSetting(SettingsKvEntity(seededKey, "true"))
   }
 
   private fun ensureLiveModel() {
