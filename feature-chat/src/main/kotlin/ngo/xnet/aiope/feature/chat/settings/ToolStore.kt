@@ -20,6 +20,31 @@ class ToolStore @Inject constructor(
 ) {
   init {
     migrateFromPrefs()
+    seedVinkiusTemplate()
+  }
+
+  /**
+   * Seed a disabled Vinkius Cloud MCP server template exactly once. The URL is a token
+   * placeholder — the user pastes their own Connection Link/token to activate it, so no secret is
+   * shipped in the APK. Guarded by a seed-once flag so user deletion is respected.
+   */
+  private fun seedVinkiusTemplate() = runBlocking(Dispatchers.IO) {
+    val seededKey = "seeded_vinkius_mcp"
+    if (dao.getSetting(seededKey)?.toBooleanStrictOrNull() == true) return@runBlocking
+    val vinkius = McpServerConfig(
+      id = "vinkius",
+      name = "Vinkius Cloud",
+      // Token placeholder — replace {token} with your Vinkius Connection Link token to activate.
+      url = "https://edge.vinkius.com/{token}/mcp",
+      transport = McpTransport.HTTP, // Vinkius uses Streamable HTTP
+      enabled = false, // stays off until the user supplies their token
+      authType = McpAuthType.NONE, // token is embedded in the URL path
+    )
+    // Only insert if the user hasn't already created a server with this id.
+    if (dao.getMcpServers().none { runCatching { McpServerConfig.fromJson(JSONObject(it.json)).id }.getOrNull() == vinkius.id }) {
+      dao.upsertMcpServer(McpServerEntity(vinkius.id, vinkius.toJson().toString()))
+    }
+    dao.upsertSetting(SettingsKvEntity(seededKey, "true"))
   }
 
   private fun migrateFromPrefs() {

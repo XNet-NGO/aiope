@@ -81,6 +81,48 @@ internal fun McpServerScreen(toolStore: ToolStore, onBack: () -> Unit) {
     )
   }) { pad ->
     LazyColumn(Modifier.fillMaxSize().padding(pad)) {
+      item {
+        val cs = MaterialTheme.colorScheme
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val referral = "https://cloud.vinkius.com/?referral=vk_fftiwfz6"
+        Card(
+          Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+          colors = CardDefaults.cardColors(containerColor = cs.surfaceVariant),
+        ) {
+          Column(Modifier.padding(14.dp)) {
+            Text("Add connectors with Vinkius Cloud", style = MaterialTheme.typography.titleSmall, color = cs.onSurface)
+            Spacer(Modifier.height(6.dp))
+            Text(
+              "AIOPE ships with a disabled \"Vinkius Cloud\" server below. Vinkius hosts 3,400+ MCP " +
+                "connectors. Create a free account, deploy a connector, and paste your Connection " +
+                "Link (https://edge.vinkius.com/<token>/mcp) into the Vinkius server's URL, then " +
+                "enable it.",
+              style = MaterialTheme.typography.bodySmall,
+              color = cs.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+              "Sign up with our referral link to get 2x the connectors free:",
+              style = MaterialTheme.typography.bodySmall,
+              color = cs.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+              referral,
+              style = MaterialTheme.typography.bodySmall,
+              color = cs.primary,
+              modifier = Modifier.clickable {
+                runCatching {
+                  ctx.startActivity(
+                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(referral))
+                      .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                  )
+                }
+              },
+            )
+          }
+        }
+      }
       if (servers.isEmpty()) {
         item {
           Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
