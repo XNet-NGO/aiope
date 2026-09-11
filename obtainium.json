@@ -1,0 +1,8 @@
+{
+  "id": "ngo.xnet.aiope",
+  "url": "https://github.com/XNet-NGO/aiope",
+  "author": "XNet-NGO",
+  "name": "AIOPE",
+  "preferredApkIndex": 0,
+  "additionalSettings": "{\"versionDetection\":true,\"useVersionCodeAsOSVersion\":false,\"apkFilterRegEx\":\"AIOPE-v.*-release\\\\.apk$\",\"invertAPKFilter\":false,\"autoApkFilterByArch\":true,\"appName\":\"AIOPE\",\"appAuthor\":\"XNet-NGO\",\"shizukuPretendToBeGooglePlay\":false,\"allowInsecure\":false,\"exemptFromBackgroundUpdates\":false,\"skipUpdateNotifications\":false,\"about\":\"An autonomous on-device AI agent: 48 tools, realtime voice, Linux terminal. BSL 1.1.\",\"includePrereleases\":false,\"fallbackToOlderReleases\":true,\"filterReleaseTitlesByRegEx\":\"\",\"filterReleaseNotesByRegEx\":\"\",\"verifyLatestTag\":false,\"sortMethodChoice\":\"date\",\"useLatestAssetDateAsReleaseDate\":false,\"releaseTitleAsVersion\":false,\"versionExtractionRegEx\":\"v([0-9]+\\\\.[0-9]+\\\\.[0-9]+)\",\"matchGroupToUse\":\"1\",\"versionDetectionAcceptEUtoDeviceUpdates\":false,\"trackOnly\":false,\"versionCodeDetectionMethod\":\"\"}"
+}

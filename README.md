@@ -292,6 +292,16 @@ AIOPE is distributed outside Google Play. All builds are signed with the same re
 
 **Obtainium (recommended — auto-updates from GitHub Releases)**
 
+One-tap add: with Obtainium installed, open the config link (or import the file):
+
+- Config file: [`obtainium.json`](obtainium.json) — in Obtainium, tap the ⋮ menu → **Import/Export** → **Import from file/URL** and point it at:
+  `https://raw.githubusercontent.com/XNet-NGO/aiope/main/obtainium.json`
+- Or add by URL: **Add App** → paste `https://github.com/XNet-NGO/aiope`
+
+The bundled config pins the APK filter (`AIOPE-v*-release.apk`), version parsing from the release tag, and app identity, so updates are detected reliably. Obtainium then tracks each GitHub Release and prompts you when a new version is published.
+
+Manual steps if you prefer:
+
 1. Install [Obtainium](https://github.com/ImranR98/Obtainium).
 2. Add App → paste the repository URL:
    `https://github.com/XNet-NGO/aiope`
