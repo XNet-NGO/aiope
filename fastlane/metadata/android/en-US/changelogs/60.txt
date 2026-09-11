@@ -1,0 +1,5 @@
+v4.13.0 — Novita AI provider
+
+• Adds a disabled Novita AI provider (OpenAI-compatible, BYOK). Add your key, tap Fetch models to auto-detect, and enable.
+• Referral header on the Providers screen (Sign up for Novita).
+• MCP Servers screen: Vinkius signup is now a button.
