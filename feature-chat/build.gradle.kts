@@ -7,19 +7,21 @@ plugins {
   id("com.google.devtools.ksp")
 }
 
-val localKeyMap: Map<String, String> = rootProject.file("local.properties")
-  .takeIf { it.exists() }?.readLines()
-  ?.filter { it.contains("=") && !it.startsWith("#") }
-  ?.associate { it.substringBefore("=").trim() to it.substringAfter("=").trim() }
-  ?: emptyMap()
-fun apiKey(name: String): String = localKeyMap[name] ?: findProperty(name)?.toString() ?: System.getenv(name) ?: ""
+// Secrets are read from git-ignored files only (never tracked in VCS):
+//   secrets.properties (preferred) -> local.properties -> -P project property -> env var.
+// Non-private/public builds only consume GATEWAY_KEY.
+val secretsMap: Map<String, String> = listOf("secrets.properties", "local.properties")
+  .map { rootProject.file(it) }
+  .filter { it.exists() }
+  .flatMap { it.readLines() }
+  .filter { it.contains("=") && !it.startsWith("#") }
+  .associate { it.substringBefore("=").trim() to it.substringAfter("=").trim() }
+fun apiKey(name: String): String = secretsMap[name] ?: findProperty(name)?.toString() ?: System.getenv(name) ?: ""
 
 android {
   namespace = "ngo.xnet.aiope.feature.chat"
   defaultConfig {
     buildConfigField("String", "GATEWAY_KEY", "\"${apiKey("GATEWAY_KEY")}\"")
-    buildConfigField("String", "AI_STUDIO_KEY", "\"${apiKey("AI_STUDIO_KEY")}\"")
-    buildConfigField("String", "CLOUDFLARE_AI_KEY", "\"${apiKey("CLOUDFLARE_AI_KEY")}\"")
   }
   buildFeatures { buildConfig = true }
 }
