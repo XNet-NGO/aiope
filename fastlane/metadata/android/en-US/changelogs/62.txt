@@ -1,0 +1,7 @@
+v4.15.0 — Faster, leaner, per-mode
+
+• Per-mode tools: Chat exposes an everyday-assistant set, Plan adds research/authoring/scheduling, Build is the full toolset, Media has none — tunable per tool in Settings → Tools.
+• Built-in AIOPE personas tuned per mode (Chat/Plan/Build); the Agent screen now holds just your own "About You" context.
+• Leaner requests: reordered system context for better prompt caching and trimmed tool definitions.
+• Fixed a bug where tools allowed in Chat (e.g. send SMS) were blocked at runtime.
+• Remote browser driving: consistent auth-profile copy (cookies + web-storage tokens now carry over), OS-keyring cookie decryption, and safe reseed that closes browsers first. Cross-platform daemon.
