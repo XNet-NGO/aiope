@@ -81,16 +81,46 @@ func firefoxBinaryCandidates() []string {
 // these issues, so we probe common unconfined locations before falling back to
 // whatever `firefox` on PATH resolves to (which is often the snap wrapper).
 var firefoxCandidates = []string{
+	// Explicit unconfined install locations (distro packages, Mozilla tarballs).
+	// Channel builds package under /usr/lib/firefox-<channel>/firefox on most
+	// distros (Debian/Ubuntu/Mozilla apt repo) and /opt on others.
+	"/usr/lib/firefox-devedition/firefox",
+	"/usr/lib/firefox-beta/firefox",
+	"/usr/lib/firefox-nightly/firefox",
 	"/usr/lib/firefox/firefox",
 	"/usr/lib64/firefox/firefox",
+	"/opt/firefox-devedition/firefox",
+	"/opt/firefox-beta/firefox",
+	"/opt/firefox-nightly/firefox",
 	"/opt/firefox/firefox",
+	// Channel-specific launcher names on PATH (Mozilla's official packaging and
+	// several distros ship these as /usr/bin/firefox-<channel>).
+	"firefox-devedition",
+	"firefox-developer-edition",
+	"firefox-beta",
+	"firefox-nightly",
 	"firefox-esr",
-	"firefox", // may be the snap wrapper on Ubuntu; last resort
+	// Plain firefox last. Post-snap-removal this is a real unconfined binary on
+	// most systems (often a symlink to the installed channel); on legacy Ubuntu
+	// it may still be the snap wrapper.
+	"firefox",
 }
 
 // isLikelySnap reports whether a resolved binary path is the snap wrapper.
+// It resolves symlinks first: on snap-free systems /usr/bin/firefox is often a
+// symlink to a real channel build (e.g. firefox-devedition), so we must NOT
+// treat /usr/bin/firefox as snap by name — only a path that actually lives
+// under /snap/ (directly or after symlink resolution) is the snap wrapper.
 func isLikelySnap(path string) bool {
-	return strings.Contains(path, "/snap/") || path == "/usr/bin/firefox"
+	if strings.Contains(path, "/snap/") {
+		return true
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		if strings.Contains(resolved, "/snap/") {
+			return true
+		}
+	}
+	return false
 }
 
 // standard profiles.ini locations across OSes (native, snap, flatpak on Linux).

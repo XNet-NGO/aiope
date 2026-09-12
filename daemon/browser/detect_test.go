@@ -17,8 +17,8 @@ func TestAutomationProfileDir(t *testing.T) {
 		wantHas string
 	}{
 		{
-			name:    "snap wrapper uses snap-legal path",
-			binary:  "/usr/bin/firefox",
+			name:    "snap-path binary uses snap-legal path",
+			binary:  "/var/lib/snapd/snap/firefox/current/usr/lib/firefox/firefox",
 			profile: "auto1",
 			wantHas: filepath.Join(home, "snap", "firefox", "common", ".mozilla", "firefox", "auto1"),
 		},
@@ -57,8 +57,11 @@ func TestAutomationProfileDir(t *testing.T) {
 }
 
 func TestIsLikelySnap(t *testing.T) {
-	snap := []string{"/usr/bin/firefox", "/snap/firefox/current/usr/lib/firefox/firefox", "/snap/bin/firefox"}
-	unconfined := []string{"/usr/lib/firefox/firefox", "/opt/firefox/firefox", "/home/u/Downloads/firefox-156/firefox/firefox"}
+	// Snap is detected by the resolved path living under /snap/ — NOT by the
+	// /usr/bin/firefox name, which on snap-free systems is a real symlink to a
+	// channel build (e.g. firefox-devedition).
+	snap := []string{"/snap/firefox/current/usr/lib/firefox/firefox", "/snap/bin/firefox", "/var/lib/snapd/snap/firefox/x/usr/lib/firefox/firefox"}
+	unconfined := []string{"/usr/lib/firefox/firefox", "/usr/lib/firefox-devedition/firefox", "/opt/firefox/firefox", "/home/u/Downloads/firefox-156/firefox/firefox"}
 	for _, p := range snap {
 		if !isLikelySnap(p) {
 			t.Errorf("isLikelySnap(%q) = false, want true", p)
