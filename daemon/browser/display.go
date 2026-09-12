@@ -16,6 +16,7 @@ type DisplayEnv struct {
 	XAuthority string // magic-cookie file
 	RuntimeDir string // XDG_RUNTIME_DIR (for Wayland socket access)
 	Wayland    string // WAYLAND_DISPLAY, if applicable
+	DBus       string // DBUS_SESSION_BUS_ADDRESS (for OS keyring / Secret Service)
 }
 
 // Usable reports whether a headed launch is possible with this env.
@@ -36,7 +37,40 @@ func (d DisplayEnv) EnvPairs() []string {
 	if d.Wayland != "" {
 		e = append(e, "WAYLAND_DISPLAY="+d.Wayland)
 	}
+	if d.DBus != "" {
+		e = append(e, "DBUS_SESSION_BUS_ADDRESS="+d.DBus)
+	}
 	return e
+}
+
+// SessionKeyringEnv returns env entries a browser needs to reach the OS keyring
+// (Secret Service) so it can decrypt keyring-encrypted (Chrome "v11") cookies —
+// REQUIRED for auth to carry over, and needed even in HEADLESS mode (it is not
+// tied to a display). Resolves DBUS_SESSION_BUS_ADDRESS + XDG_RUNTIME_DIR from
+// the daemon's own env or from the standard per-user runtime path.
+func SessionKeyringEnv() []string {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	rd := os.Getenv("XDG_RUNTIME_DIR")
+	if rd == "" {
+		rd = filepath.Join("/run/user", itoa(os.Getuid()))
+	}
+	dbus := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
+	if dbus == "" {
+		// The session bus socket is conventionally at $XDG_RUNTIME_DIR/bus.
+		if busPath := filepath.Join(rd, "bus"); fileExists(busPath) {
+			dbus = "unix:path=" + busPath
+		}
+	}
+	var env []string
+	if rd != "" {
+		env = append(env, "XDG_RUNTIME_DIR="+rd)
+	}
+	if dbus != "" {
+		env = append(env, "DBUS_SESSION_BUS_ADDRESS="+dbus)
+	}
+	return env
 }
 
 // ResolveActiveDisplay discovers the CURRENT active graphical session's display
@@ -62,6 +96,7 @@ func ResolveActiveDisplay() DisplayEnv {
 	d.Wayland = os.Getenv("WAYLAND_DISPLAY")
 	d.XAuthority = os.Getenv("XAUTHORITY")
 	d.RuntimeDir = os.Getenv("XDG_RUNTIME_DIR")
+	d.DBus = os.Getenv("DBUS_SESSION_BUS_ADDRESS")
 	if d.Usable() && d.XAuthority != "" {
 		return d
 	}

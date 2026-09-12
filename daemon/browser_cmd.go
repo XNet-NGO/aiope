@@ -274,14 +274,10 @@ func (m *browserManager) startFirefox(ctx context.Context, req browserRequest, t
 	// Persistent AIOPE Firefox profile seeded from the user's real profile
 	// (golden master, never driven). Auth/history carry over; the master is
 	// untouched even if the user's Firefox is running. seed/refresh/reseed
-	// mirror the Chrome model.
-	master := ""
-	for _, p := range det.Profiles {
-		if p.Path != browser.AiopeFirefoxProfileDir(det.Binary) {
-			master = p.Path
-			break
-		}
-	}
+	// mirror the Chrome model. Pick the ACTUALLY-USED master (most recent cookie
+	// activity), not merely the first profile — the first can be an empty
+	// throwaway while the logged-in one is elsewhere.
+	master := browser.SelectMasterFirefoxProfile(det.Profiles, browser.AiopeFirefoxProfileDir(det.Binary))
 	profile, err := browser.EnsureAiopeFirefoxProfile(ctx, det.Binary, master, req.Refresh, req.Reseed)
 	if err != nil {
 		return errResp(err)

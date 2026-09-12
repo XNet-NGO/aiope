@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -94,6 +95,153 @@ func allPidsReferencingProfile(profilePath string) []int {
 		}
 	}
 	return pids
+}
+
+// isBrowserExe reports whether an exe path looks like Firefox or a
+// Chrome/Chromium-family browser (so seed/reseed can close either engine).
+func isBrowserExe(exe string) bool {
+	e := strings.ToLower(exe)
+	return strings.Contains(e, "firefox") ||
+		strings.Contains(e, "chrome") ||
+		strings.Contains(e, "chromium")
+}
+
+// allBrowserPidsReferencingProfile finds EVERY process (any browser engine,
+// including stray/lingering/crashed instances and their helper children) that
+// holds files under profilePath. It matches by open files / maps / cwd via
+// /proc, not argv, so orphaned processes whose argv no longer reflects the
+// profile are still caught.
+func allBrowserPidsReferencingProfile(profilePath string) []int {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		var pid int
+		if _, err := fmt.Sscanf(e.Name(), "%d", &pid); err != nil {
+			continue
+		}
+		exe, _ := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+		if !isBrowserExe(exe) {
+			continue
+		}
+		if procReferencesProfile(pid, profilePath) || procHasOpenFileUnder(pid, profilePath) {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+// procHasOpenFileUnder checks /proc/<pid>/fd for any descriptor pointing at a
+// file under profilePath — this catches a process holding a locked SQLite DB
+// even if it's a stray helper whose maps/cwd don't mention the profile.
+func procHasOpenFileUnder(pid int, profilePath string) bool {
+	fdDir := fmt.Sprintf("/proc/%d/fd", pid)
+	entries, err := os.ReadDir(fdDir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		target, err := os.Readlink(filepath.Join(fdDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		if strings.HasPrefix(target, profilePath) {
+			return true
+		}
+	}
+	return false
+}
+
+// CloseBrowsersOnProfile stops ALL browser processes (any engine, including
+// stray/lingering/crashed instances) that hold profilePath, and waits until the
+// profile's file locks are actually released. Graceful SIGTERM first, then
+// SIGKILL for stragglers. Used before a seed/reseed FULL COPY so the source
+// profile's SQLite DBs (cookies/places/key4/logins) are unlocked and its WAL is
+// checkpointed by a clean shutdown, yielding a consistent copy.
+//
+// NOTE: for the user's real profile this closes the user's running browser —
+// that is required for a consistent full copy and is intentional on reseed.
+func CloseBrowsersOnProfile(ctx context.Context, profilePath string, wait time.Duration) error {
+	pids := allBrowserPidsReferencingProfile(profilePath)
+	if len(pids) == 0 {
+		// No live holder — but a crashed/stray instance may have left lock files
+		// behind. Remove them immediately so the copy isn't blocked.
+		removeLockFiles(profilePath)
+		return nil
+	}
+	for _, pid := range pids {
+		_ = signalPID(pid, "TERM")
+	}
+	if waitBrowserProfileFree(ctx, profilePath, wait) {
+		return waitLockFilesGone(ctx, profilePath, 3*time.Second)
+	}
+	// Stragglers: force-kill everything still holding the profile.
+	for _, pid := range allBrowserPidsReferencingProfile(profilePath) {
+		_ = signalPID(pid, "KILL")
+	}
+	if !waitBrowserProfileFree(ctx, profilePath, 8*time.Second) {
+		return fmt.Errorf("profile still held after SIGKILL: %s", profilePath)
+	}
+	return waitLockFilesGone(ctx, profilePath, 3*time.Second)
+}
+
+func waitBrowserProfileFree(ctx context.Context, profilePath string, wait time.Duration) bool {
+	deadline := time.Now().Add(wait)
+	for time.Now().Before(deadline) {
+		if len(allBrowserPidsReferencingProfile(profilePath)) == 0 {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	return len(allBrowserPidsReferencingProfile(profilePath)) == 0
+}
+
+// browserLockFiles are on-disk lock markers left by browsers (Firefox:
+// parent.lock/.parentlock/lock; Chrome: Singleton*). A clean shutdown removes
+// them and checkpoints -wal into the main DB.
+var browserLockFiles = []string{"parent.lock", ".parentlock", "lock", "SingletonLock", "SingletonCookie", "SingletonSocket"}
+
+func removeLockFiles(profilePath string) {
+	for _, l := range browserLockFiles {
+		_ = os.Remove(filepath.Join(profilePath, l))
+	}
+}
+
+// waitLockFilesGone waits for on-disk lock markers to disappear after the
+// processes exit. A clean shutdown removes them; if they linger past the
+// deadline (stale), remove them so the copy proceeds.
+func waitLockFilesGone(ctx context.Context, profilePath string, wait time.Duration) error {
+	deadline := time.Now().Add(wait)
+	for {
+		held := false
+		for _, l := range browserLockFiles {
+			if _, err := os.Lstat(filepath.Join(profilePath, l)); err == nil {
+				held = true
+				break
+			}
+		}
+		if !held {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			removeLockFiles(profilePath) // best-effort: clear stale markers
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(150 * time.Millisecond):
+		}
+	}
 }
 
 func signalPID(pid int, sig string) error {

@@ -2,11 +2,14 @@ package browser
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 // This file gives Firefox the same persistent-profile model as Chrome:
@@ -41,21 +44,74 @@ func AiopeFirefoxProfileDir(binary string) string {
 	}
 }
 
-// firefoxAuthFiles are the auth/session/history files copied on an auth-only
-// refresh. WAL sidecars come along for the sqlite DBs.
-//   cookies.sqlite  — cookies (session/auth)
-//   places.sqlite   — history + bookmarks
-//   key4.db         — master key store for logins
-//   logins.json     — saved logins (encrypted with key4.db)
-//   cert9.db        — cert overrides
-//   sessionstore.jsonlz4 — open tabs/session
-var firefoxAuthFiles = []string{
-	"cookies.sqlite",
-	"places.sqlite",
-	"key4.db",
-	"logins.json",
-	"cert9.db",
-	"sessionstore.jsonlz4",
+// SelectMasterFirefoxProfile chooses the best golden-master profile to seed
+// from: among discovered profiles (excluding AIOPE's own driveable profiles),
+// it prefers the one with the most RECENT cookie activity that also actually
+// contains cookies — i.e. the profile the user actually logs in with. This
+// avoids seeding from an empty throwaway profile when a logged-in one exists.
+// Falls back to the newest-by-mtime, then the first, if none have cookies.
+func SelectMasterFirefoxProfile(profiles []FirefoxProfile, aiopeDir string) string {
+	type cand struct {
+		path    string
+		mtime   time.Time
+		hasData bool
+		rows    int
+	}
+	var cands []cand
+	for _, p := range profiles {
+		base := filepath.Base(p.Path)
+		if p.Path == aiopeDir || base == "aiope-profile" || base == "aiope-auto" {
+			continue // never seed from our own driveable profiles
+		}
+		ck := filepath.Join(p.Path, "cookies.sqlite")
+		fi, err := os.Stat(ck)
+		if err != nil {
+			cands = append(cands, cand{path: p.Path})
+			continue
+		}
+		// hasData must reflect ACTUAL cookies, not file size — an empty Firefox
+		// cookies.sqlite is still ~512KB (page-preallocated). Count rows.
+		n := firefoxCookieRowCount(ck)
+		cands = append(cands, cand{path: p.Path, mtime: fi.ModTime(), hasData: n > 0, rows: n})
+	}
+	if len(cands) == 0 {
+		return ""
+	}
+	best := ""
+	var bestT time.Time
+	bestRows := -1
+	for _, withData := range []bool{true, false} {
+		for _, c := range cands {
+			if c.hasData != withData {
+				continue
+			}
+			// Prefer most cookies; tie-break by newest mtime.
+			if best == "" || c.rows > bestRows || (c.rows == bestRows && c.mtime.After(bestT)) {
+				best, bestT, bestRows = c.path, c.mtime, c.rows
+			}
+		}
+		if best != "" {
+			return best
+		}
+	}
+	return cands[0].path
+}
+
+// firefoxCookieRowCount returns the number of cookies in a Firefox
+// cookies.sqlite, opened read-only (tolerant of a live writer). Returns 0 on any
+// error so an unreadable/empty DB is treated as "no data".
+func firefoxCookieRowCount(path string) int {
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=busy_timeout(2000)")
+	if err != nil {
+		return 0
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM moz_cookies").Scan(&n); err != nil {
+		return 0
+	}
+	return n
 }
 
 // realFirefoxProfile picks the user's default (golden master) profile path from
@@ -99,6 +155,13 @@ func EnsureAiopeFirefoxProfile(ctx context.Context, binary, masterProfile string
 		if _, err := os.Stat(masterProfile); err != nil {
 			return "", fmt.Errorf("master firefox profile not found at %s: %w", masterProfile, err)
 		}
+		// A full copy must read a consistent, UNLOCKED source. Close every
+		// browser process (any engine, including stray/lingering/crashed ones)
+		// holding the master profile so its SQLite DBs are unlocked and the WAL
+		// is checkpointed by a clean shutdown before we copy.
+		if err := CloseBrowsersOnProfile(ctx, masterProfile, 15*time.Second); err != nil {
+			return "", fmt.Errorf("close browsers on master firefox profile before copy: %w", err)
+		}
 		if err := os.RemoveAll(dst); err != nil {
 			return "", fmt.Errorf("wipe aiope firefox profile: %w", err)
 		}
@@ -126,8 +189,10 @@ func firefoxCookieMtime(profile string) time.Time {
 	return time.Time{}
 }
 
-// copyFirefoxAuthOnly overlays only the auth/session/history files onto dst,
-// preserving dst's accumulated divergence (prefs, extensions, etc.).
+// copyFirefoxAuthOnly overlays only the auth/session/history stores onto dst,
+// preserving dst's accumulated divergence (prefs, extensions, etc.). SQLite
+// stores are copied consistently (VACUUM INTO) so refresh is safe even while
+// Firefox holds them; plain stores (logins.json, sessionstore) are byte-copied.
 func copyFirefoxAuthOnly(master, dst string) error {
 	if _, err := os.Stat(master); err != nil {
 		return fmt.Errorf("master firefox profile not found at %s: %w", master, err)
@@ -135,17 +200,12 @@ func copyFirefoxAuthOnly(master, dst string) error {
 	if err := os.MkdirAll(dst, 0o700); err != nil {
 		return err
 	}
-	for _, f := range firefoxAuthFiles {
-		for _, suffix := range []string{"", "-wal", "-shm"} {
-			_ = copyFileIfExists(filepath.Join(master, f+suffix), filepath.Join(dst, f+suffix))
-		}
-	}
-	return nil
+	return copyAuthStores(master, dst, firefoxAuthStores)
 }
 
 // copyFirefoxFull copies the whole profile tree (seed/reseed), skipping the lock.
 func copyFirefoxFull(master, dst string) error {
-	return filepath.Walk(master, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(master, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -161,7 +221,21 @@ func copyFirefoxFull(master, dst string) error {
 		if base == "parent.lock" || base == ".parentlock" || base == "lock" {
 			return nil
 		}
+		// Skip version-pinning files: a profile last used by a NEWER Firefox
+		// (e.g. seeding a beta profile into an older stable) triggers downgrade
+		// protection ("profile was last used with a newer version") and Firefox
+		// refuses to start. Dropping compatibility.ini lets the target rebuild
+		// it for its own version — makes seeding version/channel-agnostic.
+		if base == "compatibility.ini" {
+			return nil
+		}
 		_ = copyFileIfExists(path, target)
 		return nil
 	})
+	if walkErr != nil {
+		return walkErr
+	}
+	// Guarantee the auth SQLite stores are transactionally consistent snapshots,
+	// uniform with the refresh path and with Chrome.
+	return copyAuthStores(master, dst, firefoxAuthStores)
 }

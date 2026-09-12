@@ -174,17 +174,6 @@ func isDefaultChromeDir(dir string) bool {
 	return filepath.Clean(dir) == filepath.Clean(def)
 }
 
-// authFiles are the auth-relevant files copied during an auth-only refresh.
-// "Local State" (root) holds the wrapped cookie-encryption key; the rest live
-// under the Default profile subdir. SQLite sidecars (-wal/-shm) come along.
-var authRelativePaths = []string{
-	"Local State",
-	"Default/Cookies",
-	"Default/Login Data",
-	"Default/Web Data",
-	"Default/Network/Cookies",
-}
-
 // EnsureAiopeChromeProfile prepares the persistent AIOPE profile for driving and
 // returns its path. Behavior:
 //   - if it does not exist            -> SEED (full copy from default)
@@ -208,6 +197,13 @@ func EnsureAiopeChromeProfile(ctx context.Context, refresh, reseed bool) (string
 	case reseed || !exists:
 		if _, err := os.Stat(src); err != nil {
 			return "", fmt.Errorf("no default chrome profile at %s: %w", src, err)
+		}
+		// A full copy must read a consistent, UNLOCKED source. Close every
+		// browser process (any engine, including stray/lingering/crashed ones)
+		// holding the master user-data-dir so its SQLite stores (Cookies, Login
+		// Data, etc.) are unlocked and WAL is checkpointed before we copy.
+		if err := CloseBrowsersOnProfile(ctx, src, 15*time.Second); err != nil {
+			return "", fmt.Errorf("close browsers on master chrome profile before copy: %w", err)
 		}
 		if err := os.RemoveAll(dst); err != nil {
 			return "", fmt.Errorf("wipe aiope profile: %w", err)
@@ -246,22 +242,19 @@ func newestCookieMtime(userDataDir string) time.Time {
 }
 
 // copyChromeAuthOnly overlays ONLY the auth stores from src onto dst, preserving
-// dst's accumulated history/divergence (this is "refresh, building on the auto db").
+// dst's accumulated history/divergence (this is "refresh, building on the auto
+// db"). SQLite stores are copied consistently (VACUUM INTO) so refresh is safe
+// even while Chrome holds the DBs; plain stores (Local State) are byte-copied.
 func copyChromeAuthOnly(src, dst string) error {
 	if _, err := os.Stat(src); err != nil {
 		return fmt.Errorf("no default chrome profile at %s: %w", src, err)
 	}
-	for _, rel := range authRelativePaths {
-		for _, suffix := range []string{"", "-wal", "-shm"} {
-			_ = copyFileIfExists(filepath.Join(src, rel+suffix), filepath.Join(dst, rel+suffix))
-		}
-	}
-	return nil
+	return copyAuthStores(src, dst, chromeAuthStores)
 }
 
 // copyChromeFull copies the whole user-data-dir tree (seed / reseed).
 func copyChromeFull(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // skip unreadable entries rather than abort
 		}
@@ -281,6 +274,13 @@ func copyChromeFull(src, dst string) error {
 		_ = copyFileIfExists(path, target)
 		return nil
 	})
+	if walkErr != nil {
+		return walkErr
+	}
+	// Guarantee the auth SQLite stores are transactionally consistent snapshots
+	// (VACUUM INTO), regardless of what the tree copy captured. Uniform with the
+	// refresh path and with Firefox.
+	return copyAuthStores(src, dst, chromeAuthStores)
 }
 
 func copyFileIfExists(src, dst string) error {
@@ -381,6 +381,15 @@ func LaunchChrome(ctx context.Context, opts ChromeLaunchOptions) (*ChromeLaunchR
 		"--no-first-run",
 		"--no-default-browser-check",
 	}
+	if runtime.GOOS == "linux" {
+		// Cookies encrypted as "v11" use the OS keyring (Secret Service). Detect
+		// the desktop's actual backend (libsecret / kwallet / none) so the AIOPE
+		// profile decrypts the seeded cookies with the SAME key the source used
+		// — otherwise Chrome may fall back to a different key and the cookies
+		// fail to decrypt (user appears logged out). macOS Keychain / Windows
+		// DPAPI need no flag (handled by returning nil there).
+		args = append(args, chromePasswordStoreArgs()...)
+	}
 	if opts.Mode == ModeHeadless {
 		args = append(args, "--headless=new")
 	}
@@ -391,6 +400,9 @@ func LaunchChrome(ctx context.Context, opts ChromeLaunchOptions) (*ChromeLaunchR
 	// must NOT be killed when the launching request's context is cancelled.
 	cmd := exec.Command(opts.Binary, args...)
 	cmd.Env = os.Environ()
+	// Always attach the OS keyring env (D-Bus session) so Chrome can decrypt
+	// keyring-encrypted "v11" cookies — needed in headless mode too.
+	cmd.Env = append(cmd.Env, SessionKeyringEnv()...)
 	if opts.Mode != ModeHeadless {
 		cmd.Env = append(cmd.Env, ResolveActiveDisplay().EnvPairs()...)
 	}
