@@ -11,8 +11,6 @@
 
 **An AI that doesn't just talk. It acts.**
 
-<p align="center"><img src="docs/images/aiope-demo.gif" width="300" alt="AIOPE driving tools: get_location + query_data to answer a live question"></p>
-
 <p align="center">
 <a href="https://github.com/XNet-NGO/AIOPE/releases/latest"><b>⬇ Download the latest APK</b></a>
 &nbsp;·&nbsp;
