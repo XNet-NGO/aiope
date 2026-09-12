@@ -45,10 +45,17 @@ type Detection struct {
 // order for the current OS. Linux prefers unconfined builds before the snap
 // wrapper (see notes below).
 func firefoxBinaryCandidates() []string {
-	switch runtime.GOOS {
+	return firefoxBinaryCandidatesFor(runtime.GOOS, os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"))
+}
+
+// firefoxBinaryCandidatesFor returns the candidate list for a given OS, taking
+// the Windows Program Files env values explicitly so all OS branches are unit-
+// testable regardless of the host platform.
+func firefoxBinaryCandidatesFor(goos, programFiles, programFiles86 string) []string {
+	switch goos {
 	case "windows":
-		pf := os.Getenv("ProgramFiles")
-		pf86 := os.Getenv("ProgramFiles(x86)")
+		pf := programFiles
+		pf86 := programFiles86
 		if pf == "" {
 			pf = `C:\Program Files`
 		}
@@ -64,6 +71,8 @@ func firefoxBinaryCandidates() []string {
 	case "darwin":
 		return []string{
 			"/Applications/Firefox.app/Contents/MacOS/firefox",
+			"/Applications/Firefox Developer Edition.app/Contents/MacOS/firefox",
+			"/Applications/Firefox Nightly.app/Contents/MacOS/firefox",
 			"firefox",
 		}
 	default:
@@ -126,9 +135,14 @@ func isLikelySnap(path string) bool {
 // standard profiles.ini locations across OSes (native, snap, flatpak on Linux).
 func profileRoots() []string {
 	home, _ := os.UserHomeDir()
-	switch runtime.GOOS {
+	return profileRootsFor(runtime.GOOS, home, os.Getenv("APPDATA"))
+}
+
+// profileRootsFor returns Firefox profiles.ini roots for a given OS/home, with
+// APPDATA passed explicitly so all branches are unit-testable cross-platform.
+func profileRootsFor(goos, home, appData string) []string {
+	switch goos {
 	case "windows":
-		appData := os.Getenv("APPDATA")
 		if appData == "" {
 			appData = filepath.Join(home, "AppData", "Roaming")
 		}
@@ -207,9 +221,29 @@ func DetectFirefox(ctx context.Context) (*Detection, error) {
 	return d, nil
 }
 
-// discoverProfiles parses profiles.ini across known roots.
+// discoverProfiles finds Firefox profiles two ways, deduped by path:
+//  1. profiles.ini entries under each known root (the normal case), and
+//  2. a best-effort scan for UNREGISTERED profile directories — folders that
+//     look like a Firefox profile (contain cookies.sqlite or prefs.js) but are
+//     not listed in any profiles.ini. This covers manually-created profiles
+//     (e.g. ~/.mozilla/firefox-beta-unsigned) and fresh channel installs whose
+//     profiles.ini hasn't been written yet.
 func discoverProfiles() []FirefoxProfile {
+	seen := map[string]bool{}
 	var out []FirefoxProfile
+	add := func(p FirefoxProfile) {
+		key, err := filepath.Abs(p.Path)
+		if err != nil {
+			key = p.Path
+		}
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		out = append(out, p)
+	}
+
+	// (1) profiles.ini entries.
 	for _, root := range profileRoots() {
 		ini := filepath.Join(root, "profiles.ini")
 		f, err := os.Open(ini)
@@ -218,9 +252,82 @@ func discoverProfiles() []FirefoxProfile {
 		}
 		profs := parseProfilesIni(f, root)
 		f.Close()
-		out = append(out, profs...)
+		for _, p := range profs {
+			add(p)
+		}
+	}
+
+	// (2) Unregistered profile-directory scan.
+	for _, dir := range profileScanDirs() {
+		for _, p := range scanProfileDirs(dir) {
+			add(p)
+		}
 	}
 	return out
+}
+
+// profileScanDirs returns directories to scan for unregistered profile folders.
+// Includes each profiles.ini root AND its parent (custom profiles like
+// ~/.mozilla/firefox-beta-unsigned live beside ~/.mozilla/firefox, not inside).
+func profileScanDirs() []string {
+	seen := map[string]bool{}
+	var dirs []string
+	push := func(d string) {
+		if d == "" || seen[d] {
+			return
+		}
+		seen[d] = true
+		dirs = append(dirs, d)
+	}
+	for _, root := range profileRoots() {
+		push(root)
+		push(filepath.Dir(root)) // parent (e.g. ~/.mozilla)
+	}
+	return dirs
+}
+
+// looksLikeProfileDir reports whether a directory is a Firefox profile: it must
+// contain a recognizable profile marker file. cookies.sqlite is the strongest
+// signal (auth); prefs.js/times.json indicate a real profile even if empty.
+func looksLikeProfileDir(dir string) bool {
+	for _, marker := range []string{"cookies.sqlite", "prefs.js", "times.json"} {
+		if fi, err := os.Stat(filepath.Join(dir, marker)); err == nil && !fi.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+// scanProfileDirs returns profile-like immediate subdirectories of dir. It does
+// NOT recurse (Firefox profiles are one level deep) and skips our own AIOPE
+// automation/driveable copies so we never seed from them.
+func scanProfileDirs(dir string) []FirefoxProfile {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []FirefoxProfile
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if isAiopeProfileDirName(name) {
+			continue // never treat our own copies as a source profile
+		}
+		full := filepath.Join(dir, name)
+		if looksLikeProfileDir(full) {
+			out = append(out, FirefoxProfile{Path: full, IsLocked: profileLocked(full)})
+		}
+	}
+	return out
+}
+
+// isAiopeProfileDirName reports whether a directory basename is one of AIOPE's
+// own driveable/automation profiles (which must never be seeded FROM).
+func isAiopeProfileDirName(name string) bool {
+	return name == "aiope-profile" || name == "aiope-auto" ||
+		strings.HasPrefix(name, "aiope-")
 }
 
 // parseProfilesIni extracts [ProfileN] entries. IsRelative=1 => Path is under root.

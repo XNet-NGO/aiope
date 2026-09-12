@@ -62,16 +62,31 @@ func chromeBinaryCandidates() []string {
 var chromeCandidates = []string{
 	"google-chrome",
 	"google-chrome-stable",
+	"google-chrome-beta",
+	"google-chrome-dev",
+	"google-chrome-unstable",
+	"/opt/google/chrome/chrome",
+	"/opt/google/chrome-beta/chrome",
+	"/opt/google/chrome-unstable/chrome",
 	"/usr/lib/chromium/chromium",
 	"/usr/lib/chromium-browser/chromium-browser",
 	"chromium",
 	"chromium-browser",
 }
 
-// isLikelySnapChrome reports whether a chromium path is the snap wrapper.
+// isLikelySnapChrome reports whether a chromium path is the snap wrapper. Like
+// isLikelySnap, it resolves symlinks and only treats a path under /snap/ as
+// snap — /usr/bin/chromium(-browser) is a real binary on snap-free systems.
 func isLikelySnapChrome(path string) bool {
-	return strings.Contains(path, "/snap/") ||
-		path == "/usr/bin/chromium" || path == "/usr/bin/chromium-browser"
+	if strings.Contains(path, "/snap/") {
+		return true
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		if strings.Contains(resolved, "/snap/") {
+			return true
+		}
+	}
+	return false
 }
 
 // DetectChrome probes for a Chrome/Chromium binary and the display.
