@@ -110,17 +110,27 @@ internal fun AgentScreen(dao: ChatDao, onBack: () -> Unit) {
   }
 }
 
-/** Concatenate all agent sections into a single system prompt. */
-internal suspend fun buildAgentPrompt(dao: ChatDao): String = buildString {
+/**
+ * Build the system prompt: the fixed built-in AIOPE persona for [mode] followed
+ * by the user's editable "About You" context fields. The mode persona carries
+ * AIOPE's identity, personality, and tool/UI/formatting rules; the user only
+ * supplies personal context via the Agent settings screen.
+ */
+internal suspend fun buildAgentPrompt(
+  dao: ChatDao,
+  mode: ngo.xnet.aiope.feature.chat.engine.AgentMode,
+  dynamicUiEnabled: Boolean,
+): String = buildString {
+  append(AiopePersona.forMode(mode, dynamicUiEnabled))
+  // User-editable context (About the User / Environment / Projects).
   AGENT_SECTIONS.forEach { section ->
     val parts = section.subsections.mapNotNull { sub ->
       val v = dao.getSetting("$AGENT_PREFIX${sub.key}") ?: sub.default
       v.takeIf { it.isNotBlank() }
     }
     if (parts.isNotEmpty()) {
-      append("## ${section.title}\n")
+      append("\n\n## ${section.title}\n")
       append(parts.joinToString("\n\n"))
-      append("\n\n")
     }
   }
 }.trimEnd()

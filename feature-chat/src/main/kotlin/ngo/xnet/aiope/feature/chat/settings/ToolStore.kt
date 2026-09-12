@@ -87,6 +87,33 @@ class ToolStore @Inject constructor(
     dao.upsertToolToggle(ToolToggleEntity(toolId, enabled))
   }
 
+  // ── Per-tool, per-mode enablement ─────────────────────────────────────────
+  // Stored under composite keys "<mode>:<toolId>" (e.g. "chat:run_sh"). The
+  // global "<toolId>" toggle remains a MASTER switch: a tool disabled globally
+  // is off in every mode. When there's no explicit per-mode setting, we fall
+  // back to the mode's sane default (AgentMode.toolDefaultEnabled).
+  private fun modeKey(mode: ngo.xnet.aiope.feature.chat.engine.AgentMode, toolId: String) = "${mode.key}:$toolId"
+
+  fun isToolEnabledForMode(
+    toolId: String,
+    mode: ngo.xnet.aiope.feature.chat.engine.AgentMode,
+  ): Boolean = runBlocking(Dispatchers.IO) {
+    // Global master switch first.
+    val global = dao.getToolToggle(toolId)?.enabled ?: (toolId !in defaultOff)
+    if (!global) return@runBlocking false
+    // Explicit per-mode override, else the mode default.
+    dao.getToolToggle(modeKey(mode, toolId))?.enabled
+      ?: ngo.xnet.aiope.feature.chat.engine.AgentMode.toolDefaultEnabled(mode, toolId)
+  }
+
+  fun setToolEnabledForMode(
+    toolId: String,
+    mode: ngo.xnet.aiope.feature.chat.engine.AgentMode,
+    enabled: Boolean,
+  ) = runBlocking(Dispatchers.IO) {
+    dao.upsertToolToggle(ToolToggleEntity(modeKey(mode, toolId), enabled))
+  }
+
   fun isDynamicUiEnabled(): Boolean = runBlocking(Dispatchers.IO) {
     dao.getSetting("dynamic_ui_enabled")?.toBooleanStrictOrNull() ?: true
   }

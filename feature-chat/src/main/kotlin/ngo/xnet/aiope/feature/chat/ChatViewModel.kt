@@ -1360,17 +1360,29 @@ $remoteCtx"""
 
   private suspend fun buildSystemMessages(mc: ngo.xnet.aiope.core.network.ModelConfig): MutableList<Pair<String, String>> {
     val msgs = mutableListOf<Pair<String, String>>()
-    val modePrefix = _agentMode.value.systemPrefix
-    val prompt = ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao)
+    val mode = _agentMode.value
+    // MEDIA has no tools/persona — just its thin generation prefix. Other modes
+    // use the fixed built-in AIOPE persona (identity + mode approach + tool/UI
+    // rules) plus the user's editable context.
+    val prompt = if (mode == ngo.xnet.aiope.feature.chat.engine.AgentMode.MEDIA) {
+      mode.systemPrefix
+    } else {
+      ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao, mode, toolStore.isDynamicUiEnabled())
+    }
     val remoteCtx = remoteToolBridge.buildSystemContext()
     val dateTime = "## Current Date & Time\n${java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z"))}"
     val ragInstruction = "## Knowledge Base\nYou have a local knowledge base via `rag_search`. ALWAYS search it FIRST before using search_web or fetch_url when the user asks a question that might be answered by indexed documents. Only use web search if RAG returns no relevant results."
+    // Order matters for provider prompt-caching: keep everything STATIC at the
+    // front (persona, RAG directive, remote context) so it forms a stable,
+    // cacheable prefix, and put the VOLATILE second-granular timestamp LAST.
+    // The timestamp intentionally stays second-granular (agent statefulness) —
+    // placing it at the end means only the trailing line changes each turn, so
+    // the large static prefix still cache-hits instead of being reprocessed.
     val parts = listOfNotNull(
-      modePrefix.takeIf { it.isNotBlank() },
       prompt.takeIf { it.isNotBlank() },
-      dateTime,
       ragInstruction,
       remoteCtx.takeIf { it.isNotBlank() },
+      dateTime,
     )
     val full = parts.joinToString("\n\n")
     if (full.isNotBlank()) msgs.add("system" to full)

@@ -20,18 +20,51 @@ enum class AgentMode(val label: String) {
   val disablesAllTools: Boolean
     get() = this == MEDIA
 
-  /** Tools disabled in this mode */
-  val disabledTools: Set<String>
-    get() = when (this) {
-      PLAN -> setOf(
-        "run_sh", "run_proot", "write_file", "send_sms", "send_notification",
-        "create_event", "delete_event", "set_alarm", "dismiss_alarm", "delete_sms",
-        "clipboard_copy", "open_intent", "image_generate",
-        "browser_click", "ssh_exec", "browser_fill", "browser_eval",
-      )
+  /** Stable key used for per-mode tool-enablement settings. */
+  val key: String get() = name.lowercase()
 
-      else -> emptySet()
+  companion object {
+    /**
+     * DEFAULT per-mode tool enablement — used ONLY to seed the settings the
+     * first time, and as the fallback when a tool has no explicit per-mode
+     * setting. Users override these per-tool-per-mode in Settings → Tools.
+     *
+     *   CHAT  — everyday phone assistant: reads, search, browsing, memory,
+     *           image gen, and light non-destructive device actions.
+     *   PLAN  — CHAT + research/authoring/task-setting (file writes, http,
+     *           rag_index, todo, scheduling, orchestrate).
+     *   BUILD — everything (default-on for every tool).
+     *   MEDIA — nothing.
+     */
+    val CHAT_DEFAULT: Set<String> = setOf(
+      "read_file", "list_directory", "get_location", "device_info", "datetime_now",
+      "fetch_url", "query_data", "search_location", "search_web", "search_images",
+      "browser_navigate", "browser_content", "browser_elements", "browser_click",
+      "browser_fill", "browser_eval", "browser_back", "browser_scroll",
+      "browser_open", "browser_close", "browser_maximize",
+      "memory_store", "memory_recall", "memory_forget", "rag_search",
+      "analyze_image", "image_generate",
+      "read_calendar", "create_event", "delete_event", "set_alarm", "dismiss_alarm",
+      "read_contacts", "send_notification", "clipboard_copy", "clipboard_read",
+      "read_sms", "send_sms", "delete_sms", "media_control", "open_intent",
+    )
+
+    val PLAN_EXTRA: Set<String> = setOf(
+      "write_file", "edit_file", "search_files", "http_request",
+      "rag_index", "todo_write", "todo_read",
+      "schedule_task", "cancel_schedule", "list_schedules", "orchestrate",
+    )
+
+    val PLAN_DEFAULT: Set<String> = CHAT_DEFAULT + PLAN_EXTRA
+
+    /** Whether a tool defaults to ON in the given mode (when no explicit setting). */
+    fun toolDefaultEnabled(mode: AgentMode, toolId: String): Boolean = when (mode) {
+      BUILD -> true
+      MEDIA -> false
+      CHAT -> toolId in CHAT_DEFAULT
+      PLAN -> toolId in PLAN_DEFAULT
     }
+  }
 
   /** Extra system prompt prefix injected before the agent prompt */
   val systemPrefix: String
