@@ -19,6 +19,9 @@ data class RemoteServerEntity(
   val lastSeen: Long = 0,
   val osInfo: String? = null,
   val daemonVersion: String? = null,
+  // JSON snapshot of browsers available on this server, from __aiope_browser__detect.
+  // Example: {"display_found":true,"suggest_mode":"head","browsers":[{"engine":"firefox",...},{"engine":"chrome",...}]}
+  val browsers: String? = null,
   val createdAt: Long = System.currentTimeMillis(),
 )
 
@@ -48,13 +51,16 @@ interface RemoteServerDao {
   @Query("UPDATE remote_servers SET osInfo = :osInfo, daemonVersion = :version WHERE id = :id")
   suspend fun updateHealth(id: String, osInfo: String?, version: String?)
 
+  @Query("UPDATE remote_servers SET browsers = :browsers WHERE id = :id")
+  suspend fun updateBrowsers(id: String, browsers: String?)
+
   @Query("DELETE FROM remote_servers WHERE id = :id")
   suspend fun deleteById(id: String)
 }
 
 @Database(
   entities = [RemoteServerEntity::class],
-  version = 3,
+  version = 4,
   exportSchema = false,
 )
 abstract class RemoteDatabase : RoomDatabase() {

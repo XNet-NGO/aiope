@@ -1,0 +1,27 @@
+# Tranco top-domains allowlist (eTLD+1, one per line).
+#
+# This committed file is a SAMPLE seed. The real build embeds the Tranco top-10k
+# (regenerate with scripts/fetch-tranco.sh). Lines starting with # are ignored.
+# Matching is on the registrable domain (eTLD+1) of both the page host AND the
+# form-action host; a fill/submit is gated (permission_required) unless BOTH are
+# present here (or in a user/session allowlist).
+google.com
+youtube.com
+facebook.com
+wikipedia.org
+github.com
+gitlab.com
+stackoverflow.com
+stackexchange.com
+reddit.com
+x.com
+twitter.com
+linkedin.com
+amazon.com
+microsoft.com
+apple.com
+cloudflare.com
+mozilla.org
+duckduckgo.com
+bing.com
+producthunt.com

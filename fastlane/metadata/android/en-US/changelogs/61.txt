@@ -1,0 +1,7 @@
+v4.14.0 — Remote browser driving
+
+• Drive a real Firefox or Chrome on your remote servers over SSH — CSP-immune automation with authenticated-session sharing.
+• Dual engine (Firefox BiDi + Chrome CDP) behind one interface: navigate, read, click, React-safe fill, eval, scroll, screenshot.
+• Persistent AIOPE profile seeded from your logged-in profile so auth carries over; your real profile is never driven or modified.
+• Headed by default (attaches to the server's active display) with auto-fallback to headless; selectable per request.
+• Action firewall gates form submissions against an allowlist. Detected browsers shown on each server card.

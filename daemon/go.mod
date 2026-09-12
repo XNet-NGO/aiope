@@ -1,14 +1,17 @@
 module github.com/xnet-ngo/aiope-remote
 
-go 1.25.9
+go 1.26.0
 
 require (
 	charm.land/wish/v2 v2.0.1
 	github.com/charmbracelet/log v1.0.0
 	github.com/charmbracelet/ssh v0.0.0-20250826160808-ebfa259c7309
 	github.com/creack/pty v1.1.24
+	github.com/gorilla/websocket v1.5.3
+	github.com/mafredri/cdp v0.35.0
 	github.com/pkg/sftp v1.13.10
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.57.0
+	golang.org/x/net v0.59.0
 )
 
 require (
@@ -41,5 +44,5 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )

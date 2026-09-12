@@ -31,6 +31,12 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
   }
 }
 
+val MIGRATION_3_4 = object : Migration(3, 4) {
+  override fun migrate(db: SupportSQLiteDatabase) {
+    db.execSQL("ALTER TABLE remote_servers ADD COLUMN browsers TEXT")
+  }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object RemoteModule {
@@ -38,7 +44,7 @@ object RemoteModule {
   @Provides
   @Singleton
   fun provideRemoteDatabase(@ApplicationContext context: Context): RemoteDatabase = Room.databaseBuilder(context, RemoteDatabase::class.java, "aiope_remote.db")
-    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
     .fallbackToDestructiveMigration()
     .build()
 

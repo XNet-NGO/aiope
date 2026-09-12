@@ -68,6 +68,30 @@ class SshSessionManager @Inject constructor() {
     }
   }
 
+  /**
+   * Derive the OpenSSH public key string ("authorized_keys" line) from a private
+   * key, using SSHJ's loader. This is how a server's public key is obtained when
+   * the user left the public-key field empty: it is computed per-server FROM the
+   * private key — there is no shared/universal public key. Returns null on failure.
+   */
+  fun derivePublicKey(privateKey: String, comment: String = "aiope@device"): String? {
+    val client = SSHClient(net.schmizz.sshj.DefaultConfig())
+    return try {
+      val kp = loadKey(client, privateKey)
+      val pub = kp.public ?: return null
+      val type = net.schmizz.sshj.common.KeyType.fromKey(pub)
+      val buf = net.schmizz.sshj.common.Buffer.PlainBuffer()
+      type.putPubKeyIntoBuffer(pub, buf)
+      val b64 = android.util.Base64.encodeToString(buf.compactData, android.util.Base64.NO_WRAP)
+      "${type.toString()} $b64 $comment"
+    } catch (e: Exception) {
+      android.util.Log.w("AIOPE_SSH", "derivePublicKey failed: ${e.message}")
+      null
+    } finally {
+      try { client.close() } catch (_: Exception) {}
+    }
+  }
+
   /** TOFU verifier: trusts first-seen host key, rejects changes */
   private fun addTofuVerifier(client: SSHClient, host: String, port: Int) {
     val hostKey = "$host:$port"

@@ -121,7 +121,7 @@ Because the persona is a living document rather than a hidden constant, you can 
 
 ---
 
-## Tools (57)
+## Tools (68)
 
 ### System
 | Tool | Description |
@@ -191,6 +191,13 @@ Because the persona is a living document rather than a hidden constant, you can 
 | `ssh_start` | Connect to a configured remote server |
 | `ssh_exec` | Execute commands on a connected server |
 | `ssh_exit` | Disconnect from a server |
+| `remote_browser_start` / `remote_browser_stop` | Launch/stop a real Firefox or Chrome on the server (headed or headless) |
+| `remote_browser_navigate` / `remote_browser_back` | Drive navigation |
+| `remote_browser_content` / `remote_browser_elements` | Read page content and interactive elements |
+| `remote_browser_click` / `remote_browser_fill` | Interact with elements (React-safe fill) |
+| `remote_browser_eval` / `remote_browser_scroll` | Execute JavaScript, scroll |
+| `remote_browser_screenshot` / `remote_browser_status` | Capture a screenshot, read session status |
+| `remote_browser_detect` | Detect installed browsers and display availability |
 
 ---
 
@@ -211,6 +218,16 @@ Toggleable per-profile for models that don't handle structured output well.
 Manage and connect to remote Linux servers over SSH directly from the app. Add servers in Settings with host, port, user, and an Ed25519 private key. The AI sees available servers in its system prompt and can connect, run commands, and disconnect through tool calls.
 
 Supports Ed25519 and RSA keys via SSHJ with BouncyCastle. The companion [aiope-remote daemon](daemon/) (Go) can be deployed to servers for health monitoring and managed execution.
+
+### Remote Browser Driving
+
+Once the daemon is deployed, the agent can drive a **real browser on the remote server** — Firefox (WebDriver BiDi) or Chrome (CDP) — from chat. Because automation runs inside a genuine browser on the server, it is immune to CSP restrictions and can reuse authenticated sessions.
+
+- **Dual engine, one interface.** Firefox and Chrome are driven through a shared interface (navigate, read content/elements, click, React-safe fill, eval, scroll, screenshot, back, status).
+- **Authenticated-session sharing.** Each engine drives a dedicated persistent AIOPE profile seeded from the user's real logged-in profile, so cookies/auth carry over. The user's real profile is **never driven or modified** (it stays a read-only golden master). Refresh pulls in fresh auth (auth-only), reseed fully resets the profile for recovery.
+- **Headed or headless.** Defaults to **headed** (visible, attaches to the server's active graphical session, discovered via `loginctl`) and **auto-falls-back to headless** when no active display exists. The mode is selectable per request.
+- **Action firewall.** Form submissions are gated against a Tranco-seeded allowlist (eTLD+1 matching): a submit is allowed only when both the page host and the form-action host are allowlisted, otherwise the agent must request explicit permission.
+- **Cross-platform daemon.** Builds for `linux/amd64`, `linux/arm64`, `linux/arm`, and `windows/amd64`.
 
 ---
 

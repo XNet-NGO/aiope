@@ -59,6 +59,10 @@ secrets.properties
 release.jks
 keystore.properties
 daemon/dist/
+# Compiled Go smoke-test binaries (built ad-hoc, not source)
+daemon/cdp-smoke
+daemon/browser-smoke
+daemon/aiope-remote
 
 # Kotlin build daemon artifacts
 .kotlin/

@@ -149,7 +149,19 @@ object BrowserServer {
           json("ok", "url=${browser.currentUrl()} title=${browser.title()}")
         }
 
-        else -> json("error", "Unknown endpoint: $path. Available: /navigate, /content, /elements, /click, /fill, /eval, /back, /status")
+        "/history" -> {
+          val limit = params["limit"]?.toIntOrNull() ?: 100
+          val entries = browser.getHistory(limit)
+          val sb = StringBuilder()
+          entries.forEachIndexed { i, e ->
+            sb.append("[").append(i + 1).append("] ").append(e.url)
+            if (e.title.isNotBlank()) sb.append(" — ").append(e.title)
+            sb.append("\n")
+          }
+          json("ok", sb.toString().trimEnd())
+        }
+
+        else -> json("error", "Unknown endpoint: $path. Available: /navigate, /content, /elements, /click, /fill, /eval, /back, /scroll, /status, /history")
       }
     } catch (e: Exception) {
       json("error", e.message ?: "Unknown error")

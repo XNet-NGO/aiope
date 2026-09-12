@@ -2,11 +2,14 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/xnet-ngo/aiope-remote/browser"
 )
 
 type HealthReport struct {
@@ -22,6 +25,12 @@ type HealthReport struct {
 	DiskFreeGB     uint64 `json:"disk_free_gb"`
 	Uptime         string `json:"uptime"`
 	ActiveProcs    int    `json:"active_processes"`
+	// Browser automation capability (best-effort; empty if none detected).
+	BrowserBinary  string `json:"browser_binary,omitempty"`
+	BrowserVersion string `json:"browser_version,omitempty"`
+	BrowserSnap    bool   `json:"browser_snap,omitempty"`
+	DisplayFound   bool   `json:"display_found,omitempty"`
+	BrowserProfiles int   `json:"browser_profiles,omitempty"`
 }
 
 func GetHealth(tracker *ProcessTracker) HealthReport {
@@ -66,7 +75,7 @@ func GetHealth(tracker *ProcessTracker) HealthReport {
 		uptime = fmt.Sprintf("%dd %dh %dm", days, hours, mins)
 	}
 
-	return HealthReport{
+	report := HealthReport{
 		Version:        Version,
 		OS:             runtime.GOOS,
 		Arch:           runtime.GOARCH,
@@ -80,4 +89,17 @@ func GetHealth(tracker *ProcessTracker) HealthReport {
 		Uptime:         uptime,
 		ActiveProcs:    tracker.Count(),
 	}
+
+	// Best-effort browser capability detection (never fails health).
+	dctx, dcancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer dcancel()
+	if det, err := browser.DetectFirefox(dctx); err == nil {
+		report.BrowserBinary = det.Binary
+		report.BrowserVersion = det.Version
+		report.BrowserSnap = det.IsSnap
+		report.DisplayFound = det.DisplayFound
+		report.BrowserProfiles = len(det.Profiles)
+	}
+
+	return report
 }

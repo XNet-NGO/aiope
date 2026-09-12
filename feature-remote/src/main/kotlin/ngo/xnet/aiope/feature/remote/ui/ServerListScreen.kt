@@ -44,6 +44,7 @@ fun ServerListScreen(
   val servers by viewModel.servers.collectAsState()
   val isDeploying by viewModel.isDeploying.collectAsState()
   val deployError by viewModel.deployError.collectAsState()
+  val refreshingBrowsers by viewModel.refreshingBrowsers.collectAsState()
   var showSheet by remember { mutableStateOf(false) }
   var editServer by remember { mutableStateOf<RemoteServerEntity?>(null) }
 
@@ -117,6 +118,8 @@ fun ServerListScreen(
   if (showSheet) {
     ServerEditSheet(
       server = editServer,
+      refreshingBrowsers = refreshingBrowsers,
+      onRefreshBrowsers = editServer?.let { s -> { viewModel.refreshBrowsers(s) } },
       onDismiss = { showSheet = false },
       onSave = { name, host, user, port, privateKey, publicKey, password, osType ->
         if (editServer != null) {
@@ -147,6 +150,31 @@ fun ServerListScreen(
         showSheet = false
       },
     )
+  }
+}
+
+// browserSummary parses the stored browsers JSON (from __aiope_browser__detect)
+// into a compact one-line card summary, e.g. "browsers: firefox 156, chrome 153 · desktop".
+private fun browserSummary(browsersJson: String?): String? {
+  if (browsersJson.isNullOrBlank()) return null
+  return try {
+    val root = org.json.JSONObject(browsersJson)
+    // Stored value is the daemon envelope {"status":"ok","data":{...}}. Unwrap to
+    // the data object; tolerate a bare object too.
+    val obj = root.optJSONObject("data") ?: root
+    val arr = obj.optJSONArray("browsers") ?: return null
+    if (arr.length() == 0) return null
+    val engines = (0 until arr.length()).joinToString(", ") { i ->
+      val b = arr.getJSONObject(i)
+      val eng = b.optString("engine")
+      val ver = b.optString("version").substringAfterLast(' ')
+      val snap = if (b.optBoolean("is_snap", false)) " (snap)" else ""
+      if (ver.isNotBlank()) "$eng $ver$snap" else "$eng$snap"
+    }
+    val where = if (obj.optBoolean("display_found", false)) "desktop" else "headless"
+    "browsers: $engines · $where"
+  } catch (_: Exception) {
+    null
   }
 }
 
@@ -204,6 +232,16 @@ private fun ServerCard(
             overflow = TextOverflow.Ellipsis,
           )
         }
+        browserSummary(server.browsers)?.let { summary ->
+          Text(
+            summary,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontSize = 11.sp,
+          )
+        }
         val hasKey = !server.privateKey.isNullOrBlank()
         Text(
           if (hasKey) "Key configured" else "No key set",
@@ -232,6 +270,8 @@ private fun ServerCard(
 @Composable
 private fun ServerEditSheet(
   server: RemoteServerEntity?,
+  refreshingBrowsers: Boolean = false,
+  onRefreshBrowsers: (() -> Unit)? = null,
   onDismiss: () -> Unit,
   onSave: (name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?, password: String?, osType: String) -> Unit,
   onDeploy: (name: String, host: String, user: String, port: Int, privateKey: String?, publicKey: String?, password: String?, osType: String) -> Unit,
@@ -307,6 +347,36 @@ private fun ServerEditSheet(
           onClick = { osType = "windows" },
           label = { Text("Windows") },
         )
+      }
+
+      if (isEdit) {
+        HorizontalDivider()
+        Text("Browsers", style = MaterialTheme.typography.titleSmall)
+        val summary = browserSummary(server?.browsers)
+        Text(
+          summary ?: "No browsers detected yet.",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+          "Detected on deploy. Refresh after installing or updating Firefox/Chrome on the server. Requires a reachable server.",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          fontSize = 11.sp,
+        )
+        OutlinedButton(
+          onClick = { onRefreshBrowsers?.invoke() },
+          enabled = !refreshingBrowsers && onRefreshBrowsers != null,
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          if (refreshingBrowsers) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+          } else {
+            Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
+          }
+          Spacer(Modifier.width(6.dp))
+          Text(if (refreshingBrowsers) "Detecting…" else "Refresh Browsers")
+        }
       }
 
       HorizontalDivider()

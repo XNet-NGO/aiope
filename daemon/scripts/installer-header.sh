@@ -33,14 +33,57 @@ if [ ! -f "$TMPDIR/$BINARY" ]; then
     exit 1
 fi
 
-cp "$TMPDIR/$BINARY" "$INSTALL_DIR/aiope-remote"
-chmod +x "$INSTALL_DIR/aiope-remote"
+# --- Stop any running daemon BEFORE overwriting the binary ---
+# Overwriting the binary of a live process fails with ETXTBSY ("text file busy"),
+# so we must stop it first. Try the service manager, then fall back to pkill, and
+# wait for the process to actually exit before installing.
+echo "Stopping any running aiope-remote..."
+if command -v systemctl >/dev/null 2>&1; then
+    if [ "$(id -u)" = "0" ]; then
+        systemctl stop aiope-remote 2>/dev/null || true
+    else
+        sudo systemctl stop aiope-remote 2>/dev/null || true
+    fi
+fi
+if command -v rc-service >/dev/null 2>&1; then
+    if [ "$(id -u)" = "0" ]; then
+        rc-service aiope-remote stop 2>/dev/null || true
+    else
+        sudo rc-service aiope-remote stop 2>/dev/null || true
+    fi
+fi
+pkill -f "$INSTALL_DIR/aiope-remote" 2>/dev/null || true
+pkill -x aiope-remote 2>/dev/null || true
+# Wait (up to ~5s) for the process to release the binary.
+i=0
+while pgrep -x aiope-remote >/dev/null 2>&1 && [ "$i" -lt 25 ]; do
+    sleep 0.2
+    i=$((i + 1))
+done
+if pgrep -x aiope-remote >/dev/null 2>&1; then
+    echo "aiope-remote still running; forcing kill..."
+    pkill -9 -x aiope-remote 2>/dev/null || true
+    sleep 0.5
+fi
+
+# Install atomically: remove the old path (unlinking is allowed even if a stray
+# process still holds the inode) then copy + rename into place. Avoids ETXTBSY.
+rm -f "$INSTALL_DIR/aiope-remote" 2>/dev/null || true
+cp "$TMPDIR/$BINARY" "$INSTALL_DIR/aiope-remote.new"
+chmod +x "$INSTALL_DIR/aiope-remote.new"
+mv -f "$INSTALL_DIR/aiope-remote.new" "$INSTALL_DIR/aiope-remote"
 echo "Installed binary to $INSTALL_DIR/aiope-remote"
 
 if [ -f "$TMPDIR/authorized_keys" ]; then
-    cp "$TMPDIR/authorized_keys" "$CONFIG_DIR/authorized_keys"
+    # APPEND (never overwrite) so a redeploy can't clobber keys the app/user
+    # already added. Dedupe to avoid unbounded growth.
+    touch "$CONFIG_DIR/authorized_keys"
+    while IFS= read -r k; do
+        [ -z "$k" ] && continue
+        grep -qxF "$k" "$CONFIG_DIR/authorized_keys" 2>/dev/null || echo "$k" >> "$CONFIG_DIR/authorized_keys"
+    done < "$TMPDIR/authorized_keys"
     chmod 600 "$CONFIG_DIR/authorized_keys"
-    echo "Installed authorized_keys to $CONFIG_DIR/"
+    echo "Merged authorized_keys into $CONFIG_DIR/"
 fi
 
 VER=$("$INSTALL_DIR/aiope-remote" --version 2>/dev/null || echo "unknown")

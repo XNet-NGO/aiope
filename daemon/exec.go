@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/ssh"
@@ -27,6 +28,12 @@ func ExecMiddleware(tracker *ProcessTracker) wish.Middleware {
 			// Health check command
 			if cmdStr == "__aiope_health__" {
 				handleHealth(sess, tracker)
+				return
+			}
+
+			// Browser control commands (__aiope_browser__<verb> [json])
+			if strings.HasPrefix(cmdStr, browserCmdPrefix) {
+				handleBrowser(sess, cmdStr, tracker)
 				return
 			}
 

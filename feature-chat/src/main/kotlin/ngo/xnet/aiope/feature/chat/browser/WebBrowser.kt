@@ -27,16 +27,52 @@ class WebBrowser(context: Context) {
   var loadProgress: Int = 100
     private set
 
+  // In-memory visit history (most-recent-last), bounded. Distinct from WebView's
+  // internal back/forward list — this is a queryable visit log for the agent/UI.
+  data class HistoryEntry(val url: String, val title: String, val timestamp: Long)
+  private val history = java.util.concurrent.ConcurrentLinkedDeque<HistoryEntry>()
+  private val maxHistory = 500
+
+  private fun recordHistory(url: String, title: String) {
+    if (url.isBlank() || url == "about:blank") return
+    // Collapse consecutive duplicates of the same URL.
+    val last = history.peekLast()
+    if (last != null && last.url == url) return
+    history.addLast(HistoryEntry(url, title, System.currentTimeMillis()))
+    while (history.size > maxHistory) history.pollFirst()
+  }
+
+  /** Returns visit history, most-recent-first, optionally limited. */
+  fun getHistory(limit: Int = 100): List<HistoryEntry> =
+    history.toList().asReversed().take(limit)
+
+  /** Clears the in-memory visit history (does not clear WebView cookies/storage). */
+  fun clearHistory() = history.clear()
+
   @SuppressLint("SetJavaScriptEnabled")
   private fun WebView.init() {
     settings.javaScriptEnabled = true
     settings.domStorageEnabled = true
+    settings.databaseEnabled = true
     settings.loadWithOverviewMode = true
     settings.useWideViewPort = true
     settings.builtInZoomControls = true
     settings.displayZoomControls = false
+    // Persist cache/content across sessions.
+    settings.cacheMode = WebSettings.LOAD_DEFAULT
+    settings.mediaPlaybackRequiresUserGesture = false
     setBackgroundColor(android.graphics.Color.BLACK)
-    settings.userAgentString = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36 AIOPE/2"
+    // Fuller, current desktop-class UA (was a stripped "AIOPE/2" string that some
+    // sites reject / serve degraded pages to). Kept mobile-Chrome shaped but current.
+    settings.userAgentString =
+      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
+
+    // Cookie persistence: accept + persist cookies (incl. third-party) across restarts.
+    CookieManager.getInstance().apply {
+      setAcceptCookie(true)
+      setAcceptThirdPartyCookies(this@init, true)
+    }
+
     webViewClient = object : WebViewClient() {
       override fun onPageStarted(v: WebView, url: String, fav: Bitmap?) {
         currentUrl.set(url)
@@ -44,6 +80,9 @@ class WebBrowser(context: Context) {
       override fun onPageFinished(v: WebView, url: String) {
         currentUrl.set(url)
         pageTitle.set(v.title ?: "")
+        recordHistory(url, v.title ?: "")
+        // Flush cookies to disk so auth survives process death.
+        CookieManager.getInstance().flush()
         loadDone?.invoke()
         loadDone = null
       }
@@ -118,6 +157,13 @@ class WebBrowser(context: Context) {
   suspend fun fill(selector: String, value: String): String {
     val sel = selector.replace("\\", "\\\\").replace("'", "\\'")
     val escaped = value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+    // React/Vue/etc. wrap the input value with their own setter and track changes
+    // via an internal value-tracker. Assigning el.value directly is IGNORED by the
+    // framework's synthetic-event system, so the field appears empty on submit.
+    // The fix: call the NATIVE HTMLInputElement/HTMLTextAreaElement value setter
+    // (bypassing the framework's override), then dispatch a proper InputEvent so
+    // the framework re-reads the DOM value. This is the standard controlled-input
+    // actuation technique and is what makes fills work on X/Reddit/modern SPAs.
     val result =
       evaluateJs(
         """
@@ -125,10 +171,20 @@ class WebBrowser(context: Context) {
         var el = document.querySelector('$sel');
         if (!el) return 'Element not found: $sel';
         el.focus();
-        el.value = '$escaped';
-        el.dispatchEvent(new Event('input', {bubbles:true}));
+        var v = '$escaped';
+        var proto = (el.tagName === 'TEXTAREA')
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype;
+        var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+        var nativeSetter = desc && desc.set;
+        try {
+          if (nativeSetter) { nativeSetter.call(el, v); } else { el.value = v; }
+        } catch (e) { el.value = v; }
+        // Clear any framework value-tracker so it detects the change.
+        if (el._valueTracker) { el._valueTracker.setValue(''); }
+        el.dispatchEvent(new InputEvent('input', {bubbles:true, data:v, inputType:'insertText'}));
         el.dispatchEvent(new Event('change', {bubbles:true}));
-        return 'Filled: ' + (el.tagName || '') + ' with ' + el.value.substring(0,50);
+        return 'Filled: ' + (el.tagName || '') + ' with ' + (el.value||'').substring(0,50);
       })()
         """.trimIndent(),
       )

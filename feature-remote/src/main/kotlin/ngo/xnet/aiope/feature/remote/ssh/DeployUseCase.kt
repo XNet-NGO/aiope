@@ -29,6 +29,19 @@ class DeployUseCase @Inject constructor(
 
     serverDao.updateStatus(server.id, "deploying")
 
+    // Public key is PER-SERVER: use the stored one if present, otherwise derive
+    // it from the private key. There is no universal/shared public key.
+    val effectivePubKey: String? = when {
+      !server.publicKey.isNullOrBlank() -> server.publicKey
+      !privateKey.isNullOrBlank() -> sshManager.derivePublicKey(privateKey).also { derived ->
+        if (derived != null && server.publicKey != derived) {
+          // Persist the derived key back to the server record for visibility/reuse.
+          runCatching { serverDao.upsert(server.copy(publicKey = derived)) }
+        }
+      }
+      else -> null
+    }
+
     val bootstrapClient = if (!privateKey.isNullOrBlank()) {
       sshManager.connectWithKey(host = server.host, port = server.bootstrapPort, user = server.user, privateKey = privateKey)
     } else {
@@ -47,9 +60,9 @@ class DeployUseCase @Inject constructor(
       cleanSession.close()
 
       if (server.osType == "windows") {
-        deployWindows(bootstrapClient, server.publicKey)
+        deployWindows(bootstrapClient, effectivePubKey)
       } else {
-        deployLinux(bootstrapClient, server.publicKey)
+        deployLinux(bootstrapClient, effectivePubKey)
       }
 
       // Update server to use daemon port
@@ -66,6 +79,13 @@ class DeployUseCase @Inject constructor(
             serverDao.updateHealth(updated.id, "${json.optString("os")} ${json.optString("arch")} - ${json.optString("hostname")}", json.optString("version", null))
           } catch (_: Exception) {}
         }
+        // Populate the browser registry for the agent's context (best-effort).
+        try {
+          val det = sshManager.exec(updated.id, "__aiope_browser__detect")
+          if (det.exitCode == 0 && det.stdout.isNotBlank()) {
+            serverDao.updateBrowsers(updated.id, det.stdout)
+          }
+        } catch (_: Exception) {}
       } catch (_: Exception) {
         serverDao.updateStatus(updated.id, "online")
       }
@@ -155,7 +175,7 @@ class DeployUseCase @Inject constructor(
       // Install public key
       if (!pubKey.isNullOrBlank()) {
         val keySession = client.startSession()
-        keySession.exec("powershell -Command \"Set-Content -Path '$remoteDir/authorized_keys' -Value '$pubKey'\"").join(10, TimeUnit.SECONDS)
+        keySession.exec("powershell -Command \"Add-Content -Path '$remoteDir/authorized_keys' -Value '$pubKey'\"").join(10, TimeUnit.SECONDS)
         keySession.close()
       }
 

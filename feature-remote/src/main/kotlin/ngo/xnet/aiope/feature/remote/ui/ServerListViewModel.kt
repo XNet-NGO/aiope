@@ -130,6 +130,43 @@ class ServerListViewModel @Inject constructor(
     }
   }
 
+  private val _refreshingBrowsers = MutableStateFlow(false)
+  val refreshingBrowsers = _refreshingBrowsers.asStateFlow()
+
+  /**
+   * Re-detect available browsers on the server (Firefox/Chrome) and store the
+   * JSON in the registry. Requires an active SSH session; runs __aiope_browser__detect.
+   */
+  fun refreshBrowsers(server: RemoteServerEntity) {
+    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+      _refreshingBrowsers.value = true
+      _deployError.value = null
+      android.util.Log.i("AIOPE_BROWSERS", "refreshBrowsers start: ${server.name} (${server.id}) connected=${sshManager.isConnected(server.id)}")
+      try {
+        if (!sshManager.isConnected(server.id)) {
+          android.util.Log.i("AIOPE_BROWSERS", "connecting to ${server.host}:${server.port}...")
+          sshManager.connect(server)
+          serverDao.updateStatus(server.id, "online")
+          android.util.Log.i("AIOPE_BROWSERS", "connected")
+        }
+        val res = sshManager.exec(server.id, "__aiope_browser__detect")
+        android.util.Log.i("AIOPE_BROWSERS", "detect exit=${res.exitCode} stdout.len=${res.stdout.length} stderr=${res.stderr.take(200)}")
+        android.util.Log.i("AIOPE_BROWSERS", "detect stdout=${res.stdout.take(500)}")
+        if (res.exitCode == 0 && res.stdout.isNotBlank()) {
+          serverDao.updateBrowsers(server.id, res.stdout)
+          android.util.Log.i("AIOPE_BROWSERS", "stored browsers JSON")
+        } else {
+          _deployError.value = "Browser detect failed: ${res.stderr.ifBlank { "empty response" }.take(200)}"
+        }
+      } catch (e: Exception) {
+        android.util.Log.e("AIOPE_BROWSERS", "refreshBrowsers error", e)
+        _deployError.value = "Browser detect error: ${e.message ?: e.javaClass.simpleName}"
+      } finally {
+        _refreshingBrowsers.value = false
+      }
+    }
+  }
+
   fun deleteServer(server: RemoteServerEntity) {
     viewModelScope.launch {
       sshManager.disconnect(server.id)

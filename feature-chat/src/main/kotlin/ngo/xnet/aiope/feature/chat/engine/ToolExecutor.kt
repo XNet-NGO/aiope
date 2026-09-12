@@ -605,11 +605,17 @@ class ToolExecutor(
         pipeline.runPipeline(task, stages)
       }
 
-      "ssh_start", "ssh_exec", "ssh_exit" -> {
+      "ssh_start", "ssh_exec", "ssh_exit",
+      "remote_browser_start", "remote_browser_navigate", "remote_browser_content",
+      "remote_browser_elements", "remote_browser_click", "remote_browser_fill",
+      "remote_browser_status", "remote_browser_eval", "remote_browser_screenshot",
+      "remote_browser_back", "remote_browser_scroll", "remote_browser_detect",
+      "remote_browser_stop" -> {
         val rtp = remoteToolBridge ?: return@execute "Remote tools not available. feature-remote not initialized."
         if (name == "ssh_exec") ToolProgressBus.update("ssh_exec", message = args["command"]?.toString()?.take(60) ?: "")
+        else ToolProgressBus.update(name, message = args["url"]?.toString() ?: args["selector"]?.toString() ?: "")
         val result = rtp.execute(name, args)
-        if (name == "ssh_exec") ToolProgressBus.clear()
+        ToolProgressBus.clear()
         result
       }
 
