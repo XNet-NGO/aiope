@@ -45,6 +45,7 @@ AIOPE also has an unusual origin: early in its life it was shown its own source 
 
 ## Contents
 
+- **[📖 Full Manual](docs/manual/)** — comprehensive, code-grounded docs for every feature and setting
 - [What It Does](#what-it-does) · [Models Per Task](#models-per-task)
 - [At a Glance](#at-a-glance) · [How It Compares](#how-it-compares)
 - [Stateful and Aware](#stateful-and-aware) · [Personality and Persona](#personality-and-persona)
