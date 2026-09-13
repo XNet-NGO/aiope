@@ -30,9 +30,9 @@ type browserRequest struct {
 	Px       int    `json:"px,omitempty"`
 	Engine   string `json:"engine,omitempty"`  // "firefox" | "chrome" for start
 	Mode     string `json:"mode,omitempty"`    // "headed" | "headless" — explicit override; default = headed with auto-fallback to headless when no active display
-	ShareSession bool `json:"share_session,omitempty"` // chrome: use the persistent AIOPE profile (seeded from the user's real profile for auth)
-	Refresh  bool   `json:"refresh,omitempty"` // chrome: auth-only refresh of the AIOPE profile from default (keeps divergence)
-	Reseed   bool   `json:"reseed,omitempty"`  // chrome: full wipe+recopy of the AIOPE profile from default (reset/recovery)
+	ShareSession bool `json:"share_session,omitempty"` // both engines: drive the persistent AIOPE profile seeded from the user's real profile (auth sharing); else a throwaway profile
+	Refresh  bool   `json:"refresh,omitempty"` // both engines: auth-only refresh of the AIOPE profile from the real profile (implies share_session)
+	Reseed   bool   `json:"reseed,omitempty"`  // both engines: full wipe+recopy of the AIOPE profile from the real profile (implies share_session)
 	Confirm  bool   `json:"confirm,omitempty"` // firewall allow:once
 	Allow    string `json:"allow,omitempty"`   // "session" to persist for session
 	// form_action_host lets the caller/agent declare the submit target host for
@@ -271,18 +271,26 @@ func (m *browserManager) startFirefox(ctx context.Context, req browserRequest, t
 	if err != nil {
 		return errResp(err)
 	}
-	// Persistent AIOPE Firefox profile seeded from the user's real profile
-	// (golden master, never driven). Auth/history carry over; the master is
-	// untouched even if the user's Firefox is running. seed/refresh/reseed
-	// mirror the Chrome model. Pick the ACTUALLY-USED master (most recent cookie
-	// activity), not merely the first profile — the first can be an empty
-	// throwaway while the logged-in one is elsewhere.
-	master := browser.SelectMasterFirefoxProfile(det.Profiles, browser.AiopeFirefoxProfileDir(det.Binary))
-	profile, err := browser.EnsureAiopeFirefoxProfile(ctx, det.Binary, master, req.Refresh, req.Reseed)
-	if err != nil {
-		return errResp(err)
+	// Profile selection is 1:1 with Chrome: share_session (or refresh/reseed)
+	// drives the persistent AIOPE profile SEEDED from the user's real logged-in
+	// profile (golden master, never driven; auth/history carry over). Without
+	// any of those flags, use a clean throwaway automation profile. seed/refresh/
+	// reseed semantics are identical across engines.
+	var profile string
+	if req.ShareSession || req.Refresh || req.Reseed {
+		// Pick the ACTUALLY-USED master (most cookies), not merely the first
+		// profile — the first can be an empty throwaway while the logged-in one
+		// is elsewhere.
+		master := browser.SelectMasterFirefoxProfile(det.Profiles, browser.AiopeFirefoxProfileDir(det.Binary))
+		p, perr := browser.EnsureAiopeFirefoxProfile(ctx, det.Binary, master, req.Refresh, req.Reseed)
+		if perr != nil {
+			return errResp(perr)
+		}
+		profile = p
+	} else {
+		profile = browser.AutomationProfileDir(det.Binary, "aiope-firefox-auto")
 	}
-	// Kill anything holding the AIOPE profile (not the user's master), then launch.
+	// Kill anything holding the driven profile (not the user's master), then launch.
 	procs, _ := browser.FindRunningFirefox(ctx, profile)
 	if len(procs) > 0 {
 		_ = browser.TerminateAndWait(ctx, procs, profile, 15*time.Second)
