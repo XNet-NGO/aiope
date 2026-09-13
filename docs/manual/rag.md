@@ -1,14 +1,30 @@
 # RAG Knowledge Base
 
-keywords: rag, knowledge base, retrieval augmented generation, embeddings, vector store, sqlite, cosine similarity, semantic search, chunking, overlap, pdf, pdfbox, rag_search, rag_index, RagEngine, CloudEmbeddingEngine, gemini embedding, on-device, privacy
+keywords: rag, knowledge base, retrieval augmented generation, embeddings, on-device embeddings, local embeddings, bekko, onnx, modernbert, vector store, sqlite, cosine similarity, semantic search, chunking, overlap, pdf, pdfbox, rag_search, rag_index, RagEngine, CloudEmbeddingEngine, LocalEmbeddingEngine, EmbeddingBackend, BekkoModelBootstrap, gemini embedding, on-device, privacy
 
-AIOPE keeps a private, **on-device knowledge base**. Documents are chunked, embedded once through a cloud embeddings endpoint, and the resulting vectors are stored locally in SQLite. At query time the search runs entirely on the phone using cosine similarity — nothing about the query or the stored text leaves the device except the short text sent to the embedding model to turn it into a vector.
+AIOPE keeps a private, **on-device knowledge base**. Documents are chunked, embedded into vectors, and stored locally in SQLite; at query time the search runs entirely on the phone using cosine similarity. Embeddings can be produced two ways: **on-device** with a bundled-at-runtime ONNX model (Bekko), in which case **nothing leaves the device at all**, or via a **cloud** embeddings endpoint (the default), in which case only the short text being embedded is sent out to be turned into a vector — never the query results or the stored corpus. The backend is user-selectable with transparent cloud fallback.
 
 This page is written from the actual source. Primary files:
 - `core-inference/.../inference/RagEngine.kt` — SQLite vector store, chunking, cosine search
 - `core-inference/.../inference/CloudEmbeddingEngine.kt` — OpenAI-compatible `/embeddings` client
+- `core-inference/.../inference/LocalEmbeddingEngine.kt` — on-device ONNX embedding engine (Bekko)
+- `feature-chat/.../engine/EmbeddingBackend.kt` — selects local vs cloud, transparent fallback
+- `core-terminal/.../shell/BekkoModelBootstrap.kt` — downloads the on-device model/tokenizer at runtime
 - `feature-chat/.../engine/ToolExecutor.kt` — the `rag_search` and `rag_index` tools
 - `feature-chat/.../settings/RagScreen.kt` — the RAG Documents UI (upload, PDFBox, search, re-index)
+
+## Embedding backends: on-device (Bekko ONNX) or cloud
+
+Embeddings can be produced entirely on the device or via the cloud. The choice is a user toggle, stored in `SharedPreferences("aiope_rag")` under key `local_embeddings` (default **off** = cloud), read synchronously by `EmbeddingBackend`.
+
+- **On-device (Bekko).** `LocalEmbeddingEngine` runs the **`hotchpotch/bekko-embedding-v1-a8m`** model (a ModernBERT embedder) through **ONNX Runtime** (`ai.onnxruntime`) with the **DJL HuggingFace tokenizer** (`ai.djl.huggingface.tokenizers`). I/O contract: inputs `input_ids` + `attention_mask` (int64, no `token_type_ids`); output `last_hidden_state [batch, seq, 384]`; pooling is **masked mean over tokens then L2-normalize**; cosine similarity; no query/document prefixes; up to 8192 tokens. Output dimension is **384**. When local embeddings are active, **nothing leaves the device** for RAG at all.
+- **Cloud (default).** `CloudEmbeddingEngine` POSTs to an OpenAI-compatible `/embeddings` endpoint (see below).
+
+**Selection & fallback (`EmbeddingBackend`).** Local is used only when the toggle is on **AND** the model is installed (`localReady = isLocalEnabled && BekkoModelBootstrap.isInstalled`). The `embedFn` wired into `RagEngine` tries the local engine first and **transparently falls back to cloud** on any local failure or when local isn't ready. The ONNX session is expensive to load, so a single `LocalEmbeddingEngine` instance is cached and reused; `reset()` drops it (e.g. after re-downloading). `buildRagEngine(ctx)` centralizes the wiring; `reindexWithCurrentBackend(ctx)` re-embeds all chunks after a backend switch.
+
+**Model download (`BekkoModelBootstrap`).** The model is **not bundled in the APK** — it is downloaded at runtime to app-private storage `filesDir/models/bekko/` (`model.onnx`, `tokenizer.json`) from Hugging Face (`huggingface.co/hotchpotch/bekko-embedding-v1-a8m`). Install is validated by size floors (model ≥ ~90 MB, tokenizer ≥ 256 KB) and a version marker (`bekko_a8m_v1`); a truncated/HTML download fails the check. Downloads go to `.part` files then atomically move into place.
+
+> Switching backends changes the embedding dimensions/space, so the store must be re-indexed. `RagEngine`'s dimension guard (below) also auto-clears mismatched vectors; use **Re-index all** after switching.
 
 ## On-device vector store (SQLite)
 
