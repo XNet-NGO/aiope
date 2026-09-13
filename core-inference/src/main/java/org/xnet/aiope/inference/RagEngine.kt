@@ -114,6 +114,23 @@ class RagEngine(context: Context, private val embedFn: (String) -> FloatArray?) 
         return results
     }
 
+    /** Number of stored embedding rows (for diagnostics). */
+    fun embeddedCount(): Int {
+        val c = db.rawQuery("SELECT COUNT(*) FROM embeddings", null)
+        return c.use { if (it.moveToFirst()) it.getInt(0) else 0 }
+    }
+
+    /** Distinct embedding dimensions currently stored (for diagnostics). */
+    fun storedDims(): List<Int> {
+        val c = db.rawQuery("SELECT DISTINCT dims FROM embeddings", null)
+        val out = mutableListOf<Int>()
+        c.use { while (it.moveToNext()) out.add(it.getInt(0)) }
+        return out
+    }
+
+    /** Probe the embedder: returns the produced vector size, or -1 if it returned null. */
+    fun probeEmbedDim(sample: String = "probe"): Int = embedFn(sample)?.size ?: -1
+
     // --- Search ---
 
     data class SearchResult(
@@ -127,22 +144,12 @@ class RagEngine(context: Context, private val embedFn: (String) -> FloatArray?) 
     fun search(query: String, topK: Int = 5): List<SearchResult> {
         val queryEmbedding = embedFn(query) ?: return emptyList()
 
-        // Check if stored embeddings match current model dimensions
-        val dimsCursor = db.rawQuery("SELECT dims FROM embeddings LIMIT 1", null)
-        if (dimsCursor.moveToFirst()) {
-            val storedDims = dimsCursor.getInt(0)
-            dimsCursor.close()
-            if (storedDims != queryEmbedding.size) {
-                // Dimensions mismatch — old embeddings are incompatible
-                android.util.Log.w("RagEngine", "Embedding dimension mismatch: stored=$storedDims current=${queryEmbedding.size}. Re-index required.")
-                db.delete("embeddings", null, null)
-                return emptyList()
-            }
-        } else {
-            dimsCursor.close()
-        }
-
+        // If stored embeddings were produced by a different model (different dims),
+        // they are incompatible with the current query vector. Do NOT wipe them here —
+        // that is destructive and loses the user's index. Instead, skip mismatched rows
+        // and surface a warning; re-indexing is an explicit user action (see reindexAll()).
         val results = mutableListOf<SearchResult>()
+        var mismatchSkipped = 0
 
         val cursor = db.rawQuery("""
             SELECT e.chunk_id, e.embedding, c.text, c.doc_id, d.title
@@ -160,10 +167,22 @@ class RagEngine(context: Context, private val embedFn: (String) -> FloatArray?) 
                 val title = it.getString(4)
 
                 val embedding = decodeFloats(embBlob)
+                if (embedding.size != queryEmbedding.size) {
+                    mismatchSkipped++
+                    continue
+                }
                 val score = cosineSimilarity(queryEmbedding, embedding)
 
                 results.add(SearchResult(chunkId, docId, text, score, title))
             }
+        }
+
+        if (mismatchSkipped > 0) {
+            android.util.Log.w(
+                "RagEngine",
+                "Skipped $mismatchSkipped embedding(s) with dims != ${queryEmbedding.size} " +
+                    "(indexed with a different embedding model). Re-index to use them.",
+            )
         }
 
         return results.sortedByDescending { it.score }.take(topK)

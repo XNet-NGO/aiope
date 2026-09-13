@@ -54,7 +54,8 @@ internal fun RagScreen(onBack: () -> Unit) {
           apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
           model = modelId,
         )
-        val embedFn: (String) -> FloatArray? = { text -> cloudEmbed.embed(text) }
+        val embedFn: (String) -> FloatArray? =
+          ngo.xnet.aiope.feature.chat.engine.EmbeddingBackend.embedFn(context) { text -> cloudEmbed.embed(text) }
 
         val rag = RagEngine(context, embedFn)
         ragEngine = rag

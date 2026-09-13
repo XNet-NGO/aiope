@@ -233,6 +233,155 @@ internal fun ProfileList(
         )
         HorizontalDivider()
       }
+      item {
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val modelInstalled = remember { mutableStateOf(ngo.xnet.aiope.core.terminal.shell.BekkoModelBootstrap.isInstalled(ctx)) }
+        val modelRunning = remember { mutableStateOf(false) }
+        val modelStatus = remember {
+          mutableStateOf(
+            if (ngo.xnet.aiope.core.terminal.shell.BekkoModelBootstrap.isInstalled(ctx)) {
+              "Installed (${ngo.xnet.aiope.core.terminal.shell.BekkoModelBootstrap.installedBytes(ctx) / 1024 / 1024}MB)"
+            } else {
+              "Not installed"
+            },
+          )
+        }
+        val modelScope = rememberCoroutineScope()
+        ListItem(
+          headlineContent = { Text("Local Embedding Model (Bekko)") },
+          supportingContent = {
+            Text(
+              modelStatus.value,
+              style = MaterialTheme.typography.bodySmall,
+              color = if (modelInstalled.value) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+            )
+          },
+          trailingContent = {
+            TextButton(
+              onClick = {
+                if (!modelRunning.value) {
+                  modelRunning.value = true
+                  modelStatus.value = "Downloading..."
+                  modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                      if (modelInstalled.value) {
+                        modelStatus.value = "Removing old model..."
+                        ngo.xnet.aiope.core.terminal.shell.BekkoModelBootstrap.remove(ctx)
+                      }
+                      ngo.xnet.aiope.core.terminal.shell.BekkoModelBootstrap.setup(ctx) { msg ->
+                        modelStatus.value = msg
+                      }
+                      modelInstalled.value = ngo.xnet.aiope.core.terminal.shell.BekkoModelBootstrap.isInstalled(ctx)
+                      modelStatus.value = if (modelInstalled.value) {
+                        "Installed (${ngo.xnet.aiope.core.terminal.shell.BekkoModelBootstrap.installedBytes(ctx) / 1024 / 1024}MB)"
+                      } else {
+                        "Failed"
+                      }
+                    } catch (e: Exception) {
+                      modelStatus.value = "Error: ${e.message?.take(40)}"
+                    }
+                    modelRunning.value = false
+                  }
+                }
+              },
+              enabled = !modelRunning.value,
+            ) {
+              Text(
+                if (modelRunning.value) {
+                  "Downloading..."
+                } else if (modelInstalled.value) {
+                  "Redownload"
+                } else {
+                  "Download"
+                },
+              )
+            }
+          },
+        )
+        val localEnabled = remember {
+          mutableStateOf(ngo.xnet.aiope.feature.chat.engine.EmbeddingBackend.isLocalEnabled(ctx))
+        }
+        val reindexScope = rememberCoroutineScope()
+        val showReindexPrompt = remember { mutableStateOf(false) }
+        val reindexBusy = remember { mutableStateOf(false) }
+        val reindexNote = remember { mutableStateOf<String?>(null) }
+        ListItem(
+          headlineContent = { Text("Use on-device embeddings") },
+          supportingContent = {
+            Text(
+              reindexNote.value ?: if (localEnabled.value) {
+                if (modelInstalled.value) "On — RAG embeds locally (Bekko)" else "On, but model not downloaded — using cloud"
+              } else {
+                "Off — RAG embeds via cloud API"
+              },
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          },
+          trailingContent = {
+            Switch(
+              checked = localEnabled.value,
+              enabled = !reindexBusy.value,
+              onCheckedChange = { on ->
+                localEnabled.value = on
+                ngo.xnet.aiope.feature.chat.engine.EmbeddingBackend.setLocalEnabled(ctx, on)
+                ngo.xnet.aiope.feature.chat.engine.EmbeddingBackend.reset()
+                reindexNote.value = null
+                // Switching backend changes embedding dimensions; existing vectors won't
+                // match. If there are indexed docs, offer to re-index with the new backend.
+                reindexScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                  val count = ngo.xnet.aiope.feature.chat.engine.EmbeddingBackend.indexedDocumentCount(ctx)
+                  if (count > 0) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                      showReindexPrompt.value = true
+                    }
+                  }
+                }
+              },
+            )
+          },
+        )
+        if (showReindexPrompt.value) {
+          AlertDialog(
+            onDismissRequest = { if (!reindexBusy.value) showReindexPrompt.value = false },
+            title = { Text("Re-index knowledge base?") },
+            text = {
+              Text(
+                if (reindexBusy.value) {
+                  "Re-indexing all documents with the ${if (localEnabled.value) "on-device" else "cloud"} model..."
+                } else {
+                  "You switched embedding backends. Existing documents were indexed with a " +
+                    "different model, so their vectors won't match new searches. Re-index now " +
+                    "with the ${if (localEnabled.value) "on-device (Bekko)" else "cloud"} model?"
+                },
+              )
+            },
+            confirmButton = {
+              TextButton(
+                enabled = !reindexBusy.value,
+                onClick = {
+                  reindexBusy.value = true
+                  reindexScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    val ok = ngo.xnet.aiope.feature.chat.engine.EmbeddingBackend.reindexWithCurrentBackend(ctx)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                      reindexBusy.value = false
+                      showReindexPrompt.value = false
+                      reindexNote.value = if (ok) "Re-indexed with new backend" else "Re-index failed — try again"
+                    }
+                  }
+                },
+              ) { Text(if (reindexBusy.value) "Re-indexing..." else "Re-index") }
+            },
+            dismissButton = {
+              TextButton(
+                enabled = !reindexBusy.value,
+                onClick = { showReindexPrompt.value = false },
+              ) { Text("Later") }
+            },
+          )
+        }
+        HorizontalDivider()
+      }
     }
   }
 }

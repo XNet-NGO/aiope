@@ -102,3 +102,25 @@
 
 # PDFBox - optional JPEG2000 decoder not bundled
 -dontwarn com.gemalto.jp2.**
+
+# ONNX Runtime - JNI bindings loaded via native methods and reflection
+-keep class ai.onnxruntime.** { *; }
+-keepclassmembers class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**
+
+# DJL HuggingFace tokenizer - resolves engine + native libs via reflection and
+# ServiceLoader (META-INF/services). R8 renaming/stripping breaks tokenizer init,
+# which silently disables on-device embeddings.
+-keep class ai.djl.** { *; }
+-keepclassmembers class ai.djl.** { *; }
+-keep class ai.djl.huggingface.tokenizers.** { *; }
+-keep class ai.djl.huggingface.tokenizers.jni.** { *; }
+-keepnames class ai.djl.** { *; }
+-dontwarn ai.djl.**
+# Keep ServiceLoader provider registrations used by DJL engines
+-keep class * implements ai.djl.engine.EngineProvider { *; }
+# DJL transitively references commons-compress, which optionally references
+# commons-lang3 SystemProperties (not bundled). Safe to ignore.
+-dontwarn org.apache.commons.compress.**
+-dontwarn org.apache.commons.lang3.**
+-dontwarn com.google.gson.**

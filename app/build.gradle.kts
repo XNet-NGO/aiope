@@ -44,6 +44,13 @@ android {
       excludes.add("/META-INF/{AL2.0,LGPL2.1}")
       excludes.add("/META-INF/LICENSE.md")
       excludes.add("/META-INF/NOTICE.md")
+      // DJL 'tokenizers' jar bundles desktop native libs as resources (osx/win/linux).
+      // We only run on Android (native libs come from tokenizer-native AAR jniLibs).
+      excludes.add("native/lib/osx-**")
+      excludes.add("native/lib/win-**")
+      excludes.add("native/lib/linux-**")
+      excludes.add("**/*.dylib")
+      excludes.add("native/lib/tokenizers.properties")
     }
     jniLibs.useLegacyPackaging = true
   }

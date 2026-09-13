@@ -52,7 +52,8 @@ class ToolExecutor(
         apiKey = profile.apiKey,
         model = effectiveModel,
       )
-      val embedFn: (String) -> FloatArray? = { text -> cloudEmbed.embed(text) }
+      val embedFn: (String) -> FloatArray? =
+        EmbeddingBackend.embedFn(app) { text -> cloudEmbed.embed(text) }
       ragEngine = org.xnet.aiope.inference.RagEngine(app, embedFn)
     }
     return ragEngine!!
@@ -568,9 +569,20 @@ class ToolExecutor(
         val query = args["query"]?.toString() ?: return "Error: query required"
         val topK = (args["top_k"] as? Number)?.toInt() ?: 5
         try {
-          val results = getRagEngine().search(query, topK)
+          val engine = getRagEngine()
+          val results = engine.search(query, topK)
           if (results.isEmpty()) {
-            "No results found in knowledge base."
+            // Diagnose why: empty store, failing embedder, or dimension mismatch.
+            val stored = engine.embeddedCount()
+            val dims = engine.storedDims()
+            val probe = engine.probeEmbedDim()
+            when {
+              stored == 0 -> "No results: knowledge base is empty (0 embeddings). Index a document first."
+              probe < 0 -> "No results: embedder is failing (returned no vector). Check embedding backend (local model installed / cloud key)."
+              dims.isNotEmpty() && !dims.contains(probe) ->
+                "No results: stored embeddings are ${dims.joinToString()}-dim but the current embedder produces ${probe}-dim. Re-index (Reindex in RAG settings) to match the active embedding model."
+              else -> "No results found in knowledge base."
+            }
           } else {
             results.joinToString("\n\n") { "[${String.format("%.2f", it.score)}] ${it.title}\n${it.text}" }
           }

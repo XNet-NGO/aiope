@@ -24,6 +24,8 @@ jtokkit = "1.1.0"
 spotless = "8.10.0"
 pdfboxAndroid = "2.0.27.0"
 yubikit = "3.2.0"
+onnxruntime = "1.22.0"
+djlTokenizers = "0.33.0"
 
 [libraries]
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "androidxComposeBom" }
@@ -59,6 +61,11 @@ okhttp-sse = { group = "com.squareup.okhttp3", name = "okhttp-sse", version.ref 
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 jtokkit = { group = "com.knuddels", name = "jtokkit", version.ref = "jtokkit" }
 pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfboxAndroid" }
+
+# On-device embeddings (ONNX Runtime + HuggingFace tokenizer)
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+djl-tokenizers = { group = "ai.djl.huggingface", name = "tokenizers", version.ref = "djlTokenizers" }
+djl-tokenizer-native-android = { group = "ai.djl.android", name = "tokenizer-native", version.ref = "djlTokenizers" }
 
 # Optional, opt-in auth factors (no Google Play Services)
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "androidxBiometric" }
