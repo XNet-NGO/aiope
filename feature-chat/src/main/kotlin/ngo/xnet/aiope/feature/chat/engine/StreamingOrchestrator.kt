@@ -507,7 +507,9 @@ class StreamingOrchestrator(
             JSONObject().apply {
               put("role", "tool")
               put("tool_call_id", r.id)
-              put("content", r.result.take(16000))
+              // introspect returns whole manual pages (up to ~19KB) — give it a
+              // larger cap so pages aren't truncated mid-content.
+              put("content", r.result.take(if (r.name == "introspect") 24000 else 16000))
             },
           )
         }
@@ -562,7 +564,7 @@ class StreamingOrchestrator(
               JSONObject().apply {
                 put("role", "tool")
                 put("tool_call_id", r.id)
-                put("content", r.result.take(16000))
+                put("content", r.result.take(if (r.name == "introspect") 24000 else 16000))
               },
             )
           }

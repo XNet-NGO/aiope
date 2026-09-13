@@ -87,6 +87,7 @@ class ToolExecutor(
     td("memory_forget", "Delete a specific memory by its key.", """{"type":"object","properties":{"key":{"type":"string","description":"Key of the memory to delete"}},"required":["key"]}"""),
     td("image_generate", "Generate an image from a text prompt. Use when the user asks you to draw, create, generate, or make an image/picture/illustration.", """{"type":"object","properties":{"prompt":{"type":"string","description":"Detailed image generation prompt"}},"required":["prompt"]}"""),
     td("analyze_image", "Analyze an image from a URL or file path using vision (JPEG/PNG/WebP/GIF/BMP/SVG). Use for screenshots, fetched/generated images, or any image to describe.", """{"type":"object","properties":{"url":{"type":"string","description":"URL or file:// path of the image"},"question":{"type":"string","description":"What to look for"}},"required":["url"]}"""),
+    td("detect_objects", "Detect objects on-device (YOLO) in an image from a file path or URL. Returns labeled boxes with confidence. Requires the object-detection model to be downloaded.", """{"type":"object","properties":{"url":{"type":"string","description":"URL or file:// path of the image"}},"required":["url"]}"""),
     td("read_calendar", "Read upcoming calendar events from the device.", """{"type":"object","properties":{"days":{"type":"integer","description":"Number of days ahead to look (default 7)"}},"required":[]}"""),
     td("create_event", "Create a calendar event. Opens the calendar app with pre-filled details.", """{"type":"object","properties":{"title":{"type":"string"},"start_time":{"type":"string","description":"Start time, e.g. '2025-04-20T14:00' or '2:00 PM'"},"end_time":{"type":"string","description":"End time"},"location":{"type":"string"},"description":{"type":"string"}},"required":["title"]}"""),
     td("delete_event", "Delete a calendar event by its ID (from read_calendar).", """{"type":"object","properties":{"event_id":{"type":"integer","description":"Event ID from read_calendar"}},"required":["event_id"]}"""),
@@ -327,6 +328,8 @@ class ToolExecutor(
       "image_generate" -> executeImageGenerate(args)
 
       "analyze_image" -> executeAnalyzeImage(args)
+
+      "detect_objects" -> executeDetectObjects(args)
 
       // Calendar
       "read_calendar" -> try {
@@ -638,16 +641,36 @@ class ToolExecutor(
 
       "introspect" -> {
         val query = args["query"]?.toString() ?: return@execute "Error: query required"
-        val topK = (args["top_k"] as? Number)?.toInt() ?: 5
         try {
-          val results = EmbeddingBackend.searchManual(app, query, topK)
-          if (results.isEmpty()) {
+          // Rank which manual PAGE(s) are relevant via semantic search, then return
+          // each matching page IN FULL from its bundled asset — not truncated chunk
+          // excerpts. The manual is small and fixed, so whole pages give the agent
+          // complete, coherent context. `title` == the page's file name (no .md).
+          val hits = EmbeddingBackend.searchManual(app, query, 8)
+          if (hits.isEmpty()) {
             "No matching AIOPE manual entry for \"$query\". The manual may not cover this — tell the user it isn't documented rather than guessing."
           } else {
-            val body = results.joinToString("\n\n---\n\n") { r ->
-              "## ${r.docId} (score ${"%.2f".format(r.score)})\n${r.text}"
+            // Distinct pages, best score first.
+            val pages = hits.groupBy { it.title }
+              .mapValues { (_, rs) -> rs.maxOf { it.score } }
+              .entries.sortedByDescending { it.value }
+              .map { it.key }
+            // Return the single BEST page IN FULL. Tool results are capped
+            // downstream (~16k chars) so one whole coherent page beats several
+            // truncated ones; name the other relevant pages so the agent can call
+            // introspect again for them if needed.
+            val best = pages.first()
+            val md = runCatching {
+              app.assets.open("manual/$best.md").bufferedReader().use { it.readText() }
+            }.getOrNull()
+            if (md.isNullOrBlank()) {
+              "introspect: matched page 'manual/$best.md' but it could not be read."
+            } else {
+              val others = pages.drop(1).take(4)
+              val also = if (others.isEmpty()) "" else
+                "\n\nOther related manual pages (call introspect again to read one): " + others.joinToString(", ")
+              "AIOPE manual — full page 'manual/$best.md' (answer ONLY from this manual; if it doesn't cover the question, say so):\n\n${md.trim()}$also"
             }
-            "AIOPE manual excerpts for \"$query\" (answer ONLY from these; if they don't cover it, say so):\n\n$body"
           }
         } catch (e: Exception) {
           "introspect error: ${e.message}. The manual index may still be building at startup — retry shortly."
@@ -933,6 +956,36 @@ class ToolExecutor(
     val file = java.io.File(dir, "img_${System.currentTimeMillis()}.png")
     file.writeBytes(bytes)
     return "![generated image](file://${file.absolutePath})"
+  }
+
+  private fun executeDetectObjects(args: Map<String, Any?>): String {
+    val url = args["url"]?.toString() ?: return "Error: url required"
+    if (!ngo.xnet.aiope.vision.yolo.ObjectDetector.isConfigured()) {
+      return "Object detection is not configured (no model URL set for this build)."
+    }
+    if (!ngo.xnet.aiope.vision.yolo.ObjectDetector.isReady(app)) {
+      return "Object-detection model not downloaded. Download it in settings first."
+    }
+    return try {
+      val data = if (url.startsWith("file://")) {
+        java.io.File(url.removePrefix("file://")).readBytes()
+      } else {
+        java.net.URL(url).readBytes()
+      }
+      val bmp = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.size)
+        ?: return "Could not decode image: $url"
+      val results = ngo.xnet.aiope.vision.yolo.ObjectDetector.get(app).detect(bmp)
+      if (results.isEmpty()) {
+        "No objects detected in $url."
+      } else {
+        "Detected ${results.size} object(s) in $url:\n" +
+          results.joinToString("\n") {
+            "- ${it.label} (${String.format("%.2f", it.score)}) at [${it.x1.toInt()},${it.y1.toInt()},${it.x2.toInt()},${it.y2.toInt()}]"
+          }
+      }
+    } catch (e: Exception) {
+      "Object detection FAILED.\nError: ${e.message}"
+    }
   }
 
   private suspend fun executeAnalyzeImage(args: Map<String, Any?>): String {
