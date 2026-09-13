@@ -100,8 +100,85 @@ object EmbeddingBackend {
     fun reindexWithCurrentBackend(ctx: Context): Boolean =
         try {
             buildRagEngine(ctx).reindexAll()
+            // The introspect manual store shares the same embedding backend, so it must
+            // be re-embedded too when the backend changes (its vectors live in a
+            // SEPARATE db and would otherwise mismatch dimensions).
+            buildManualRagEngine(ctx).reindexAll()
             true
         } catch (_: Throwable) {
             false
         }
+
+    // ── Introspect manual store (separate DB) ────────────────────────────────
+    // The AIOPE manual is indexed into its OWN SQLite db (aiope_manual.db), fully
+    // isolated from the user's knowledge base (aiope_rag.db). It uses the SAME
+    // embedding backend as RAG (local Bekko when ready, else cloud) so a backend
+    // toggle re-indexes both stores together.
+
+    const val MANUAL_DB = "aiope_manual.db"
+
+    /** A RagEngine bound to the manual DB, wired to the current embedding backend. */
+    fun buildManualRagEngine(ctx: Context): org.xnet.aiope.inference.RagEngine {
+        val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(ctx)
+        val tc = taskStore.getTaskConfig(ngo.xnet.aiope.core.network.ModelTask.RAG)
+        val modelId = tc.modelId ?: "google-ai-studio/models-gemini-embedding-2"
+        val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
+            baseUrl = "https://inf.xnet.ngo/v1",
+            apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
+            model = modelId,
+        )
+        val fn = embedFn(ctx) { text -> cloudEmbed.embed(text) }
+        return org.xnet.aiope.inference.RagEngine(ctx, fn, dbName = MANUAL_DB)
+    }
+
+    private const val MANUAL_PREFS = "aiope_manual"
+    private const val KEY_INDEXED_VERSION = "indexed_version"
+    private const val MANUAL_ASSET_DIR = "manual"
+
+    /**
+     * Index the bundled manual (assets/manual markdown files) into the manual DB.
+     * Runs once per app version: if the recorded indexed_version matches the
+     * current versionCode AND documents exist, it's a no-op. Called at startup
+     * (off the main thread). Re-indexes automatically when the app version changes.
+     */
+    fun ensureManualIndexed(ctx: Context) {
+        val prefs = ctx.getSharedPreferences(MANUAL_PREFS, Context.MODE_PRIVATE)
+        val currentVersion = try {
+            ctx.packageManager.getPackageInfo(ctx.packageName, 0).let {
+                if (android.os.Build.VERSION.SDK_INT >= 28) it.longVersionCode else it.versionCode.toLong()
+            }
+        } catch (_: Throwable) {
+            -1L
+        }
+        val indexedVersion = prefs.getLong(KEY_INDEXED_VERSION, -2L)
+
+        val rag = buildManualRagEngine(ctx)
+        val alreadyIndexed = runCatching { rag.listDocuments().isNotEmpty() }.getOrDefault(false)
+        if (indexedVersion == currentVersion && alreadyIndexed) return // up to date
+
+        // Rebuild from scratch so removed/renamed manual pages don't linger.
+        runCatching {
+            rag.listDocuments().forEach { rag.deleteDocument(it.id) }
+        }
+        val am = ctx.assets
+        val files = runCatching { am.list(MANUAL_ASSET_DIR)?.filter { it.endsWith(".md") } ?: emptyList() }
+            .getOrDefault(emptyList())
+        var indexed = 0
+        for (name in files) {
+            val content = runCatching {
+                am.open("$MANUAL_ASSET_DIR/$name").bufferedReader().use { it.readText() }
+            }.getOrNull() ?: continue
+            if (content.isBlank()) continue
+            val title = name.removeSuffix(".md")
+            runCatching { rag.indexDocument(title = title, content = content, source = "manual/$name") }
+                .onSuccess { indexed++ }
+        }
+        if (indexed > 0) {
+            prefs.edit().putLong(KEY_INDEXED_VERSION, currentVersion).apply()
+        }
+    }
+
+    /** Search the manual store. Returns markdown snippets from matching manual pages. */
+    fun searchManual(ctx: Context, query: String, topK: Int = 5) =
+        buildManualRagEngine(ctx).search(query, topK)
 }

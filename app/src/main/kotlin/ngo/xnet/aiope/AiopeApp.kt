@@ -14,6 +14,12 @@ class AiopeApp :
     super.onCreate()
     installNetworkCrashGuard()
     ngo.xnet.aiope.feature.chat.engine.AgentRescheduleWorker.enqueue(this)
+    // Index the bundled AIOPE manual into its own DB (aiope_manual.db) for the
+    // introspect tool. Runs off the main thread; no-op when already indexed for
+    // this app version. Re-indexes automatically on version change.
+    Thread {
+      runCatching { ngo.xnet.aiope.feature.chat.engine.EmbeddingBackend.ensureManualIndexed(this) }
+    }.apply { isDaemon = true; start() }
   }
 
   /**

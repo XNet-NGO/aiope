@@ -113,6 +113,7 @@ class ToolExecutor(
     td("cancel_schedule", "Cancel and delete a scheduled agent task by its id (get ids from list_schedules). Also cancels its pending alarm.", """{"type":"object","properties":{"task_id":{"type":"string","description":"Task id from list_schedules"}},"required":["task_id"]}"""),
     td("list_schedules", "List all scheduled agent tasks with their recurrence description, next run time, and run progress.", """{"type":"object","properties":{}}"""),
     td("datetime_now", "Get the current date and time: local timestamp, timezone with UTC offset, day of week, and epoch ms. Use for any time-related question or time math.", """{"type":"object","properties":{}}"""),
+    td("introspect", "Answer questions about AIOPE ITSELF — its features, tools, settings, and how to use the app. Searches AIOPE's built-in manual (semantic search over the bundled docs). Use whenever the user asks what you can do, how a feature works, or where/how to change a setting. Returns relevant manual excerpts; answer ONLY from them and say so if the manual doesn't cover it.", """{"type":"object","properties":{"query":{"type":"string","description":"What to look up about AIOPE (feature, tool, or setting)"},"top_k":{"type":"integer","description":"Number of manual excerpts to return (default 5)"}},"required":["query"]}"""),
   ) + (remoteToolBridge?.buildToolDefs()?.map { td(it.name, it.description, it.parameters) } ?: emptyList()) + toolStore.getMcpServers().filter { it.enabled }.flatMap { server ->
     var defs = mcpManager.getToolDefs(server.id)
     if (defs.isEmpty()) {
@@ -633,6 +634,24 @@ class ToolExecutor(
       "datetime_now" -> {
         val now = java.time.ZonedDateTime.now()
         "Now: ${now.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss"))}\nTimezone: ${now.zone.id} (${now.offset})\nDay of week: ${now.dayOfWeek}\nEpoch ms: ${System.currentTimeMillis()}"
+      }
+
+      "introspect" -> {
+        val query = args["query"]?.toString() ?: return@execute "Error: query required"
+        val topK = (args["top_k"] as? Number)?.toInt() ?: 5
+        try {
+          val results = EmbeddingBackend.searchManual(app, query, topK)
+          if (results.isEmpty()) {
+            "No matching AIOPE manual entry for \"$query\". The manual may not cover this — tell the user it isn't documented rather than guessing."
+          } else {
+            val body = results.joinToString("\n\n---\n\n") { r ->
+              "## ${r.docId} (score ${"%.2f".format(r.score)})\n${r.text}"
+            }
+            "AIOPE manual excerpts for \"$query\" (answer ONLY from these; if they don't cover it, say so):\n\n$body"
+          }
+        } catch (e: Exception) {
+          "introspect error: ${e.message}. The manual index may still be building at startup — retry shortly."
+        }
       }
 
       "edit_file" -> try {

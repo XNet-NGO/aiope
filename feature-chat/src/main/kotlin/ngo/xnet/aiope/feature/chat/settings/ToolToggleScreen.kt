@@ -81,6 +81,7 @@ internal fun ToolToggleScreen(toolStore: ToolStore, onBack: () -> Unit) {
       "memory_forget" to "Delete memories",
       "rag_search" to "Search knowledge base",
       "rag_index" to "Index into knowledge base",
+      "introspect" to "Answer questions about AIOPE itself (built-in manual)",
       "image_generate" to "Generate images",
       "analyze_image" to "Vision / image analysis",
       "orchestrate" to "Multi-agent pipelines",

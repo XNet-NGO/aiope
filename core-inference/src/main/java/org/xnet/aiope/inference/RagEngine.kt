@@ -11,9 +11,13 @@ import kotlin.math.sqrt
 /**
  * On-device RAG engine using LiteRT or cloud API for embeddings and SQLite for vector storage.
  */
-class RagEngine(context: Context, private val embedFn: (String) -> FloatArray?) {
+class RagEngine(
+    context: Context,
+    private val embedFn: (String) -> FloatArray?,
+    dbName: String = "aiope_rag.db",
+) {
 
-    private val db = RagDatabase(context).writableDatabase
+    private val db = RagDatabase(context, dbName).writableDatabase
 
     // --- Document Indexing ---
 
@@ -247,8 +251,8 @@ class RagEngine(context: Context, private val embedFn: (String) -> FloatArray?) 
 
     // --- Database ---
 
-    private class RagDatabase(context: Context) :
-        SQLiteOpenHelper(context, "aiope_rag.db", null, 1) {
+    private class RagDatabase(context: Context, dbName: String) :
+        SQLiteOpenHelper(context, dbName, null, 1) {
 
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("""

@@ -47,6 +47,8 @@ enum class AgentMode(val label: String) {
       "read_calendar", "create_event", "delete_event", "set_alarm", "dismiss_alarm",
       "read_contacts", "send_notification", "clipboard_copy", "clipboard_read",
       "read_sms", "send_sms", "delete_sms", "media_control", "open_intent",
+      // self-knowledge: answer questions about AIOPE itself in every mode
+      "introspect",
     )
 
     val PLAN_EXTRA: Set<String> = setOf(
