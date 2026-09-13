@@ -130,12 +130,15 @@ class StreamingOrchestrator(
       }
       firstRequest = false
 
-      // Trim older tool results
+      // Trim older tool results — but NEVER trim introspect manual pages (they are
+      // whole reference docs; trimming them to 500 chars made the agent think it got
+      // a truncated result and call introspect over and over).
       val toolIdxs = rawMessages.indices.filter { rawMessages[it].optString("role") == "tool" }
       if (toolIdxs.size > 3) {
         for (i in toolIdxs.dropLast(3)) {
           val content = rawMessages[i].optString("content", "")
-          if (content.length > 500) rawMessages[i].put("content", content.take(500) + "...(truncated)")
+          val isManualPage = content.startsWith("AIOPE manual")
+          if (content.length > 500 && !isManualPage) rawMessages[i].put("content", content.take(500) + "...(truncated)")
         }
       }
 
