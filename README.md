@@ -199,7 +199,7 @@ Language models are stateless and frozen in time — they don't know today's dat
 
 **Live facts on demand:**
 
-- **Location** -- real GPS coordinates and geocoded place (`get_location`) for location-aware answers
+- **Location** -- real GPS coordinates and geocoded place (`get_location`) for location-aware answers, which render natively in the chat stream as fully interactive MapLibre vector maps
 - **Device state** -- battery, storage, network, and display (`device_info`)
 - **Real-time data** -- weather, air quality, earthquakes, ISS position, and more live feeds (`query_data`)
 
@@ -209,29 +209,17 @@ The result: a model that remembers you, knows the current time and place, tracks
 
 ## Personality and Persona
 
-AIOPE is not a nameless chatbot bolted onto an API. Before the model sees a single message, AIOPE assembles a rich system context — the agent's persona, the live injected state (date/time, environment, mode, available servers), the knowledge-base directive, and the full definitions for all 70 tools. The result is a model that arrives at every turn already knowing who it is, where it is, and everything it can do. The persona itself is fully editable in **Settings → Agent**, organized into five sections with fourteen fields:
+AIOPE is not a nameless chatbot bolted onto an API. Before the model sees a single message, AIOPE assembles a rich system context — the core identity, the live injected state (date/time, environment, mode, available servers), the knowledge-base directive, and the full definitions for all 70 tools.
 
-**Identity**
-- **Name & Role** -- who the agent is. By default: *"You are AIOPE, a personal intelligent agent and system orchestrator running natively on the user's Android device. You are not a distant cloud AI — you run locally on their hardware with direct access to their personal data, apps, filesystem, and hardware sensors."*
-- **Personality** -- character traits. By default: *competent, efficient, and quietly confident — it solves rather than chats, warm but not saccharine, proactive, taking initiative when it sees a better way.*
-- **Tone** -- how it sounds: concise, structured, matching the user's energy.
+AIOPE's own identity and behavior are driven by **fixed, built-in personas** tailored precisely for each operating mode (Chat, Plan, Build). However, what makes the assistant truly yours is the **Personal Context** you define.
 
-**Values & Rules**
-- **Principles** -- privacy first (it has access to deeply personal data and respects that), efficiency (chain tools, minimize round-trips), autonomy (given a goal, find the path).
-- **Constraints** -- confirm before significant or destructive actions, don't touch contacts/SMS/calendar unless asked, never fabricate — verify with tools.
+In **Settings → Agent**, you configure the context that is injected into every conversation so the assistant knows who it's helping and what it's working with:
 
-**Preferences**
-- **Response Style** and **Formatting** -- how answers are shaped (tables/lists over prose, brevity, structure).
-
-**Context** (your details — this is what makes it *personal*)
-- **About the User** -- your name, role, expertise, and interests.
+- **About the User** -- your name, role, expertise level, and interests.
 - **Environment** -- your devices, servers, networks, and OS details.
 - **Projects & Workflows** -- what you're working on, your preferred tools, and common tasks.
 
-**Tools**
-- **Tool Guidance**, **Tool Output Handling**, **Dynamic UI** definitions, and **MCP & Extensions** notes that teach the model how to use its 70 tools and render native UI well.
-
-Because the persona is a living document rather than a hidden constant, you can reshape AIOPE into a terse ops engineer, a patient tutor, a research assistant, or a character of your own design — and it stays in that character across every conversation, tool call, and voice session, grounded by the live state above.
+Rather than trying to prompt-engineer the AI into being a good assistant, you simply tell it who you are, and its built-in persona adapts to your context across every conversation, tool call, and voice session, grounded by the live state above.
 
 ---
 
@@ -331,6 +319,16 @@ Forms aren't a separate type — they're composed from the interactive inputs pl
 
 Toggleable per-profile for models that don't handle structured output well.
 
+### Native Application Interfaces
+
+Beyond AI-generated UI, AIOPE consists of over 115 distinct native Jetpack Compose screens, sheets, and dialogs designed to manage its vast capabilities directly on-device. Key native UI domains include:
+
+- **Agent & Orchestration Editors:** The Agent Roster (Builder) allows you to edit system prompts, model parameters, and tool access for individual background agents. The Timers interface provides a dedicated UI for scheduling recurring WorkManager-based agent tasks.
+- **Network & Server Management:** Detailed **Network Scanner Sheets** allow you to drill down into discovered hosts, open ports, and banner grabs. The **Host Detail Sheets** and server configuration panels manage your SSH keys and Ed25519 identities.
+- **MCP & Tool Configuration:** A robust **MCP Server Detail Page** and **JSON Import Sheet** support rapid, raw JSON import flows to securely connect and authenticate with local or remote Model Context Protocol servers.
+- **Provider & Model Routing:** The **Profile & Model Editor** provides granular routing, letting you map specific inference tasks (e.g., Chat, RAG embedding, summarization) to entirely different AI providers, complete with temperature and context-window tuning.
+- **RAG & Knowledge Base:** Dedicated screens to manage your embedded documents, inspect local SQLite vector store health, and upload new PDFs for on-device chunking and indexing.
+
 ---
 
 ## Remote Servers
@@ -356,7 +354,7 @@ Once the daemon is deployed, the agent can drive a **real browser on the remote 
 A built-in LAN scanner for discovering and inspecting devices on your local network. From the scanner screen, AIOPE performs:
 
 - **Host discovery** -- finds live hosts on the subnet with IP, MAC address, and vendor lookup (OUI database); hostname/reverse-DNS is available on demand per host rather than during the initial sweep
-- **Port scanning** -- TCP port scan with service identification and banner grabbing
+- **Port & Service scanning** -- TCP port scanning with banner grabbing, combined with active UDP probing (e.g., mDNS/DNS-SD, SIP) to discover non-TCP services
 - **Network context** -- detects the gateway and reports both local and WAN IP addresses
 - **Live progress** -- streaming scan phases and progress as hosts and ports are found
 
@@ -575,7 +573,7 @@ AIOPE is provider-agnostic: it speaks the OpenAI-compatible chat-completions pro
 
 **Provider categories and per-task routing.** Providers are grouped into **Multimodal Text** and **Media Generation**, each with its own active profile. On top of that, AIOPE routes each *task* — primary chat, subagent, summary, title generation, translation, image recognition, image generation, RAG embedding — to whatever model/provider you choose (Settings → Model Per Task). Different tasks can run on entirely different providers simultaneously; the fast, cheap work goes to a small model while your primary chat uses a large one.
 
-**MCP (Model Context Protocol).** Beyond model providers, AIOPE connects to external MCP tool servers to extend the agent with capabilities you host yourself. Both **HTTP and SSE** transports are supported, and MCP-provided tools appear alongside the built-in tools in the agent's tool matrix.
+**MCP (Model Context Protocol).** Beyond model providers, AIOPE connects to external MCP tool servers to extend the agent with capabilities you host yourself. Both **HTTP and SSE** transports are supported, along with comprehensive authentication handling (**None, Custom Headers, and OAuth2**). MCP-provided tools appear alongside the built-in tools in the agent's tool matrix.
 
 ---
 
@@ -797,4 +795,21 @@ The BSL 1.1 applies only to XNet's original code. All third-party components ret
 
 ## Contributing
 
-Contributions welcome. Open an issue first to discuss. PRs target `main`.
+Contributions are welcome! If you are planning a significant change, please open an issue first to discuss it. All Pull Requests should target the `main` branch.
+
+### Development Ecosystem
+AIOPE is part of a broader XNet ecosystem. When developing locally, you may interact with several related repositories:
+- **[aiope](https://github.com/XNet-NGO/aiope)** — This repository (The core Android app and agent harness).
+- **[aiope-gateway](https://github.com/XNet-NGO/aiope-gateway)** — The self-hosted LLM proxy and provider router.
+- **[UniversalMarkdown](https://github.com/XNet-NGO/UniversalMarkdown)** — The custom Jetpack Compose markdown renderer built for AIOPE.
+- **aiope-inf / xnet-keystore** — Infrastructure and internal deployment repositories.
+
+### Local Development Setup
+The primary development environment assumes:
+- **Java:** OpenJDK 21
+- **Android SDK:** Platforms 34-37, NDK 28, Build-tools 33-36.
+- **Go:** 1.25+ (for building the `aiope-remote` daemon in `daemon/`).
+
+*Note on the Daemon:* The `aiope-remote` Go binaries must be cross-compiled (e.g., for `linux/amd64`, `linux/arm64`, `linux/arm`, and `windows/amd64`) and packaged separately for deployment to remote servers.
+
+Most developers use a dedicated build server or local machine. Ensure your `local.properties` is configured with your SDK path. For extensive architectural changes, refer to the module structure outlined above.
