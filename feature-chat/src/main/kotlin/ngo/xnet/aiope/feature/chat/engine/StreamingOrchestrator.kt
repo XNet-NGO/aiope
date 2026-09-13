@@ -142,9 +142,17 @@ class StreamingOrchestrator(
         }
       }
 
-      // Sanitize for Gemini: remove assistant tool_calls without thought_signature
-      // and their corresponding tool result messages (orphaned from pre-fix history)
+      // Sanitize for Gemini ONLY: Google models reject assistant tool_calls that
+      // lack a thought_signature, so we drop such (orphaned, pre-fix) calls + their
+      // results. This MUST NOT run for other providers — models like
+      // openai-gpt-oss never emit a thought_signature, so applying it there strips
+      // every tool call + result each round (msgs never grows), making the model
+      // think the tool never ran and re-call it endlessly.
+      val isGoogleModel = model.contains("gemini", ignoreCase = true) ||
+        model.contains("gemma", ignoreCase = true) ||
+        model.startsWith("google", ignoreCase = true)
       val toRemove = mutableSetOf<Int>()
+      if (isGoogleModel) {
       for (i in rawMessages.indices) {
         val msg = rawMessages[i]
         if (msg.optString("role") == "assistant" && msg.has("tool_calls")) {
@@ -170,6 +178,7 @@ class StreamingOrchestrator(
           }
         }
       }
+      } // end isGoogleModel guard
       if (toRemove.isNotEmpty()) {
         toRemove.sortedDescending().forEach { rawMessages.removeAt(it) }
       }
@@ -556,21 +565,34 @@ class StreamingOrchestrator(
             }
           }
           send(ChatStreamChunk(toolResults = results))
+          // Feed text-parsed tool calls back as PLAIN messages, NOT via the
+          // tool_calls/tool-role protocol. Reason: the Gemini sanitizer above
+          // strips assistant tool_calls that lack a Google thought_signature (which
+          // text-parsed calls never have) along with their tool results — so the
+          // model never saw the output and re-called the tool endlessly. A plain
+          // assistant turn + a user message carrying the result is understood by
+          // every model and is never stripped.
           rawMessages.add(
             JSONObject().apply {
               put("role", "assistant")
-              put("content", text)
+              put("content", cleanContent.ifBlank { "(calling tools)" })
             },
           )
-          for (r in results) {
-            rawMessages.add(
-              JSONObject().apply {
-                put("role", "tool")
-                put("tool_call_id", r.id)
-                put("content", r.result.take(if (r.name == "introspect") 24000 else 16000))
-              },
-            )
+          val resultText = buildString {
+            append("Tool results:\n")
+            for (r in results) {
+              append("\n[").append(r.name).append("]\n")
+              append(r.result.take(if (r.name == "introspect") 24000 else 16000))
+              append("\n")
+            }
+            append("\nUse these results to answer. Do not call the same tool again for the same request.")
           }
+          rawMessages.add(
+            JSONObject().apply {
+              put("role", "user")
+              put("content", resultText)
+            },
+          )
           contentSoFar.clear()
           continue
         }
