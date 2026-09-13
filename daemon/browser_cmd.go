@@ -30,7 +30,7 @@ type browserRequest struct {
 	Px       int    `json:"px,omitempty"`
 	Engine   string `json:"engine,omitempty"`  // "firefox" | "chrome" for start
 	Mode     string `json:"mode,omitempty"`    // "headed" | "headless" — explicit override; default = headed with auto-fallback to headless when no active display
-	ShareSession bool `json:"share_session,omitempty"` // both engines: drive the persistent AIOPE profile seeded from the user's real profile (auth sharing); else a throwaway profile
+	ShareSession *bool `json:"share_session,omitempty"` // both engines: drive the persistent AIOPE profile seeded from the user's real profile (auth sharing). DEFAULT true (omitted) — pass false for a clean throwaway profile.
 	Refresh  bool   `json:"refresh,omitempty"` // both engines: auth-only refresh of the AIOPE profile from the real profile (implies share_session)
 	Reseed   bool   `json:"reseed,omitempty"`  // both engines: full wipe+recopy of the AIOPE profile from the real profile (implies share_session)
 	Confirm  bool   `json:"confirm,omitempty"` // firewall allow:once
@@ -38,6 +38,19 @@ type browserRequest struct {
 	// form_action_host lets the caller/agent declare the submit target host for
 	// firewall evaluation on fill/click; empty = same origin as page.
 	FormActionHost string `json:"form_action_host,omitempty"`
+}
+
+// sharesSession reports the effective share_session value: it DEFAULTS TO TRUE
+// (drive the seeded auth-sharing profile) when the flag is omitted; an explicit
+// false opts into a clean throwaway profile. refresh/reseed always force true.
+func (r browserRequest) sharesSession() bool {
+	if r.Refresh || r.Reseed {
+		return true
+	}
+	if r.ShareSession == nil {
+		return true // default: share
+	}
+	return *r.ShareSession
 }
 
 // browserResponse is the JSON envelope returned on stdout for every verb.
@@ -277,7 +290,7 @@ func (m *browserManager) startFirefox(ctx context.Context, req browserRequest, t
 	// any of those flags, use a clean throwaway automation profile. seed/refresh/
 	// reseed semantics are identical across engines.
 	var profile string
-	if req.ShareSession || req.Refresh || req.Reseed {
+	if req.sharesSession() {
 		// Pick the ACTUALLY-USED master (most cookies), not merely the first
 		// profile — the first can be an empty throwaway while the logged-in one
 		// is elsewhere.
@@ -343,7 +356,7 @@ func (m *browserManager) startChrome(ctx context.Context, req browserRequest, tr
 		return errResp(err)
 	}
 	var userDataDir string
-	if req.ShareSession || req.Refresh || req.Reseed {
+	if req.sharesSession() {
 		// Persistent AIOPE Chrome profile: seeded from the user's real profile
 		// (golden master, never driven), reused across sessions, refreshed
 		// (auth-only) or reseeded (full) on request. Corruption is always
