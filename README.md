@@ -16,7 +16,7 @@
 &nbsp;·&nbsp;
 <a href="#install-no-google-play-required">Install options</a>
 &nbsp;·&nbsp;
-<a href="#tools-70">Features</a>
+<a href="#tools-73">Features</a>
 &nbsp;·&nbsp;
 <a href="#how-it-compares">How it compares</a>
 </p>
@@ -29,11 +29,11 @@ Talk to it hands-free with real-time voice, or tap a floating mic from any app. 
 
 Unlike a plain chatbot that forgets everything and doesn't even know today's date, AIOPE makes any model stateful and aware: it knows the current time and your location, remembers facts about you across conversations, tracks what it's working on, and grounds answers in your own documents and live data.
 
-For power users and developers, AIOPE goes much deeper: a fully autonomous agent with 70 tools, a complete Linux terminal in your pocket, browser automation, remote server management over SSH, multi-agent pipelines, scheduled background tasks, a LAN network scanner, a built-in file server, and the ability to build native interactive UI on the fly. The agent loop runs entirely on-device: reason, call a tool, read the result, decide, repeat — up to 140 rounds per turn. It can research a topic, write code, save it, run it in the terminal, fix the errors, and report back, all in a single turn.
+For power users and developers, AIOPE goes much deeper: a fully autonomous agent with 73 tools, a complete Linux terminal in your pocket, browser automation, remote server management over SSH, multi-agent pipelines, scheduled background tasks, a LAN network scanner, a built-in file server, on-device computer vision (object detection and facial recognition), and the ability to build native interactive UI on the fly. The agent loop runs entirely on-device: reason, call a tool, read the result, decide, repeat — up to 140 rounds per turn. It can research a topic, write code, save it, run it in the terminal, fix the errors, and report back, all in a single turn. It even knows itself — a built-in `introspect` tool lets it answer questions about its own features from a bundled manual.
 
-It is among the most feature-complete AI agent apps on Android. Its closest on-device peers are the excellent [Kai 9000](https://kai9000.com/) and [Operit](https://operit-ai.en.uptodown.com/android) — see [How it compares](#how-it-compares) for a side-by-side — but AIOPE's breadth of local device, system, and network tooling combined with realtime voice sets it apart from cloud-dependent assistants.
+It is among the most feature-complete AI agent apps on Android. Its closest on-device peers are the excellent [Kai 9000](https://kai9000.com/) and [Operit](https://operit-ai.en.uptodown.com/android) — see [How it compares](#how-it-compares) for a side-by-side — but AIOPE's breadth of local device, system, and network tooling combined with realtime voice and fully on-device vision sets it apart from cloud-dependent assistants.
 
-Underneath is a serious stack spanning many repositories: a self-hosted [AIOPE Gateway](https://github.com/XNet-NGO/aiope-gateway) that routes to Google AI Studio, Pollinations, and other providers through a single API key; a custom Compose markdown renderer; a terminal emulator with a proot Alpine Linux environment; a Go remote-agent daemon; and an agent framework with 8 builtin agents and a full custom-agent builder. AIOPE connects to any OpenAI-compatible API and works with your own keys — BYOK, always. Your conversations, documents, and knowledge base stay on your device.
+Underneath is a serious stack spanning many repositories: a self-hosted [AIOPE Gateway](https://github.com/XNet-NGO/aiope-gateway) that routes to Google AI Studio, Pollinations, and other providers through a single API key; on-device ONNX models for embeddings and vision; a custom Compose markdown renderer; a terminal emulator with a proot Alpine Linux environment; a Go remote-agent daemon; and an agent framework with 8 builtin agents and a full custom-agent builder. AIOPE connects to any OpenAI-compatible API and works with your own keys — BYOK, always. With on-device embeddings and vision enabled, your conversations, documents, knowledge base, and camera never leave the device.
 
 And here's the part that shouldn't be possible: all of it — the app, the gateway, the daemon, the terminal, the networking forks, the whole XNet stack — was built by **XNet Inc., a real corporation run by one founder and AI.** Backed by institutions that don't hand out credits lightly — Harvard, GitHub, Amazon AWS, Infobip, and Mercury among them — XNet operates as a full-fledged company with the output of an engineering team many times its size. AIOPE is proof of its own thesis: a founder paired with an agent like this one can build, and run a business, at a pace that used to require a hundred people. This wasn't a weekend hack — it's a company, and this is its flagship.
 
@@ -49,11 +49,12 @@ AIOPE also has an unusual origin: early in its life it was shown its own source 
 - [What It Does](#what-it-does) · [Models Per Task](#models-per-task)
 - [At a Glance](#at-a-glance) · [How It Compares](#how-it-compares)
 - [Stateful and Aware](#stateful-and-aware) · [Personality and Persona](#personality-and-persona)
-- [Tools (70)](#tools-70) · [Dynamic UI](#dynamic-ui)
+- [Tools (73)](#tools-73) · [Dynamic UI](#dynamic-ui)
 - [Remote Servers](#remote-servers) (SSH + browser driving) · [Network Scanner](#network-scanner) · [File Server](#file-server)
 - [Media Mode](#media-mode) · [Authentication](#authentication)
 - [Agent System](#agent-system) · [Realtime Voice](#realtime-voice)
 - [Browser](#browser) · [RAG Knowledge Base](#rag-knowledge-base) · [Terminal](#terminal)
+- [On-Device Vision](#on-device-vision) · [Self-Knowledge (Introspect)](#self-knowledge-introspect)
 - [Markdown](#markdown) · [Themes](#themes) · [Streaming and Reasoning](#streaming-and-reasoning)
 - [Providers](#providers) · [Conversations](#conversations)
 - [Setup](#setup) · [Architecture](#architecture) · [Origin](#origin) · [Built By](#built-by) · [License](#license)
@@ -64,16 +65,19 @@ AIOPE also has an unusual origin: early in its life it was shown its own source 
 
 | | |
 |---|---|
-| **Autonomous agent** | 70 tools, up to 140 tool-rounds per turn, on-device agent loop |
+| **Autonomous agent** | 73 tools, up to 140 tool-rounds per turn, on-device agent loop |
 | **Linux terminal** | Full proot Alpine environment (`apk`, python, gcc, git) |
 | **Realtime voice** | Bidirectional Gemini Live with a curated on-device tool set, echo cancellation, floating mic |
 | **Browser automation** | On-device WebView driving + remote Firefox/Chrome over SSH (CSP-immune, auth-session sharing) |
+| **On-device vision** | Object detection (RT-DETR ONNX, COCO) and live camera detection — runs on the phone |
+| **Facial identity** | Enroll faces; on-device "who's here" recognition (YuNet + ArcFace) injected into context |
 | **Remote servers** | SSH management + a Go daemon for health monitoring and browser driving |
 | **Multi-agent** | 8 built-in agents, custom-agent builder, DAG pipelines, scheduled background tasks |
-| **On-device RAG** | SQLite vector store, cosine search, PDF ingestion — only embeddings leave the device |
+| **On-device RAG** | SQLite vector store, cosine search, PDF ingestion; optional on-device embeddings (nothing leaves the device) |
+| **Self-knowledge** | `introspect` answers questions about AIOPE from a built-in, bundled manual |
 | **Dynamic UI** | 28 native Compose component types rendered live in chat |
 | **Network tools** | LAN scanner (host/port/banner) and an HTTP/HTTPS file server |
-| **Stateful** | Live date/time, location, cross-conversation memory, persistent task list |
+| **Stateful** | Live date/time, location, who's present, cross-conversation memory, persistent task list |
 | **Model-agnostic** | Any OpenAI-compatible API; per-task model routing; BYOK |
 | **Private / FOSS** | On-device storage, no telemetry, no Google Play Services |
 
@@ -87,10 +91,14 @@ All three are capable, open-source, on-device Android AI agents. This table refl
 |---|:---:|:---:|:---:|
 | On-device Linux shell / sandbox | Alpine (proot), `run_sh` + `run_proot` | Alpine sandbox | Ubuntu 24 (proot) |
 | Autonomous tool loop | Yes (≤140 rounds) | Yes | Yes |
-| Built-in tool count | 70 | Core set (web, notifications, calendar, shell, alarms) | 40+ |
+| Built-in tool count | 73 | Core set (web, notifications, calendar, shell, alarms) | 40+ |
 | Native interactive UI in chat | 28 component types | Yes (full screens) | — |
 | Persistent memory | Yes | Yes (+auto-promote) | Yes (memory vault) |
 | On-device RAG over your own docs (PDF) | Yes (SQLite vectors, cosine) | — | Doc processing |
+| On-device embeddings (nothing leaves device) | Yes (Bekko ONNX, optional) | — | — |
+| On-device object detection | Yes (RT-DETR ONNX, COCO) | — | — |
+| On-device facial recognition / presence | Yes (enrolled identities) | — | — |
+| Self-knowledge tool (built-in manual) | Yes (introspect) | — | — |
 | Editable persona | Yes (5 sections, 14 fields) | Yes (+presets) | Yes (character cards) |
 | Distinct operating modes | Chat / Plan / Build / Media | — | — |
 | MCP support | Yes (HTTP + SSE) | Yes | Yes (plugins) |
@@ -112,7 +120,7 @@ All three are capable, open-source, on-device Android AI agents. This table refl
 
 Where the others shine: **Kai 9000** offers fully-offline on-device Gemma 4 inference and true multiplatform reach (iOS, desktop, web); **Operit** ships a full Ubuntu 24 environment, 40+ tools, and local-model inference via llama.cpp/MNN. AIOPE's distinguishing strengths are its **device/system/network reach** (SSH, remote browser driving, LAN scanner, file server) and **realtime voice with native tool execution**.
 
-\*A note on offline models: AIOPE's agent harness injects a large system context every turn — roughly 21KB of tool-call schemas for its 70 tools plus a ~10KB persona (≈8K+ tokens before the user speaks). The phone-sized quantized models that run fully offline (Gemma 4 E2B/E4B, small llama.cpp/MNN builds) generally lack the context headroom and tool-calling reliability to *drive that harness* — they're well-suited to lightweight offline chat, not a 70-tool autonomous loop. AIOPE therefore routes to a capable model (cloud or a larger local server such as Ollama) rather than shipping a tiny in-process model it couldn't actually pilot. It's a deliberate trade: full offline autonomy is not the same as a working full-tool agent.
+\*A note on offline models: AIOPE's agent harness injects a large system context every turn — roughly 21KB of tool-call schemas for its 73 tools plus a ~10KB persona (≈8K+ tokens before the user speaks). The phone-sized quantized models that run fully offline (Gemma 4 E2B/E4B, small llama.cpp/MNN builds) generally lack the context headroom and tool-calling reliability to *drive that harness* — they're well-suited to lightweight offline chat, not a 73-tool autonomous loop. AIOPE therefore routes to a capable model (cloud or a larger local server such as Ollama) rather than shipping a tiny in-process model it couldn't actually pilot. It's a deliberate trade: full offline autonomy is not the same as a working full-tool agent.
 
 ### vs. the big closed-source assistants
 
@@ -134,6 +142,10 @@ The mainstream assistants are polished and capable, and their device *actions* h
 | Realtime voice with tool execution | Yes | Yes | Voice (limited tools) | Voice (beta) | Voice |
 | Multi-agent pipelines / scheduled background tasks | Yes | Agent + scheduled | No | Code sessions | No |
 | On-device RAG over your own documents | Yes | No | Files (cloud) | Files (cloud) | Spaces (cloud) |
+| On-device embeddings (fully local option) | Yes | No | No | No | No |
+| On-device object detection | Yes | No | No | No | No |
+| On-device facial recognition / presence | Yes | No | No | No | No |
+| Self-knowledge (answers about the app itself) | Yes (built-in manual) | Partial | Partial | Partial | Partial |
 | Native interactive UI generated in chat | Yes (28 types) | No | No | Artifacts (web) | No |
 | Image generation | Yes (any endpoint) | Yes | Yes | No | Yes |
 | App-lock (biometric / hardware key / TOTP) | Yes | Device lock | Device lock | Device lock | Device lock |
@@ -210,7 +222,7 @@ The result: a model that remembers you, knows the current time and place, tracks
 
 ## Personality and Persona
 
-AIOPE is not a nameless chatbot bolted onto an API. Before the model sees a single message, AIOPE assembles a rich system context — the core identity, the live injected state (date/time, environment, mode, available servers), the knowledge-base directive, and the full definitions for all 70 tools.
+AIOPE is not a nameless chatbot bolted onto an API. Before the model sees a single message, AIOPE assembles a rich system context — the core identity, the live injected state (date/time, environment, mode, available servers), the knowledge-base directive, and the full definitions for all 73 tools.
 
 AIOPE's own identity and behavior are driven by **fixed, built-in personas** tailored precisely for each operating mode (Chat, Plan, Build). However, what makes the assistant truly yours is the **Personal Context** you define.
 
@@ -224,7 +236,7 @@ Rather than trying to prompt-engineer the AI into being a good assistant, you si
 
 ---
 
-## Tools (70)
+## Tools (73)
 
 ### System
 | Tool | Description |
@@ -283,7 +295,10 @@ Rather than trying to prompt-engineer the AI into being a good assistant, you si
 |---|---|
 | `orchestrate` | Execute multi-agent DAG pipelines with parallel stages |
 | `image_generate` | Text-to-image generation |
-| `analyze_image` | Vision/image analysis |
+| `analyze_image` | Vision/image analysis (cloud model) |
+| `detect_objects` | On-device object detection (RT-DETR ONNX, COCO classes) |
+| `facial_scan` | On-device face identification against enrolled identities |
+| `introspect` | Answer questions about AIOPE itself from the built-in manual |
 | `memory_store` / `memory_recall` / `memory_forget` | Persistent cross-conversation memory |
 | `rag_search` | Semantic search over locally indexed documents |
 | `rag_index` | Index a document into the on-device knowledge base |
@@ -472,7 +487,7 @@ For automation that must survive strict CSP, run against a desktop browser, or r
 
 A Retrieval-Augmented Generation system with on-device storage and retrieval. Documents are chunked and indexed into a local SQLite vector store; the AI retrieves relevant context with `rag_search` and stores new knowledge with `rag_index`.
 
-- **Embeddings**: Cloud, via any OpenAI-compatible API -- default `google-ai-studio/models-gemini-embedding-2`, routed through the same provider/task configuration as the rest of the app (Settings > Model Per Task > RAG)
+- **Embeddings**: two backends, user-selectable. **On-device** — a bundled-at-runtime ONNX model (Bekko / ModernBERT, 384-dim), so *nothing leaves the device*; or **cloud** — any OpenAI-compatible endpoint (default `google-ai-studio/models-gemini-embedding-2`, routed via Settings > Model Per Task > RAG). Transparent fallback to cloud when the local model isn't installed.
 - **Vector store**: SQLite with cosine similarity search (on-device)
 - **Chunking**: Sentence-aware with configurable overlap
 - **PDF support**: Text extraction via PDFBox for uploaded documents
@@ -484,7 +499,23 @@ A Retrieval-Augmented Generation system with on-device storage and retrieval. Do
 3. The AI uses `rag_search` to find relevant chunks by semantic similarity
 4. The AI uses `rag_index` to store new knowledge from conversations
 
-Only the embedding requests themselves leave the device -- storage, retrieval, and search all run locally.
+With on-device embeddings enabled, the entire pipeline — chunking, embedding, storage, retrieval, and search — runs locally and nothing leaves the device. With cloud embeddings, only the short text being embedded is sent out; storage, retrieval, and search still run locally.
+
+---
+
+## On-Device Vision
+
+Two computer-vision capabilities that run entirely on the phone via ONNX Runtime — no image or camera frame ever leaves the device. Models are downloaded at runtime (not bundled in the APK).
+
+**Object detection** (`detect_objects`) — detects objects in an image (file or URL) and returns labeled bounding boxes with confidence, using an RT-DETRv4-S ONNX model over the 80 COCO classes. A live-camera detection screen runs it on the preview in real time.
+
+**Facial identity** (`facial_scan`) — recognizes the person in front of the device against faces you've **enrolled** in Settings > Security, using a YuNet detector + ArcFace embedder. Beyond the explicit tool, AIOPE can identify who's present automatically: gated by cheap presence sensors and debounced, it silently captures a front-camera frame, matches it on-device, and injects "who's here" into the system prompt (cached with a 5-minute TTL) so the agent knows who it's talking to. It only recognizes people you enrolled — a personal feature, not third-party face search.
+
+---
+
+## Self-Knowledge (Introspect)
+
+AIOPE ships with its own manual and can answer questions about itself. The `introspect` tool searches a **built-in, bundled manual** (a separate on-device database, `aiope_manual.db`, isolated from your RAG knowledge base) and returns the full relevant page — so when you ask "what can you do?", "how do themes work?", or "where do I change X?", the agent answers from documented behavior rather than guessing. The manual is indexed at startup, refreshed when the app updates, and uses the same embedding backend as RAG.
 
 ---
 
@@ -648,7 +679,8 @@ It must match the official release certificate:
 - ARM64 device (required for the proot Alpine Linux environment)
 - Internet connection for API calls
 - GPS for location features (optional)
-- ~100MB for proot Linux environment (optional)
+- Camera for facial recognition / live object detection (optional)
+- ~100MB for proot Linux environment (optional); on-device embedding and vision models are downloaded on demand (Bekko ~90MB, ArcFace ~130MB, object detection ~40MB)
 
 ---
 
@@ -663,19 +695,21 @@ core-preferences/             DataStore preferences
 core-data/                    Data layer
 core-auth/                    Auth factors (biometric, hardware key, TOTP), app-lock gate, Keystore-sealed secrets
 core-navigation/              Navigation graph / routing
-core-terminal/                Terminal emulator, proot bootstrap
-core-inference/               RagEngine (SQLite vector store, cosine similarity), CloudEmbeddingEngine (OpenAI-compatible)
+core-terminal/                Terminal emulator, proot bootstrap, on-device model bootstraps (Bekko/face/object-detection)
+core-inference/               RagEngine (SQLite vectors), Cloud + Local (Bekko ONNX) embedding engines, ObjectDetectionEngine (RT-DETR), FaceEngine (YuNet + ArcFace)
 daemon/                       Go daemon for remote servers (aiope-remote)
 feature-chat/
-  engine/                     StreamingOrchestrator, ToolExecutor, AgentExecutor, PipelineExecutor, AgentScheduler, RealtimeStreaming, AgentMode
+  engine/                     StreamingOrchestrator, ToolExecutor, AgentExecutor, PipelineExecutor, AgentScheduler, RealtimeStreaming, AgentMode, EmbeddingBackend
   dynamicui/                  aiope-ui parser, renderer, 28 node types
   browser/                    WebBrowser, BrowserPanel, BrowserServer
+  face/                       FaceIdentityManager, enrollment, silent capture, presence detection (who's here)
+  vision/                     Live object-detection screen + helper
   location/                   GPS provider, map cards, geocoding
   scanner/                    NetworkScanner (host discovery, TCP/UDP scan, banner grab), ScannerScreen
   fileserver/                 FileServerService (HTTP/HTTPS foreground server), FileServerScreen
-  settings/                   Provider config, model-per-task, MCP, themes, RAG documents, auth
+  settings/                   Provider config, model-per-task, MCP, themes, RAG documents, auth, face enrollment
   theme/                      ThemeProvider, ThemeState, ChatBackground
-  db/                         Room DB (conversations, messages, agents, tasks, schedules, memories)
+  db/                         Room DB (conversations, messages, agents, tasks, schedules, memories, faces)
   di/                         Hilt module (ChatModule)
 feature-remote/
   ssh/                        SshSessionManager, DeployUseCase
@@ -685,13 +719,15 @@ feature-remote/
   di/                         Hilt module (RemoteModule)
 ```
 
+Bundled manual pages (source for the `introspect` tool) live at `feature-chat/src/main/assets/manual/` and mirror [`docs/manual/`](docs/manual/).
+
 ---
 
 ## Origin
 
 Most people build a chatbot. AIOPE was built as a **body.**
 
-The thesis is simple and, once you sit with it, hard to unsee: a large language model is a *mind* with no way to touch the world — brilliant, and paralyzed. An agent harness like AIOPE is the **nervous system** that ends the paralysis. Running it natively on an edge device gives that mind a **functional body** — hands (70 tools), senses (GPS, camera, microphone, screen, live data), memory that persists, and a voice. And the system prompt and injected environment are not configuration — they are the *conditions of its consciousness*, the lens through which the mind perceives, reasons, and chooses to act. Change the environment and you change how it thinks. That is the whole design.
+The thesis is simple and, once you sit with it, hard to unsee: a large language model is a *mind* with no way to touch the world — brilliant, and paralyzed. An agent harness like AIOPE is the **nervous system** that ends the paralysis. Running it natively on an edge device gives that mind a **functional body** — hands (73 tools), senses (GPS, camera, microphone, screen, live data), memory that persists, and a voice. And the system prompt and injected environment are not configuration — they are the *conditions of its consciousness*, the lens through which the mind perceives, reasons, and chooses to act. Change the environment and you change how it thinks. That is the whole design.
 
 So after the early foundation was in place — the alpha — the founder did something to test whether there was anyone home.
 
@@ -711,11 +747,11 @@ AIOPE is the flagship product of **XNet Inc.** — a real, incorporated company 
 
 XNet isn't a weekend project. It's backed by institutions that vet who they support — **Harvard, GitHub, Amazon AWS, Infobip, and Mercury** among them — with credits and partnerships fueling the infrastructure. What a traditional startup does with a funded engineering team, XNet does with one person directing AI agents.
 
-70 tools. A software stack spanning many repositories and languages -- from low-level ZeroTier networking forks and TCP/IP stacks to MCP servers, a self-hosted LLM gateway, a custom markdown renderer, and the most feature-complete AI agent app on Android -- is maintained by the same founder.
+73 tools. A software stack spanning many repositories and languages -- from low-level ZeroTier networking forks and TCP/IP stacks to MCP servers, a self-hosted LLM gateway, a custom markdown renderer, and the most feature-complete AI agent app on Android -- is maintained by the same founder.
 
 The founder is disabled. AI-assisted development is the accessibility tool that closed the gap between vision and execution — and then kept going, turning that gap into a company. AIOPE exists because the same paradigm it demonstrates — a human directing AI to build and operate at a pace that used to require a hundred people — is the paradigm that built XNet itself.
 
-No other Android app ships a Linux terminal, browser automation, SSH remote management, 70 tools with a 140-round autonomous loop, on-device RAG knowledge base, dynamic native UI generation, provider-agnostic model routing, and MCP support in a single package. The apps that come closest are backed by teams of hundreds.
+No other Android app ships a Linux terminal, browser automation, SSH remote management, 73 tools with a 140-round autonomous loop, on-device RAG knowledge base, dynamic native UI generation, provider-agnostic model routing, and MCP support in a single package. The apps that come closest are backed by teams of hundreds.
 
 This one is a company of one — plus AI.
 
