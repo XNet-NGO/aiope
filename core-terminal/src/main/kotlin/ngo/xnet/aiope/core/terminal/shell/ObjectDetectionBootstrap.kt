@@ -27,7 +27,7 @@ object ObjectDetectionBootstrap {
 
     /** RT-DETRv4-S ONNX (labels/boxes/scores contract). Hosted on the XNet model releases. */
     const val MODEL_URL =
-        "https://github.com/xnet-admin-1/box/releases/download/rtdetrv4-s/rtdetrv4_s.onnx"
+        "https://github.com/XNet-NGO/deps/releases/download/rtdetrv4-s/rtdetrv4_s.onnx"
 
     private const val MIN_BYTES = 30L * 1024 * 1024 // real export ~41.5MB; floor guards junk
 
