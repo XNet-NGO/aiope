@@ -16,6 +16,7 @@ These same pages ship inside the app as bundled assets (`feature-chat/src/main/a
 - [Tools System](tools.md) — the full tool registry and per-mode tool availability
 - [Agent System](agent-system.md) — multi-agent spawn/monitor/timers/builder and the orchestrate pipeline
 - [Realtime Voice](voice.md) — Gemini Live voice with a curated tool set
+- [Offline Speech-to-Text](speech-to-text.md) — on-device dictation (sherpa-onnx) and the system-wide recognizer
 
 ## Browsing, terminal & knowledge
 

@@ -9,26 +9,28 @@ AIOPE has two on-device computer-vision capabilities that run entirely on the ph
 Detects objects in an image from a file path or URL and returns labeled bounding boxes with confidence scores.
 
 - **Tool:** `detect_objects(url)` — `url` is a `file://` path or an `http(s)` URL. Returns lines like `- person (0.94) at [x1,y1,x2,y2]`, or "No objects detected."
-- **Model:** an ONNX object-detection model (**RT-DETRv4-S** export) downloaded by `ObjectDetectionBootstrap` to app-private storage (`rtdetr.onnx`, ~41 MB; size-floor validated). The download URL is build-configurable; if it's blank the tool reports "not configured." Labels come from the 80-class **COCO** label set (`CocoLabels`).
-- **Engine:** `ObjectDetectionEngine` runs inference; results are decoded to boxes/labels/scores.
-- **Live mode:** a `LiveObjectDetectionScreen` (in the `vision` package) runs detection on the camera preview in real time.
-- **Requires:** the model downloaded (via settings); returns a clear message if it isn't configured or installed.
+- **Model (tool):** an ONNX object-detection model (**RT-DETRv4-S**) downloaded by `ObjectDetectionBootstrap` to app-private storage (`rtdetr.onnx`, ~41 MB; size-floor validated). Labels come from the 80-class **COCO** label set (`CocoLabels`), decoded by `ObjectDetectionEngine`.
+- **Live camera detection:** a separate `LiveObjectDetectionScreen` (in the `vision` package) runs a **YOLOv9-s** ONNX model (`YoloV9Bootstrap` → `yolov9s.onnx`, ~29 MB, via `YoloDetectionEngine`) on the camera preview in real time, with a tuned viewfinder.
+- **Requires:** the relevant model downloaded (via settings); the tool returns a clear message if it isn't configured or installed.
 
-> Note: the tool's own description text says "YOLO"; the shipped bootstrap downloads an RT-DETRv4-S export. Functionally it's an on-device box detector over the COCO classes either way.
+> The `detect_objects` **tool** uses the RT-DETRv4-S model; the **live camera** screen uses YOLOv9-s. Both detect over the COCO classes on-device.
 
 ## Facial identity — "who's here" (`facial_scan`)
 
 Identifies the person in front of the device against **enrolled** identities, fully on-device, so the agent can know who it's talking to.
 
 - **Tool:** `facial_scan()` (no args) — silently captures a front-camera frame, matches it against enrolled faces, and returns `identified current user as "<name>"` or `unidentified`.
-- **Models:** downloaded by `FaceModelBootstrap` to app-private storage:
-  - **YuNet** face *detector* (`yunet.onnx`, ~227 KB) — decoded by `YuNetDecoder`.
-  - **ArcFace** face *embedder* (`arcface.onnx`, ~130 MB) — produces the identity embedding.
+- **Models:** downloaded by `FaceModelBootstrap` to app-private storage (hosted on XNet-NGO/deps):
+  - **YuNet** face *detector* (`yunet.onnx`, ~227 KB).
+  - **librefacerec-l** face *embedder* (`arcface.onnx` file; an iResNet100 ArcFace model, ~260 MB) — stronger identity embeddings than the earlier build.
 - **Engine:** `FaceEngine` detects the primary face and embeds it; `FaceIdentityManager` compares the embedding to enrolled identities and returns a confident match or nothing.
 
-### Enrollment
+### Enrollment (guided) and test scan
 
-Faces are enrolled in **Settings → Security** (`FaceIdentitiesSection`). Enrollment captures a face, embeds it, and stores it under a label; multiple angle-samples per person are supported for better matching (`FaceEnrollmentStore`). Identities can be listed and deleted there. `facial_scan` returns a clear message if no faces are enrolled or the models aren't downloaded.
+Faces are enrolled in **Settings → Security** (`FaceIdentitiesSection`):
+- **Guided enrollment** (`GuidedEnrollScreen`) walks the user through capturing multiple angles for a person, storing several angle-samples per label for robust matching (`FaceEnrollmentStore`).
+- **Test scan** (`TestScanScreen`) runs a live identification against the enrolled set so the user can verify recognition works before relying on it.
+- Identities can be listed and deleted. `facial_scan` returns a clear message if no faces are enrolled or the models aren't downloaded.
 
 ### Automatic presence ("who's here")
 

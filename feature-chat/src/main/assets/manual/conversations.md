@@ -156,10 +156,12 @@ There is also a camera capture path (`photoLauncher` → a `photo_<ts>.jpg` in t
 
 ## Speech-to-text (dictation)
 
-The composer's mic button launches Android's built-in recognizer via
-`RecognizerIntent.ACTION_RECOGNIZE_SPEECH` with `LANGUAGE_MODEL_FREE_FORM`. The first result
-(`EXTRA_RESULTS`) is appended to the current composer text. This is **system on-device/Google
-speech recognition** (whatever recognizer the device provides), not AIOPE's own model.
+The composer's mic button uses AIOPE's **fully on-device** speech-to-text (`VoiceInputManager` →
+`SherpaSttEngine`, a sherpa-onnx streaming zipformer). It streams interim (partial) text into the
+composer as you speak and commits a final transcript when you stop — no audio leaves the device.
+If the offline STT model isn't downloaded yet, the mic button offers to fetch it
+(`SherpaSttBootstrap`). See [Offline Speech-to-Text](speech-to-text.md) for the full picture,
+including the system-wide recognizer.
 
 This is distinct from the **realtime voice call** button (phone-call icon), which starts a live
 bidirectional voice session through `VoiceSessionController` — see the Realtime Voice manual
