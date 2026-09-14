@@ -124,3 +124,9 @@
 -dontwarn org.apache.commons.compress.**
 -dontwarn org.apache.commons.lang3.**
 -dontwarn com.google.gson.**
+
+# sherpa-onnx: the native libsherpa-onnx-jni.so reads Kotlin config fields (e.g. decodingMethod,
+# encoder, tokens, sampleRate) BY NAME via JNI GetFieldID/GetMethodID. R8 must NOT rename or
+# remove these classes or their fields/methods, or session init fails with NoSuchFieldError.
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keepclassmembers class com.k2fsa.sherpa.onnx.** { *; }

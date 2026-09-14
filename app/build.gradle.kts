@@ -21,6 +21,10 @@ android {
     versionCode = Configurations.versionCode
     versionName = Configurations.versionName
     buildConfigField("String", "GATEWAY_KEY", "\"${rootProject.file("secrets.properties").let { f -> if (f.exists()) Properties().apply { f.inputStream().use { load(it) } }.getProperty("GATEWAY_KEY", "") else "" }}\"")
+
+    // We ship a self-built ONNX Runtime 1.28.2 (matching sherpa) for arm64-v8a only. Restrict the
+    // build to arm64-v8a so no ABI is packaged without a matching libonnxruntime.so.
+    ndk { abiFilters.add("arm64-v8a") }
   }
 
   buildFeatures { buildConfig = true }
@@ -53,6 +57,10 @@ android {
       excludes.add("native/lib/tokenizers.properties")
     }
     jniLibs.useLegacyPackaging = true
+    // Both onnxruntime-android (1.22.0) and sherpa-onnx (bundles 1.27.1) ship libonnxruntime.so.
+    // ONNX Runtime is backward-compatible across these versions and the C ABI is stable, so we
+    // pick one. This keeps both the Java ORT API (face/RAG/detection) and sherpa's JNI working.
+    jniLibs.pickFirsts.add("**/libonnxruntime.so")
   }
 
   buildTypes {
@@ -83,6 +91,14 @@ android {
   }
 }
 
+// Force transitive org.json:json (via com.vdurmont:emoji-java) to a patched version.
+// 20170516 has DoS + stack-overflow advisories; 20231013 fixes both.
+configurations.all {
+  resolutionStrategy {
+    force("org.json:json:20231013")
+  }
+}
+
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
   // core modules
@@ -90,6 +106,7 @@ dependencies {
   implementation(project(":core-navigation"))
   implementation(project(":core-data"))
   implementation(project(":core-terminal"))
+  implementation(project(":core-inference"))
 
   // feature modules
   implementation(project(":feature-chat"))

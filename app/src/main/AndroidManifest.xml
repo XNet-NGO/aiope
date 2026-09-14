@@ -29,6 +29,17 @@
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
   <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
+  <!-- Package visibility (API 30+): allow binding the platform speech recognition service so the
+       stock on-device SpeechRecognizer can be discovered/used. -->
+  <queries>
+    <intent>
+      <action android:name="android.speech.RecognitionService" />
+    </intent>
+    <intent>
+      <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+    </intent>
+  </queries>
+
   <application
     android:name=".AiopeApp"
     android:allowBackup="false"
