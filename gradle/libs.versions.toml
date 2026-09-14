@@ -26,6 +26,7 @@ pdfboxAndroid = "2.0.27.0"
 yubikit = "3.2.0"
 onnxruntime = "1.22.0"
 djlTokenizers = "0.33.0"
+camerax = "1.5.1"
 
 [libraries]
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "androidxComposeBom" }
@@ -49,6 +50,7 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "androidxHiltNavigationCompose" }
 androidx-lifecycle-runtimeCompose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "androidxLifecycle" }
 androidx-lifecycle-viewModelCompose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "androidxLifecycle" }
+androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "androidxLifecycle" }
 androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "androidxProfileinstaller" }
 androidx-startup = { group = "androidx.startup", name = "startup-runtime", version.ref = "androidxStartup" }
 androidx-worker = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "androidxWorker" }
@@ -66,6 +68,12 @@ pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 djl-tokenizers = { group = "ai.djl.huggingface", name = "tokenizers", version.ref = "djlTokenizers" }
 djl-tokenizer-native-android = { group = "ai.djl.android", name = "tokenizer-native", version.ref = "djlTokenizers" }
+
+# CameraX (live object-detection preview)
+androidx-camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }
+androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
 
 # Optional, opt-in auth factors (no Google Play Services)
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "androidxBiometric" }

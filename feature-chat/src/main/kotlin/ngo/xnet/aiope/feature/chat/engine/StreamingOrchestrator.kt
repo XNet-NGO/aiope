@@ -204,6 +204,8 @@ class StreamingOrchestrator(
           .header("Content-Type", "application/json; charset=utf-8")
           .header("Accept", "text/event-stream")
           .header("Connection", "close") // force fresh TCP — avoids cellular NAT killing reused sockets
+          .header("X-Request-Id", lastRequestNonce) // matching id for request/response correlation
+          .header("Cache-Control", "no-store") // defeat server-side response caching for this request
           .apply { if (apiKey.isNotBlank()) header("Authorization", "Bearer ${apiKey.trim()}") }
           .post(body.toRequestBody(JSON_MT))
           .build()
@@ -223,7 +225,8 @@ class StreamingOrchestrator(
           request,
           object : EventSourceListener() {
             override fun onOpen(eventSource: EventSource, response: Response) {
-              android.util.Log.d("AIOPE2", "SSE opened: ${response.code} (attempt ${retries + 1})")
+              val serverId = response.header("X-Request-Id") ?: "-"
+              android.util.Log.d("AIOPE2", "SSE opened: ${response.code} reqId=$lastRequestNonce serverReqId=$serverId (attempt ${retries + 1})")
               if (response.code !in 200..299) {
                 sseErrorRef.set("HTTP ${response.code}: ${response.body?.string()?.take(300)}")
                 latch.countDown()
@@ -625,7 +628,19 @@ class StreamingOrchestrator(
     awaitClose { }
   }.flowOn(Dispatchers.IO)
 
+  /** Per-request cache-bust nonce. Set by buildRequestBody, read for headers/logging so the
+   *  request and its response share a matching id. */
+  @Volatile private var lastRequestNonce: String = ""
+
+  private fun newNonce(): String {
+    val bytes = ByteArray(12)
+    java.security.SecureRandom().nextBytes(bytes)
+    return bytes.joinToString("") { "%02x".format(it) }
+  }
+
   private fun buildRequestBody(messages: List<JSONObject>): String {
+    val nonce = newNonce()
+    lastRequestNonce = nonce
     val body = JSONObject()
     body.put("model", model)
     body.put("stream", true)
@@ -633,8 +648,20 @@ class StreamingOrchestrator(
     if (reasoningEffort != null && reasoningEffort != "auto") {
       body.put("reasoning_effort", reasoningEffort)
     }
-    body.put("messages", JSONArray().apply { for (m in messages) put(m) })
-    android.util.Log.e("AIOPE2", "Request: model=$model tools=${tools.size} msgs=${messages.size}")
+    // Cache-bust: append a unique nonce to the TAIL of the last message so the prompt tail
+    // differs every request, defeating server-side prompt/KV prefix caching that was serving
+    // stale identity/time. The nonce is echoed as a header + logged so request/response match.
+    val msgList = messages.toMutableList()
+    if (msgList.isNotEmpty()) {
+      val last = msgList.last()
+      val content = last.optString("content", "")
+      val busted = JSONObject(last.toString()).put("content", content + "\n\n<!-- req:$nonce -->")
+      msgList[msgList.size - 1] = busted
+    }
+    body.put("messages", JSONArray().apply { for (m in msgList) put(m) })
+    // Also expose the nonce as a request-scoped id and disable response caching.
+    body.put("user", "req-$nonce")
+    android.util.Log.e("AIOPE2", "Request: model=$model tools=${tools.size} msgs=${messages.size} reqId=$nonce")
     if (tools.isNotEmpty()) {
       body.put(
         "tools",

@@ -28,6 +28,19 @@ data class MemoryEntity(
   val updatedAt: Long = System.currentTimeMillis(),
 )
 
+/**
+ * A consent-based, self-enrolled face identity for on-device personalization.
+ * [sealedEmbedding] is a Keystore-wrapped (AES-256-GCM) base64 blob of the 512-d
+ * L2-normalized ArcFace embedding — never stored in plaintext, never leaves the device.
+ */
+@Entity(tableName = "enrolled_faces")
+data class EnrolledFaceEntity(
+  @PrimaryKey val id: String,
+  val label: String,
+  val sealedEmbedding: String,
+  val createdAt: Long = System.currentTimeMillis(),
+)
+
 @Entity(tableName = "providers")
 data class ProviderEntity(
   @PrimaryKey val id: String,
@@ -166,6 +179,19 @@ interface ChatDao {
 
   @Query("DELETE FROM memories WHERE key = :key")
   suspend fun deleteMemory(key: String)
+
+  // Enrolled faces (consent-based, on-device identities)
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun upsertEnrolledFace(face: EnrolledFaceEntity)
+
+  @Query("SELECT * FROM enrolled_faces ORDER BY createdAt DESC")
+  suspend fun getEnrolledFaces(): List<EnrolledFaceEntity>
+
+  @Query("DELETE FROM enrolled_faces WHERE id = :id")
+  suspend fun deleteEnrolledFace(id: String)
+
+  @Query("DELETE FROM enrolled_faces")
+  suspend fun clearEnrolledFaces()
 
   // Providers
   @Query("SELECT * FROM providers ORDER BY updatedAt DESC")
@@ -313,8 +339,9 @@ interface ChatDao {
     ProviderEntity::class, ToolToggleEntity::class, McpServerEntity::class,
     ModelCacheEntity::class, SettingsKvEntity::class,
     AgentEntity::class, AgentTaskEntity::class, ScheduledTaskEntity::class, TaskRunEntity::class,
+    EnrolledFaceEntity::class,
   ],
-  version = 9,
+  version = 10,
 )
 abstract class ChatDatabase : RoomDatabase() {
   abstract fun chatDao(): ChatDao

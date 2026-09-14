@@ -154,6 +154,7 @@ class AgentRunWorker(
     val systemPrompt = basePrompt + "\n\n## Environment\n- Date/Time: " +
       ZonedDateTime.now().format(DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z")) +
       "\n- Platform: Android (AIOPE scheduled task)\n- Execution: Background\n" +
+      (ngo.xnet.aiope.feature.chat.face.FaceIdentityManager.promptInjectionFor(dao)?.let { "- $it\n" } ?: "") +
       "\n## Recurring Task\nThis is a RECURRING task. Compare with previous runs (see Run Context) and REPORT WHAT CHANGED since the last run. If nothing changed, say so explicitly." +
       "\n\n## Tool Execution\nYou MUST use tools to complete your task.\n" +
       toolHelp +

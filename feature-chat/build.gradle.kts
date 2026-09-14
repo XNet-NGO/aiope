@@ -35,6 +35,13 @@ dependencies {
 
   implementation(libs.androidx.lifecycle.runtimeCompose)
   implementation(libs.androidx.lifecycle.viewModelCompose)
+  implementation(libs.androidx.lifecycle.process)
+
+  // CameraX — live object-detection preview
+  implementation(libs.androidx.camera.core)
+  implementation(libs.androidx.camera.camera2)
+  implementation(libs.androidx.camera.lifecycle)
+  implementation(libs.androidx.camera.view)
 
   // UniversalMarkdown (streaming markdown renderer)
   implementation(":markwon-core@aar")

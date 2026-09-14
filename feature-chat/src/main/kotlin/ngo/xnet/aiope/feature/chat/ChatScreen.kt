@@ -47,7 +47,12 @@ fun ChatScreen(viewModel: ChatViewModel = hiltViewModel(), onOpenSettings: () ->
   val assistLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
   androidx.compose.runtime.DisposableEffect(assistLifecycleOwner) {
     val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
-      if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) viewModel.checkAssistInvocation()
+      if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        viewModel.checkAssistInvocation()
+        // Re-run face recognition whenever the chat screen resumes (app open, foreground
+        // return, or navigating back to chat) so the current-user context stays fresh.
+        ngo.xnet.aiope.feature.chat.face.PresenceIdentifier.triggerNow()
+      }
     }
     assistLifecycleOwner.lifecycle.addObserver(obs)
     onDispose { assistLifecycleOwner.lifecycle.removeObserver(obs) }
@@ -584,6 +589,7 @@ private fun MessageList(
 @Composable
 private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit = {}, isStreaming: Boolean, editText: String = "", onEditTextChange: (String) -> Unit = {}, autoRun: Boolean = false, onAutoRunChange: (Boolean) -> Unit = {}, supportsRealtimeVoice: Boolean = false, isInRealtimeVoice: Boolean = false, isVoiceListening: Boolean = false, isVoiceSpeaking: Boolean = false, onToggleVoice: () -> Unit = {}) {
   var text by rememberSaveable { mutableStateOf("") }
+  var showLiveDetect by rememberSaveable { mutableStateOf(false) }
   val pendingImages = rememberSaveable(saver = listSaver<SnapshotStateList<String>, String>(
     save = { it.toList() },
     restore = { it.toMutableStateList() },
@@ -636,6 +642,33 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
   }
 
   Column(Modifier.fillMaxWidth().padding(8.dp)) {
+    // Live object-detection viewfinder (full-screen overlay)
+    if (showLiveDetect) {
+      androidx.compose.ui.window.Dialog(
+        onDismissRequest = { showLiveDetect = false },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+      ) {
+        ngo.xnet.aiope.feature.chat.vision.LiveObjectDetectionScreen(
+          onSnapshot = { bmp, summary ->
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+              val uriStr = try {
+                val file = java.io.File(context.cacheDir, "livedetect_${System.currentTimeMillis()}.jpg")
+                file.outputStream().use { out -> bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out) }
+                androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file).toString()
+              } catch (_: Exception) {
+                null
+              }
+              kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (uriStr != null) pendingImages.add(uriStr)
+                text = if (text.isBlank()) summary else "$text\n$summary"
+                showLiveDetect = false
+              }
+            }
+          },
+          onBack = { showLiveDetect = false },
+        )
+      }
+    }
     // Pending image thumbnails
     if (pendingImages.isNotEmpty()) {
       Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -690,7 +723,18 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
         photoLauncher.launch(uri)
       }) {
         Icon(Icons.Default.CameraAlt, "Camera", tint = MaterialTheme.colorScheme.onSurface)
-      } // Mic — launches Android speech recognizer
+      }
+      // Live object detection — opens a camera viewfinder with real-time boxes
+      IconButton(onClick = {
+        if (!ngo.xnet.aiope.feature.chat.vision.ObjectDetectionHelper.isReady(context)) {
+          text = "Object-detection model not downloaded. Download it in settings first."
+        } else {
+          showLiveDetect = true
+        }
+      }) {
+        Icon(Icons.Default.Videocam, "Live detection", tint = MaterialTheme.colorScheme.onSurface)
+      }
+      // Mic — launches Android speech recognizer
       val speechLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
       ) { result ->

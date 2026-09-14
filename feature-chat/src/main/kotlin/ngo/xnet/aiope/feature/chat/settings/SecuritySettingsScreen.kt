@@ -35,6 +35,15 @@ interface AuthEntryPoint {
 internal fun authRepository(context: Context): AuthRepository =
   EntryPointAccessors.fromApplication(context.applicationContext, AuthEntryPoint::class.java).authRepository()
 
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface FaceDaoEntryPoint {
+  fun chatDao(): ngo.xnet.aiope.feature.chat.db.ChatDao
+}
+
+internal fun faceChatDao(context: Context): ngo.xnet.aiope.feature.chat.db.ChatDao =
+  EntryPointAccessors.fromApplication(context.applicationContext, FaceDaoEntryPoint::class.java).chatDao()
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SecuritySettingsScreen(onBack: () -> Unit) {
@@ -130,6 +139,10 @@ internal fun SecuritySettingsScreen(onBack: () -> Unit) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(16.dp),
       )
+
+      // On-device face identities (opt-in personalization).
+      ngo.xnet.aiope.feature.chat.face.FaceIdentitiesSection(context)
+      HorizontalDivider()
 
       FactorRow(
         title = AuthFactor.BIOMETRIC.displayName,

@@ -20,6 +20,16 @@ class AiopeApp :
     Thread {
       runCatching { ngo.xnet.aiope.feature.chat.engine.EmbeddingBackend.ensureManualIndexed(this) }
     }.apply { isDaemon = true; start() }
+
+    // Install the sensor/foreground-gated face presence identifier. No-ops unless the user
+    // has downloaded the face models and enrolled at least one identity (all opt-in).
+    runCatching {
+      val dao = dagger.hilt.android.EntryPointAccessors
+        .fromApplication(this, ngo.xnet.aiope.feature.chat.settings.FaceDaoEntryPoint::class.java)
+        .chatDao()
+      val mgr = ngo.xnet.aiope.feature.chat.face.FaceIdentityManager(this, dao)
+      ngo.xnet.aiope.feature.chat.face.PresenceIdentifier.install(this, mgr)
+    }
   }
 
   /**

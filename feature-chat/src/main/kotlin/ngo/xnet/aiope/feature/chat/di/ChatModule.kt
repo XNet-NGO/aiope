@@ -109,6 +109,14 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
   }
 }
 
+val MIGRATION_9_10 = object : Migration(9, 10) {
+  override fun migrate(db: SupportSQLiteDatabase) {
+    db.execSQL(
+      "CREATE TABLE IF NOT EXISTS enrolled_faces (id TEXT NOT NULL PRIMARY KEY, label TEXT NOT NULL, sealedEmbedding TEXT NOT NULL, createdAt INTEGER NOT NULL)",
+    )
+  }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object ChatModule {

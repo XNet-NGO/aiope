@@ -43,6 +43,7 @@ class ToolExecutor(
     .build()
 
   private var ragEngine: org.xnet.aiope.inference.RagEngine? = null
+  private var objectDetector: org.xnet.aiope.inference.ObjectDetectionEngine? = null
   private fun getRagEngine(): org.xnet.aiope.inference.RagEngine {
     if (ragEngine == null) {
       val (profile, modelId) = resolveTaskModel(ngo.xnet.aiope.core.network.ModelTask.RAG)
@@ -88,6 +89,7 @@ class ToolExecutor(
     td("image_generate", "Generate an image from a text prompt. Use when the user asks you to draw, create, generate, or make an image/picture/illustration.", """{"type":"object","properties":{"prompt":{"type":"string","description":"Detailed image generation prompt"}},"required":["prompt"]}"""),
     td("analyze_image", "Analyze an image from a URL or file path using vision (JPEG/PNG/WebP/GIF/BMP/SVG). Use for screenshots, fetched/generated images, or any image to describe.", """{"type":"object","properties":{"url":{"type":"string","description":"URL or file:// path of the image"},"question":{"type":"string","description":"What to look for"}},"required":["url"]}"""),
     td("detect_objects", "Detect objects on-device (YOLO) in an image from a file path or URL. Returns labeled boxes with confidence. Requires the object-detection model to be downloaded.", """{"type":"object","properties":{"url":{"type":"string","description":"URL or file:// path of the image"}},"required":["url"]}"""),
+    td("facial_scan", "Scan the current user's face on-device (front camera) and identify them against enrolled identities. Use when you need to know who you're talking to. Returns the enrolled name or 'unidentified'. On-device only; requires face models downloaded and camera permission.", """{"type":"object","properties":{}}"""),
     td("read_calendar", "Read upcoming calendar events from the device.", """{"type":"object","properties":{"days":{"type":"integer","description":"Number of days ahead to look (default 7)"}},"required":[]}"""),
     td("create_event", "Create a calendar event. Opens the calendar app with pre-filled details.", """{"type":"object","properties":{"title":{"type":"string"},"start_time":{"type":"string","description":"Start time, e.g. '2025-04-20T14:00' or '2:00 PM'"},"end_time":{"type":"string","description":"End time"},"location":{"type":"string"},"description":{"type":"string"}},"required":["title"]}"""),
     td("delete_event", "Delete a calendar event by its ID (from read_calendar).", """{"type":"object","properties":{"event_id":{"type":"integer","description":"Event ID from read_calendar"}},"required":["event_id"]}"""),
@@ -330,6 +332,8 @@ class ToolExecutor(
       "analyze_image" -> executeAnalyzeImage(args)
 
       "detect_objects" -> executeDetectObjects(args)
+
+      "facial_scan" -> executeFacialScan()
 
       // Calendar
       "read_calendar" -> try {
@@ -958,12 +962,38 @@ class ToolExecutor(
     return "![generated image](file://${file.absolutePath})"
   }
 
+  private suspend fun executeFacialScan(): String {
+    return try {
+      val mgr = ngo.xnet.aiope.feature.chat.face.FaceIdentityManager(app, chatDao)
+      if (!mgr.modelsInstalled()) {
+        return "Face models not downloaded. Download them in Security settings first."
+      }
+      if (mgr.enrolled().isEmpty()) {
+        return "No enrolled faces. The user must enroll in Security settings before identification."
+      }
+      val capture = ngo.xnet.aiope.feature.chat.face.SilentFaceCapture(app)
+      if (!capture.hasPermission()) {
+        return "Camera permission not granted; cannot scan."
+      }
+      val bmp = capture.captureFrontFace()
+        ?: return "Could not capture a camera frame for scanning."
+      val who = mgr.identifyAndCache(bmp)
+      if (who != null) {
+        "Facial scan: identified current user as \"$who\" (on-device match)."
+      } else {
+        "Facial scan: a face was processed but did not confidently match any enrolled identity (unidentified)."
+      }
+    } catch (e: Exception) {
+      "Facial scan FAILED: ${e.message?.take(80)}"
+    }
+  }
+
   private fun executeDetectObjects(args: Map<String, Any?>): String {
     val url = args["url"]?.toString() ?: return "Error: url required"
-    if (!ngo.xnet.aiope.vision.yolo.ObjectDetector.isConfigured()) {
+    if (!ngo.xnet.aiope.core.terminal.shell.ObjectDetectionBootstrap.isConfigured()) {
       return "Object detection is not configured (no model URL set for this build)."
     }
-    if (!ngo.xnet.aiope.vision.yolo.ObjectDetector.isReady(app)) {
+    if (!ngo.xnet.aiope.core.terminal.shell.ObjectDetectionBootstrap.isInstalled(app)) {
       return "Object-detection model not downloaded. Download it in settings first."
     }
     return try {
@@ -974,7 +1004,10 @@ class ToolExecutor(
       }
       val bmp = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.size)
         ?: return "Could not decode image: $url"
-      val results = ngo.xnet.aiope.vision.yolo.ObjectDetector.get(app).detect(bmp)
+      val engine = objectDetector ?: org.xnet.aiope.inference.ObjectDetectionEngine(
+        ngo.xnet.aiope.core.terminal.shell.ObjectDetectionBootstrap.modelFile(app),
+      ).also { objectDetector = it }
+      val results = engine.detect(bmp)
       if (results.isEmpty()) {
         "No objects detected in $url."
       } else {

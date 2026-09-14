@@ -1323,12 +1323,13 @@ $transcript
           } catch (_: Exception) {
             ""
           }
+          val faceIdentity = ngo.xnet.aiope.feature.chat.face.FaceIdentityManager.currentInjectionLine()
           val envContext = """
 
 ## Environment
 - Date/Time: ${java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z"))}
 - Platform: Android (AIOPE agent system)
-- Agent: ${agent?.name ?: "default"}
+- Agent: ${agent?.name ?: "default"}${faceIdentity?.let { "\n- $it" } ?: ""}
 
 ## Tool Execution
 You MUST use tools for ANY task involving information retrieval, file operations, or commands.
@@ -1370,19 +1371,22 @@ $remoteCtx"""
       ngo.xnet.aiope.feature.chat.settings.buildAgentPrompt(chatDao, mode, toolStore.isDynamicUiEnabled())
     }
     val remoteCtx = remoteToolBridge.buildSystemContext()
+    val faceIdentity = ngo.xnet.aiope.feature.chat.face.FaceIdentityManager.promptInjectionFor(chatDao)
+      ?.let { "## Current User\n$it" }
     val dateTime = "## Current Date & Time\n${java.time.ZonedDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, yyyy-MM-dd HH:mm:ss z"))}"
     val ragInstruction = "## Knowledge Base\nYou have a local knowledge base via `rag_search`. ALWAYS search it FIRST before using search_web or fetch_url when the user asks a question that might be answered by indexed documents. Only use web search if RAG returns no relevant results."
     // Order matters for provider prompt-caching: keep everything STATIC at the
     // front (persona, RAG directive, remote context) so it forms a stable,
-    // cacheable prefix, and put the VOLATILE second-granular timestamp LAST.
-    // The timestamp intentionally stays second-granular (agent statefulness) —
-    // placing it at the end means only the trailing line changes each turn, so
-    // the large static prefix still cache-hits instead of being reprocessed.
+    // cacheable prefix, and put the VOLATILE lines LAST so they are never served
+    // from a cached prefix. The face identity AND the timestamp both change over
+    // time, so they go at the trailing edge — identity last (most volatile), since
+    // a stale cached identity injected the wrong/old user into the prompt.
     val parts = listOfNotNull(
       prompt.takeIf { it.isNotBlank() },
       ragInstruction,
       remoteCtx.takeIf { it.isNotBlank() },
       dateTime,
+      faceIdentity,
     )
     val full = parts.joinToString("\n\n")
     if (full.isNotBlank()) msgs.add("system" to full)

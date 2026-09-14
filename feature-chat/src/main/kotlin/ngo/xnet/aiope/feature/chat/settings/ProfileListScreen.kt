@@ -382,6 +382,67 @@ internal fun ProfileList(
         }
         HorizontalDivider()
       }
+      item {
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val odInstalled = remember { mutableStateOf(ngo.xnet.aiope.core.terminal.shell.ObjectDetectionBootstrap.isInstalled(ctx)) }
+        val odBusy = remember { mutableStateOf(false) }
+        val odStatus = remember {
+          mutableStateOf(
+            if (ngo.xnet.aiope.core.terminal.shell.ObjectDetectionBootstrap.isInstalled(ctx)) {
+              "Installed (${ngo.xnet.aiope.core.terminal.shell.ObjectDetectionBootstrap.installedBytes(ctx) / 1024 / 1024}MB)"
+            } else {
+              "Not installed"
+            },
+          )
+        }
+        val odScope = rememberCoroutineScope()
+        ListItem(
+          headlineContent = { Text("Object Detection Model (RT-DETRv4-S)") },
+          supportingContent = {
+            Text(
+              odStatus.value,
+              style = MaterialTheme.typography.bodySmall,
+              color = if (odInstalled.value) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+            )
+          },
+          trailingContent = {
+            TextButton(
+              enabled = !odBusy.value,
+              onClick = {
+                if (!odBusy.value) {
+                  odBusy.value = true
+                  odStatus.value = "Downloading..."
+                  odScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                      if (odInstalled.value) {
+                        odStatus.value = "Removing old model..."
+                        ngo.xnet.aiope.core.terminal.shell.ObjectDetectionBootstrap.remove(ctx)
+                      }
+                      ngo.xnet.aiope.core.terminal.shell.ObjectDetectionBootstrap.setup(ctx) { msg ->
+                        odStatus.value = msg
+                      }
+                      odInstalled.value = ngo.xnet.aiope.core.terminal.shell.ObjectDetectionBootstrap.isInstalled(ctx)
+                      odStatus.value = if (odInstalled.value) {
+                        "Installed (${ngo.xnet.aiope.core.terminal.shell.ObjectDetectionBootstrap.installedBytes(ctx) / 1024 / 1024}MB)"
+                      } else {
+                        "Failed"
+                      }
+                    } catch (e: Exception) {
+                      odStatus.value = "Error: ${e.message?.take(40)}"
+                    }
+                    odBusy.value = false
+                  }
+                }
+              },
+            ) {
+              Text(
+                if (odBusy.value) "Downloading..." else if (odInstalled.value) "Redownload" else "Download",
+              )
+            }
+          },
+        )
+        HorizontalDivider()
+      }
     }
   }
 }

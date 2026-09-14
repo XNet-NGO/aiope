@@ -84,6 +84,8 @@ internal fun ToolToggleScreen(toolStore: ToolStore, onBack: () -> Unit) {
       "introspect" to "Answer questions about AIOPE itself (built-in manual)",
       "image_generate" to "Generate images",
       "analyze_image" to "Vision / image analysis",
+      "detect_objects" to "On-device object detection (RT-DETR)",
+      "facial_scan" to "On-device facial scan / user identification",
       "orchestrate" to "Multi-agent pipelines",
     ),
     "Tasks" to listOf(

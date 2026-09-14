@@ -43,7 +43,7 @@ enum class AgentMode(val label: String) {
       "browser_fill", "browser_eval", "browser_back", "browser_scroll",
       "browser_open", "browser_close", "browser_maximize",
       "memory_store", "memory_recall", "memory_forget", "rag_search",
-      "analyze_image", "image_generate",
+      "analyze_image", "image_generate", "detect_objects", "facial_scan",
       "read_calendar", "create_event", "delete_event", "set_alarm", "dismiss_alarm",
       "read_contacts", "send_notification", "clipboard_copy", "clipboard_read",
       "read_sms", "send_sms", "delete_sms", "media_control", "open_intent",
