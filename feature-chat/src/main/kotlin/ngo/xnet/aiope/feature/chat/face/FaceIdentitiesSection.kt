@@ -36,58 +36,44 @@ fun FaceIdentitiesSection(context: Context) {
     val modelInstalled = remember { mutableStateOf(FaceModelBootstrap.isInstalled(ctx)) }
     val modelBusy = remember { mutableStateOf(false) }
     val modelStatus = remember {
-        mutableStateOf(if (FaceModelBootstrap.isInstalled(ctx)) "Installed" else "Not installed")
+        mutableStateOf(FaceModelBootstrap.statusText(ctx))
     }
 
     val identities = remember { mutableStateOf<List<FaceEnrollmentStore.Identity>>(emptyList()) }
     val enrollLabel = remember { mutableStateOf("") }
     val enrollStatus = remember { mutableStateOf<String?>(null) }
     val showEnrollDialog = remember { mutableStateOf(false) }
-    val pendingCaptureUri = remember { mutableStateOf<Uri?>(null) }
+    val showGuided = remember { mutableStateOf(false) }
+    val showTestScan = remember { mutableStateOf(false) }
     val angleCount = remember { mutableStateOf(0) }
 
     fun refresh() {
         scope.launch { identities.value = manager.enrolled() }
     }
-    LaunchedEffect(Unit) { refresh() }
-
-    // Camera capture using the same TakePicture contract as the chat attach flow.
-    // Multi-angle: each successful capture appends another sample under the same label.
-    val captureLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.TakePicture(),
-    ) { success ->
-        val uri = pendingCaptureUri.value
-        if (success && uri != null) {
-            scope.launch {
-                enrollStatus.value = "Processing face..."
-                val ok = withContext(Dispatchers.IO) {
-                    try {
-                        ctx.contentResolver.openInputStream(uri).use { input ->
-                            val bmp = BitmapFactory.decodeStream(input) ?: return@withContext false
-                            manager.enroll(enrollLabel.value.trim(), bmp)
-                        }
-                    } catch (_: Throwable) {
-                        false
-                    }
-                }
-                if (ok) {
-                    angleCount.value += 1
-                    enrollStatus.value = "Captured ${angleCount.value} angle(s) for ${enrollLabel.value.trim()}. " +
-                        "Capture more from different angles (front, slight left/right, up/down) for better accuracy, or Done."
-                } else {
-                    enrollStatus.value = "No face detected — try again"
-                }
-                refresh()
-            }
-        }
+    LaunchedEffect(Unit) {
+        refresh()
+        // Re-derive model state from disk so a version bump / prior download shows correctly.
+        modelInstalled.value = FaceModelBootstrap.isInstalled(ctx)
+        modelStatus.value = FaceModelBootstrap.statusText(ctx)
     }
 
-    fun launchCapture() {
-        val dir = File(ctx.cacheDir, "face_enroll").apply { mkdirs() }
-        val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
-        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
-        pendingCaptureUri.value = uri
-        captureLauncher.launch(uri)
+    // Enrollment uses the guided CameraX preview screen (GuidedEnrollScreen), which auto-captures
+    // several angles via the front camera — the SAME pipeline the scan uses, so embeddings match.
+    val faceCapture = remember { ngo.xnet.aiope.feature.chat.face.SilentFaceCapture(ctx.applicationContext) }
+    // Which camera action requested permission (so we open the right screen once granted).
+    val pendingCamAction = remember { mutableStateOf<String?>(null) }
+    val camPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            when (pendingCamAction.value) {
+                "scan" -> showTestScan.value = true
+                else -> showGuided.value = true
+            }
+        } else {
+            enrollStatus.value = "Camera permission is required."
+        }
+        pendingCamAction.value = null
     }
 
     Text(
@@ -104,9 +90,10 @@ fun FaceIdentitiesSection(context: Context) {
         modifier = Modifier.padding(horizontal = 16.dp),
     )
 
-    // Model download row
+    // Model row (YuNet detector + librefacerec-l embedder). State is re-checked on load so it
+    // does not go stale after a version bump / background download.
     ListItem(
-        headlineContent = { Text("Face models (YuNet + ArcFace)") },
+        headlineContent = { Text("Face models (YuNet + librefacerec-l)") },
         supportingContent = {
             Text(
                 modelStatus.value,
@@ -125,7 +112,7 @@ fun FaceIdentitiesSection(context: Context) {
                             try {
                                 FaceModelBootstrap.setup(ctx) { msg -> modelStatus.value = msg }
                                 modelInstalled.value = FaceModelBootstrap.isInstalled(ctx)
-                                modelStatus.value = if (modelInstalled.value) "Installed" else "Failed"
+                                modelStatus.value = if (modelInstalled.value) FaceModelBootstrap.statusText(ctx) else "Failed"
                             } catch (e: Exception) {
                                 modelStatus.value = "Error: ${e.message?.take(40)}"
                             }
@@ -156,6 +143,31 @@ fun FaceIdentitiesSection(context: Context) {
                     showEnrollDialog.value = true
                 },
             ) { Text("Enroll") }
+        },
+    )
+
+    // Test-scan row — validates enrollments + store integrity with a live camera diagnostic.
+    ListItem(
+        headlineContent = { Text("Test scan") },
+        supportingContent = {
+            Text(
+                "Live check: who does the camera recognize + are stored embeddings healthy",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        trailingContent = {
+            TextButton(
+                enabled = modelInstalled.value,
+                onClick = {
+                    if (!faceCapture.hasPermission()) {
+                        pendingCamAction.value = "scan"
+                        camPermLauncher.launch(android.Manifest.permission.CAMERA)
+                    } else {
+                        showTestScan.value = true
+                    }
+                },
+            ) { Text("Scan") }
         },
     )
 
@@ -195,9 +207,8 @@ fun FaceIdentitiesSection(context: Context) {
             text = {
                 Column {
                     Text(
-                        "Enrolling your own face for on-device personalization (stored encrypted on " +
-                            "this device only). Capture SEVERAL angles — front, slight left/right, up/down — " +
-                            "for reliable recognition. 3–5 angles recommended.",
+                        "Enroll a face for on-device personalization (stored encrypted, this device only). " +
+                            "A live camera will guide you to capture several angles automatically.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(12.dp))
@@ -206,32 +217,59 @@ fun FaceIdentitiesSection(context: Context) {
                         onValueChange = { enrollLabel.value = it },
                         label = { Text("Name / label") },
                         singleLine = true,
-                        enabled = angleCount.value == 0, // lock the name once capturing starts
                     )
-                    if (angleCount.value > 0) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "${angleCount.value} angle(s) captured.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     enabled = enrollLabel.value.isNotBlank(),
-                    onClick = { launchCapture() }, // dialog stays open for multiple captures
-                ) { Text(if (angleCount.value > 0) "Capture another" else "Capture") }
+                    onClick = {
+                        showEnrollDialog.value = false
+                        if (!faceCapture.hasPermission()) {
+                            pendingCamAction.value = "enroll"
+                            camPermLauncher.launch(android.Manifest.permission.CAMERA)
+                        } else {
+                            showGuided.value = true
+                        }
+                    },
+                ) { Text("Start guided capture") }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    showEnrollDialog.value = false
-                    if (angleCount.value > 0) enrollStatus.value = "Enrolled ${enrollLabel.value.trim()} (${angleCount.value} angles)"
-                    enrollLabel.value = ""
-                    angleCount.value = 0
-                }) { Text(if (angleCount.value > 0) "Done" else "Cancel") }
+                TextButton(onClick = { showEnrollDialog.value = false }) { Text("Cancel") }
             },
         )
+    }
+
+    // Full-screen guided enrollment (live CameraX preview + auto-capture).
+    if (showGuided.value) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showGuided.value = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            GuidedEnrollScreen(
+                label = enrollLabel.value.trim(),
+                manager = manager,
+                onDone = { count ->
+                    showGuided.value = false
+                    enrollStatus.value = if (count > 0) "Enrolled ${enrollLabel.value.trim()} ($count angles)" else "No captures — try again"
+                    enrollLabel.value = ""
+                    refresh()
+                },
+                onBack = { showGuided.value = false; refresh() },
+            )
+        }
+    }
+
+    // Full-screen live diagnostic scan.
+    if (showTestScan.value) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showTestScan.value = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            TestScanScreen(
+                manager = manager,
+                onBack = { showTestScan.value = false },
+            )
+        }
     }
 }

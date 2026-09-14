@@ -92,12 +92,11 @@ class PresenceIdentifier private constructor(
             if (!gate.shouldIdentify()) {
                 Log.d(TAG, "sensor gate: conditions not ideal, attempting anyway")
             }
-            val bmp = capture.captureFrontFace() ?: run {
-                Log.d(TAG, "no frame captured — clearing stale identity")
-                manager.clearIdentity()
-                return
+            // Extended multi-frame scan for a robust recognition pass (not a single shot).
+            val who = manager.identifyBestOverFrames(capture, maxFrames = 5)
+            if (who == null) {
+                Log.d(TAG, "no confident match over frames — identity cleared/unidentified")
             }
-            val who = manager.identifyAndCache(bmp)
             Log.d(TAG, "identify result: ${who ?: "unidentified"}")
         } catch (t: Throwable) {
             Log.e(TAG, "presence identify failed", t)

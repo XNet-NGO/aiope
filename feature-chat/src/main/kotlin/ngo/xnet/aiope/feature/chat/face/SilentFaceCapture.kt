@@ -31,6 +31,8 @@ class SilentFaceCapture(private val context: Context) {
     companion object {
         private const val TAG = "SilentFaceCapture"
         private const val TIMEOUT_MS = 6000L
+        /** Longer budget when capturing multiple frames for a robust scan. */
+        private const val MULTI_TIMEOUT_MS = 12000L
     }
 
     fun hasPermission(): Boolean =
@@ -59,6 +61,41 @@ class SilentFaceCapture(private val context: Context) {
             } catch (t: Throwable) {
                 Log.e(TAG, "capture failed", t)
                 null
+            } finally {
+                withContext(Dispatchers.Main) { runCatching { provider.unbindAll() } }
+            }
+        }
+    }
+
+    /**
+     * Capture several frames over an extended window (camera stays bound the whole time). Each
+     * frame is handed to [onFrame] as it arrives; capture stops early when [onFrame] returns true
+     * (e.g. a confident match was found). Used by the tool/auto scan for a longer, more robust
+     * recognition pass than a single shot.
+     *
+     * @param maxFrames maximum frames to take
+     * @param gapMs delay between frames (lets the subject settle / lighting adjust)
+     */
+    suspend fun captureFrames(maxFrames: Int = 5, gapMs: Long = 900L, onFrame: suspend (Bitmap) -> Boolean) {
+        if (!hasPermission()) return
+        withTimeoutOrNull(MULTI_TIMEOUT_MS) {
+            val provider = awaitCameraProvider() ?: return@withTimeoutOrNull
+            val imageCapture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build()
+            val lifecycleOwner = ProcessLifecycleOwner.get()
+            try {
+                withContext(Dispatchers.Main) {
+                    provider.unbindAll()
+                    provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_FRONT_CAMERA, imageCapture)
+                }
+                repeat(maxFrames) { i ->
+                    val bmp = takePicture(imageCapture)
+                    if (bmp != null && onFrame(bmp)) return@repeat
+                    if (i < maxFrames - 1) kotlinx.coroutines.delay(gapMs)
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "multi-capture failed", t)
             } finally {
                 withContext(Dispatchers.Main) { runCatching { provider.unbindAll() } }
             }

@@ -115,6 +115,49 @@ class FaceIdentityManager(
     }
 
     suspend fun enrolled(): List<FaceEnrollmentStore.Identity> = store.all()
+    /**
+     * Diagnostic scan for the Security "Test scan" button: runs a detailed identify against the
+     * enrolled set and returns the full score breakdown WITHOUT mutating the cached identity.
+     */
+    suspend fun testScan(bitmap: Bitmap): org.xnet.aiope.inference.FaceEngine.ScanReport? {
+        val e = engine() ?: return null
+        return e.identifyDetailed(bitmap, store.labeledEmbeddings())
+    }
+
+    /** Encrypt/decrypt + dimension integrity of the stored embeddings. */
+    suspend fun integrityReport(): FaceEnrollmentStore.Integrity =
+        store.integrity(org.xnet.aiope.inference.FaceEngine.EMBED_DIM)
+
+    /**
+     * Extended, robust scan used by the tool + auto-scan. Captures several front-camera frames
+     * over a longer window, runs a detailed identify on each, and keeps the best (highest top
+     * score that is ACCEPTED; else the best face-found result). Stops early on a confident accept.
+     * Caches + persists the final decision. Returns the identified label or null.
+     */
+    suspend fun identifyBestOverFrames(
+        capture: SilentFaceCapture,
+        maxFrames: Int = 5,
+    ): String? {
+        val e = engine() ?: run { setCache(null, 0f); persist(); return null }
+        val enrolled = store.labeledEmbeddings()
+        if (enrolled.isEmpty()) { setCache(null, 0f); persist(); return null }
+
+        var best: org.xnet.aiope.inference.FaceEngine.ScanReport? = null
+        capture.captureFrames(maxFrames = maxFrames) { bmp ->
+            val r = runCatching { e.identifyDetailed(bmp, enrolled) }.getOrNull()
+            if (r != null && r.faceFound) {
+                if (best == null || r.topScore > (best?.topScore ?: -1f)) best = r
+            }
+            // Stop early once we have a clearly accepted, confident match.
+            r?.accepted == true && (r.topScore >= org.xnet.aiope.inference.FaceEngine.CONFIDENT_THRESHOLD)
+        }
+
+        val b = best
+        val label = if (b?.accepted == true) b.topLabel else null
+        setCache(label, b?.topScore ?: 0f)
+        persist()
+        return label
+    }
     /** Distinct enrolled people with their angle-sample counts. */
     suspend fun labelCounts(): Map<String, Int> = store.labelCounts()
     suspend fun deleteIdentity(id: String) { store.delete(id); invalidate(); persist() }

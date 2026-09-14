@@ -26,6 +26,15 @@ android {
   buildFeatures { buildConfig = true }
 }
 
+// Force the transitive org.json:json (pulled in by com.vdurmont:emoji-java) to a patched
+// version. 20170516 has DoS + stack-overflow advisories (GHSA); 20231013 fixes both.
+// (Android provides org.json at runtime, but we pin to satisfy the build/Dependabot too.)
+configurations.all {
+  resolutionStrategy {
+    force("org.json:json:20231013")
+  }
+}
+
 dependencies {
   implementation(project(":core-data"))
   implementation(project(":core-model"))

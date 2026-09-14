@@ -21,17 +21,19 @@ import java.net.URL
 object FaceModelBootstrap {
 
   private const val TAG = "FaceModelBootstrap"
-  private const val VERSION = "face_v1"
+  private const val VERSION = "face_v2"
 
   // YuNet fixed-input detection model (opencv_zoo, MIT). Served via Git LFS -> follow redirects.
   private const val DETECT_URL =
-    "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+    "https://github.com/XNet-NGO/deps/releases/download/yunet/yunet.onnx"
   private const val MIN_DETECT_BYTES = 100L * 1024          // ~227 KB real
 
-  // ArcFace identity embedder (garavv/arcface-onnx, HF). 112x112 RGB -> 512-d.
+  // iResNet100 ArcFace identity embedder (LibreYOLO/librefacerec-l, Apache-2.0).
+  // input data[N,3,112,112] RGB NCHW (px-127.5)/128 -> 512-d. Stronger discrimination than
+  // the old ResNet50 ArcFace (which collapsed to ~0.98 between different people).
   private const val EMBED_URL =
-    "https://huggingface.co/garavv/arcface-onnx/resolve/main/arc.onnx"
-  private const val MIN_EMBED_BYTES = 90L * 1024 * 1024     // ~130 MB real
+    "https://github.com/XNet-NGO/deps/releases/download/librefacerec-l/librefacerec-l.onnx"
+  private const val MIN_EMBED_BYTES = 200L * 1024 * 1024    // ~260 MB real
 
   fun modelsDir(ctx: Context) = File(File(ctx.filesDir, "models"), "face")
   fun detectFile(ctx: Context) = File(modelsDir(ctx), "yunet.onnx")
@@ -50,6 +52,17 @@ object FaceModelBootstrap {
     val d = if (detectFile(ctx).isFile) detectFile(ctx).length() else 0L
     val e = if (embedFile(ctx).isFile) embedFile(ctx).length() else 0L
     return d + e
+  }
+
+  /** Human-readable status for the settings UI — never stale, always derived from disk. */
+  fun statusText(ctx: Context): String {
+    if (isInstalled(ctx)) {
+      val mb = installedBytes(ctx) / (1024 * 1024)
+      return "Installed ($VERSION, ~$mb MB)"
+    }
+    // Files present but wrong version/size => needs (re)download.
+    val stale = marker(ctx).let { !it.exists() } && embedFile(ctx).isFile
+    return if (stale) "Update required — tap Download" else "Not installed"
   }
 
   fun remove(ctx: Context) {
@@ -72,12 +85,20 @@ object FaceModelBootstrap {
         return true
       }
 
+      // Version changed (or partial/old files present): purge stale model files + old markers so
+      // the new model fully replaces the old one and no stale bytes linger.
+      dir.listFiles()?.forEach { f ->
+        if (f.name.startsWith(".face_") && f.name != ".$VERSION") f.delete()
+      }
+      detectFile(ctx).delete()
+      embedFile(ctx).delete()
+
       // Detection model (small)
       l("Downloading face detection model (YuNet)...")
       if (!downloadTo(DETECT_URL, detectFile(ctx), MIN_DETECT_BYTES, dir, "yunet", l)) return false
 
       // Identity embedder (large)
-      l("Downloading face identity model (~130MB)...")
+      l("Downloading face identity model (~260MB)...")
       if (!downloadTo(EMBED_URL, embedFile(ctx), MIN_EMBED_BYTES, dir, "arcface", l)) return false
 
       marker(ctx).writeText(VERSION)

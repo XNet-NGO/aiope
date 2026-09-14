@@ -60,6 +60,26 @@ class FaceEnrollmentStore(private val dao: ChatDao) {
 
     suspend fun count(): Int = dao.getEnrolledFaces().size
 
+    data class Integrity(val total: Int, val decryptable: Int, val validDim: Int, val expectedDim: Int)
+
+    /**
+     * Verify the encrypted store round-trips: every row should decrypt (GCM tag valid) and yield
+     * an [expectedDim]-length embedding. Any shortfall indicates encrypt/decrypt or DB corruption.
+     */
+    suspend fun integrity(expectedDim: Int): Integrity {
+        val rows = dao.getEnrolledFaces()
+        var dec = 0
+        var dim = 0
+        for (e in rows) {
+            val floats = try { bytesToFloats(box.open(e.sealedEmbedding)) } catch (_: Throwable) { null }
+            if (floats != null) {
+                dec++
+                if (floats.size == expectedDim) dim++
+            }
+        }
+        return Integrity(rows.size, dec, dim, expectedDim)
+    }
+
     private fun floatsToBytes(f: FloatArray): ByteArray {
         val bb = ByteBuffer.allocate(f.size * 4).order(ByteOrder.LITTLE_ENDIAN)
         for (x in f) bb.putFloat(x)
