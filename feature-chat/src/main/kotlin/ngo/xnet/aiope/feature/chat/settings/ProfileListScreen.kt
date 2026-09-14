@@ -450,6 +450,119 @@ internal fun ProfileList(
         )
         HorizontalDivider()
       }
+      item {
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val yInstalled = remember { mutableStateOf(ngo.xnet.aiope.core.terminal.shell.YoloV9Bootstrap.isInstalled(ctx)) }
+        val yBusy = remember { mutableStateOf(false) }
+        val yStatus = remember {
+          mutableStateOf(
+            if (ngo.xnet.aiope.core.terminal.shell.YoloV9Bootstrap.isInstalled(ctx)) {
+              "Installed (${ngo.xnet.aiope.core.terminal.shell.YoloV9Bootstrap.installedBytes(ctx) / 1024 / 1024}MB)"
+            } else {
+              "Not installed"
+            },
+          )
+        }
+        val yScope = rememberCoroutineScope()
+        ListItem(
+          headlineContent = { Text("Live Detection Model (YOLOv9-s)") },
+          supportingContent = {
+            Text(
+              yStatus.value,
+              style = MaterialTheme.typography.bodySmall,
+              color = if (yInstalled.value) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+            )
+          },
+          trailingContent = {
+            TextButton(
+              enabled = !yBusy.value,
+              onClick = {
+                if (!yBusy.value) {
+                  yBusy.value = true
+                  yStatus.value = "Downloading..."
+                  yScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                      if (yInstalled.value) {
+                        yStatus.value = "Removing old model..."
+                        ngo.xnet.aiope.core.terminal.shell.YoloV9Bootstrap.remove(ctx)
+                      }
+                      ngo.xnet.aiope.core.terminal.shell.YoloV9Bootstrap.setup(ctx) { msg -> yStatus.value = msg }
+                      yInstalled.value = ngo.xnet.aiope.core.terminal.shell.YoloV9Bootstrap.isInstalled(ctx)
+                      yStatus.value = if (yInstalled.value) {
+                        "Installed (${ngo.xnet.aiope.core.terminal.shell.YoloV9Bootstrap.installedBytes(ctx) / 1024 / 1024}MB)"
+                      } else {
+                        "Failed"
+                      }
+                    } catch (e: Exception) {
+                      yStatus.value = "Error: ${e.message?.take(40)}"
+                    }
+                    yBusy.value = false
+                  }
+                }
+              },
+            ) {
+              Text(if (yBusy.value) "Downloading..." else if (yInstalled.value) "Redownload" else "Download")
+            }
+          },
+        )
+        HorizontalDivider()
+
+        // Speech-to-Text model (sherpa-onnx streaming zipformer EN, offline).
+        val sInstalled = remember { mutableStateOf(ngo.xnet.aiope.core.terminal.shell.SherpaSttBootstrap.isInstalled(ctx)) }
+        val sBusy = remember { mutableStateOf(false) }
+        val sStatus = remember {
+          mutableStateOf(
+            if (ngo.xnet.aiope.core.terminal.shell.SherpaSttBootstrap.isInstalled(ctx)) {
+              "Installed (${ngo.xnet.aiope.core.terminal.shell.SherpaSttBootstrap.installedBytes(ctx) / 1024 / 1024}MB)"
+            } else {
+              "Not installed"
+            },
+          )
+        }
+        val sScope = rememberCoroutineScope()
+        ListItem(
+          headlineContent = { Text("Speech-to-Text Model (offline)") },
+          supportingContent = {
+            Text(
+              sStatus.value,
+              style = MaterialTheme.typography.bodySmall,
+              color = if (sInstalled.value) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+            )
+          },
+          trailingContent = {
+            TextButton(
+              enabled = !sBusy.value,
+              onClick = {
+                if (!sBusy.value) {
+                  sBusy.value = true
+                  sStatus.value = "Downloading..."
+                  sScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                      if (sInstalled.value) {
+                        sStatus.value = "Removing old model..."
+                        ngo.xnet.aiope.core.terminal.shell.SherpaSttBootstrap.remove(ctx)
+                      }
+                      ngo.xnet.aiope.core.terminal.shell.SherpaSttBootstrap.setup(ctx) { msg -> sStatus.value = msg }
+                      sInstalled.value = ngo.xnet.aiope.core.terminal.shell.SherpaSttBootstrap.isInstalled(ctx)
+                      sStatus.value = if (sInstalled.value) {
+                        "Installed (${ngo.xnet.aiope.core.terminal.shell.SherpaSttBootstrap.installedBytes(ctx) / 1024 / 1024}MB)"
+                      } else {
+                        "Failed"
+                      }
+                    } catch (e: Exception) {
+                      sStatus.value = "Error: ${e.message?.take(40)}"
+                    }
+                    sBusy.value = false
+                  }
+                }
+              },
+            ) {
+              Text(if (sBusy.value) "Downloading..." else if (sInstalled.value) "Redownload" else "Download")
+            }
+          },
+        )
+        HorizontalDivider()
+      }
     }
   }
 }

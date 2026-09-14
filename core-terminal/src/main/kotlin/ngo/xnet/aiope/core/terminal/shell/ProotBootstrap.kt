@@ -104,7 +104,7 @@ object ProotBootstrap {
           "x86_64" in arch -> "x86_64"
           else -> "aarch64"
         }
-        val url = "https://github.com/xnet-admin-1/box/releases/download/rootfs-alpine-3.21.3/box-alpine-3.21-$pdArch.tar.xz"
+        val url = "https://github.com/XNet-NGO/deps/releases/download/rootfs-alpine-3.21.3/box-alpine-3.21-$pdArch.tar.xz"
         val tarball = File(envDir, "rootfs.tar.xz")
 
         l("Downloading Alpine 3.21 rootfs ($pdArch)...")

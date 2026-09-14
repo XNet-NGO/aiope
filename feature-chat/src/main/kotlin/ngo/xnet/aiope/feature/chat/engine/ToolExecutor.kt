@@ -159,19 +159,27 @@ class ToolExecutor(
 
   private fun fetchDataCategories(): String {
     cachedDataCategories?.let { return it }
+    val fallback = "air_quality, alerts, apod, asteroids, astronauts, cat, cat_breed, cat_breeds, cme, earth_events, earth_image, earthquakes, earthquakes_significant, epic, fires, geomagnetic, impact_risk, ip_location, iss, nasa_media, nasa_tech, ocean_temp, solar, solar_flares, sunrise_sunset, tides, time, uv, weather, weather_hourly"
     return try {
       val p = providerStore.getActive()
       val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
       val req = okhttp3.Request.Builder().url("$gwBase/v1/data")
         .apply { if (p.apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${p.apiKey}") }.build()
       val body = httpClient.newCall(req).execute().use { it.body?.string() ?: "" }
-      val cats = org.json.JSONObject(body).getJSONArray("categories")
-      val list = (0 until cats.length()).map { cats.getString(it) }.filter { it != "search_web" && it != "image_search" }.joinToString(", ")
-      cachedDataCategories = list
+      // Endpoint shape varies by gateway; don't throw if "categories" is absent.
+      val cats = org.json.JSONObject(body).optJSONArray("categories")
+      val list = if (cats != null && cats.length() > 0) {
+        (0 until cats.length()).map { cats.getString(it) }
+          .filter { it != "search_web" && it != "image_search" }.joinToString(", ")
+      } else {
+        fallback
+      }
+      cachedDataCategories = list // cache result (or fallback) so we don't refetch every call
       list
     } catch (e: Exception) {
-      android.util.Log.w("ToolExec", "op failed: ${e.message}")
-      "air_quality, alerts, apod, asteroids, astronauts, cat, cat_breed, cat_breeds, cme, earth_events, earth_image, earthquakes, earthquakes_significant, epic, fires, geomagnetic, impact_risk, ip_location, iss, nasa_media, nasa_tech, ocean_temp, solar, solar_flares, sunrise_sunset, tides, time, uv, weather, weather_hourly"
+      android.util.Log.w("ToolExec", "fetchDataCategories fell back: ${e.message}")
+      cachedDataCategories = fallback // cache the fallback to stop repeated failing network calls
+      fallback
     }
   }
 
@@ -975,9 +983,8 @@ class ToolExecutor(
       if (!capture.hasPermission()) {
         return "Camera permission not granted; cannot scan."
       }
-      val bmp = capture.captureFrontFace()
-        ?: return "Could not capture a camera frame for scanning."
-      val who = mgr.identifyAndCache(bmp)
+      // Extended scan: several frames over a longer window, best confident match wins.
+      val who = mgr.identifyBestOverFrames(capture, maxFrames = 6)
       if (who != null) {
         "Facial scan: identified current user as \"$who\" (on-device match)."
       } else {

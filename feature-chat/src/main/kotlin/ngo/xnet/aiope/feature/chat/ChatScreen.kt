@@ -732,30 +732,73 @@ private fun ChatInput(onSend: (String, List<String>) -> Unit, onStop: () -> Unit
           showLiveDetect = true
         }
       }) {
-        Icon(Icons.Default.Videocam, "Live detection", tint = MaterialTheme.colorScheme.onSurface)
+        Icon(Icons.Default.Visibility, "Live detection", tint = MaterialTheme.colorScheme.onSurface)
       }
-      // Mic — launches Android speech recognizer
-      val speechLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
-      ) { result ->
-        ngo.xnet.aiope.core.preferences.AuthInterop.end()
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-          val spoken = result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-          if (!spoken.isNullOrBlank()) {
-            text = text + (if (text.isNotBlank()) " " else "") + spoken
+      // Mic — STOCK AOSP on-device speech recognition (no popup). Toggles direct listening and
+      // appends interim/final transcription into the text field.
+      val voiceManager = remember { ngo.xnet.aiope.feature.chat.voice.VoiceInputManager(context.applicationContext) }
+      val isDictating = remember { mutableStateOf(false) }
+      // Base text captured when dictation starts, so partial results replace (not duplicate) live.
+      val dictationBase = remember { mutableStateOf("") }
+      DisposableEffect(Unit) { onDispose { voiceManager.stop() } }
+
+      fun beginListening() {
+        dictationBase.value = text
+        isDictating.value = true
+        ngo.xnet.aiope.core.preferences.AuthInterop.begin()
+        voiceManager.start(
+          onPartial = { partial ->
+            val sep = if (dictationBase.value.isNotBlank()) " " else ""
+            text = dictationBase.value + sep + partial
+          },
+          onFinal = { finalText ->
+            val sep = if (dictationBase.value.isNotBlank()) " " else ""
+            text = dictationBase.value + sep + finalText
+          },
+          onError = { msg -> text = msg },
+          onEnd = {
+            isDictating.value = false
+            ngo.xnet.aiope.core.preferences.AuthInterop.end()
+          },
+        )
+      }
+
+      // Download the STT model on first use if missing, then begin listening.
+      fun startDictation() {
+        if (voiceManager.isModelInstalled()) { beginListening(); return }
+        text = "Downloading speech model (~52MB)…"
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+          val ok = ngo.xnet.aiope.core.terminal.shell.SherpaSttBootstrap.setup(context.applicationContext) { msg ->
+            scope.launch(kotlinx.coroutines.Dispatchers.Main) { text = msg }
+          }
+          kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+            if (ok) { text = ""; beginListening() }
+            else text = "Speech model download failed. Check connection and try again."
           }
         }
       }
+
+      val micPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+      ) { granted -> if (granted) startDictation() else { text = "Microphone permission is required for voice input." } }
+
       IconButton(onClick = {
-        val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-          putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        if (isDictating.value) {
+          voiceManager.stop()
+          isDictating.value = false
+          ngo.xnet.aiope.core.preferences.AuthInterop.end()
+        } else {
+          val hasMic = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.RECORD_AUDIO,
+          ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+          if (hasMic) startDictation() else micPermLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
         }
-        try {
-          ngo.xnet.aiope.core.preferences.AuthInterop.begin()
-          speechLauncher.launch(intent)
-        } catch (_: Exception) { ngo.xnet.aiope.core.preferences.AuthInterop.end() }
       }) {
-        Icon(Icons.Default.Mic, "Voice", tint = MaterialTheme.colorScheme.onSurface)
+        Icon(
+          if (isDictating.value) Icons.Default.MicOff else Icons.Default.Mic,
+          "Voice",
+          tint = if (isDictating.value) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+        )
       }
       // Realtime voice button (always available via task model)
       IconButton(

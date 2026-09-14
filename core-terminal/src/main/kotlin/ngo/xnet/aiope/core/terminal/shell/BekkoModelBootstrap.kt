@@ -23,13 +23,13 @@ object BekkoModelBootstrap {
   private const val TAG = "BekkoModelBootstrap"
   private const val MODEL_VERSION = "bekko_a8m_v1"
 
-  /** Resolved from the HF blob URL the user requested (resolve/ serves the raw bytes). */
+  /** Bekko embedding ONNX, mirrored in XNet-NGO/deps. */
   private const val MODEL_URL =
-    "https://huggingface.co/hotchpotch/bekko-embedding-v1-a8m/resolve/main/onnx/model.onnx"
+    "https://github.com/XNet-NGO/deps/releases/download/bekko-embedding/bekko-model.onnx"
 
   /** HuggingFace fast-tokenizer definition (read directly by the DJL tokenizer). */
   private const val TOKENIZER_URL =
-    "https://huggingface.co/hotchpotch/bekko-embedding-v1-a8m/resolve/main/tokenizer.json"
+    "https://github.com/XNet-NGO/deps/releases/download/bekko-embedding/bekko-tokenizer.json"
 
   /** Expected on-disk size (~124 MiB). Used only for a sanity floor, not exact validation. */
   private const val MIN_VALID_BYTES = 90L * 1024 * 1024

@@ -395,11 +395,22 @@ class StreamingOrchestrator(
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
               val msg = t?.message ?: response?.let { "HTTP ${it.code}" } ?: "Connection failed"
-              if (isTransientReset(msg) && sseDoneRef.get()) {
-                android.util.Log.w("AIOPE2", "SSE reset after done (non-fatal): $msg")
-              } else if (sseErrorRef.get() == null) {
-                sseErrorRef.set(msg)
-                android.util.Log.e("AIOPE2", "SSE failure (attempt ${retries + 1}): $msg", t)
+              when {
+                // Stream already signaled done — any trailing reset is harmless.
+                isTransientReset(msg) && sseDoneRef.get() -> {
+                  android.util.Log.w("AIOPE2", "SSE reset after done (non-fatal): $msg")
+                }
+                // Some gateways (e.g. freeinference) END the stream by closing the socket
+                // WITHOUT sending `data: [DONE]`. If we already received content this attempt,
+                // treat the close as a normal end-of-stream, not a failure.
+                gotDataThisAttempt && (isTransientReset(msg) || msg.lowercase().contains("cancel")) -> {
+                  android.util.Log.w("AIOPE2", "SSE closed after delivering data (treated as done): $msg")
+                  sseDoneRef.set(true)
+                }
+                sseErrorRef.get() == null -> {
+                  sseErrorRef.set(msg)
+                  android.util.Log.e("AIOPE2", "SSE failure (attempt ${retries + 1}): $msg", t)
+                }
               }
               latch.countDown()
             }
