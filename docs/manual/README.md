@@ -22,6 +22,8 @@ These same pages ship inside the app as bundled assets (`feature-chat/src/main/a
 - [Browser](browser.md) — the on-device shared WebView the user and AI both drive
 - [Terminal](terminal.md) — the proot Alpine Linux environment
 - [RAG Knowledge Base](rag.md) — on-device SQLite vector store over your documents
+- [Introspect](introspect.md) — the self-knowledge tool: answers questions about AIOPE from its built-in manual
+- [On-Device Vision](vision.md) — object detection and facial identity / presence, all on-device
 
 ## Connectivity
 

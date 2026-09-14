@@ -6,13 +6,13 @@ AIOPE's agent acts on the device and the world through **tools** — callable fu
 
 ## Overview
 
-There are **70 tools total: 54 built-in (local) tools + 16 remote tools**.
+There are **73 tools total: 57 built-in (local) tools + 16 remote tools**.
 
-- The 54 local tools are registered in `ToolExecutor.buildToolDefs()` via the `td(name, description, jsonSchema)` helper and dispatched in the big `when (name)` block of `ToolExecutor.execute()`.
+- The 57 local tools are registered in `ToolExecutor.buildToolDefs()` via the `td(name, description, jsonSchema)` helper and dispatched in the big `when (name)` block of `ToolExecutor.execute()`.
 - The 16 remote tools come from the optional `remoteToolBridge` (`RemoteToolBridge` in `core-model`), exposed only when `feature-remote` is initialized. They cover SSH and a server-side ("remote") browser.
 - Additional dynamic tools can appear at runtime from enabled **MCP servers** (`toolStore.getMcpServers()`), discovered via `McpManager`. These are on top of the 70 and vary by configuration.
 
-## The 54 local tools (grouped)
+## The 57 local tools (grouped)
 
 Grouping mirrors `ToolToggleScreen`, with each tool cited by its exact registered name.
 
@@ -73,6 +73,9 @@ Grouping mirrors `ToolToggleScreen`, with each tool cited by its exact registere
 - `rag_index` — Index a document (title + content) into the knowledge base.
 - `image_generate` — Generate an image from a prompt (supports optional reference images for image-to-image); saved as `file://` PNG.
 - `analyze_image` — Vision analysis of an image URL/`file://` path (JPEG/PNG/WebP/GIF/BMP/SVG; SVG rasterized).
+- `detect_objects` — On-device object detection (RT-DETRv4-S ONNX) over an image URL/`file://` path; returns labeled COCO-class boxes with confidence. Requires the model to be downloaded. See [Vision](vision.md).
+- `facial_scan` — On-device front-camera face identification against enrolled identities; returns the enrolled name or "unidentified". Requires face models downloaded + camera permission. See [Vision](vision.md).
+- `introspect` — Answer questions about AIOPE itself from the bundled manual (separate `aiope_manual.db`, semantic search, returns the full matching page). See [Introspect](introspect.md).
 - `orchestrate` — Run a multi-agent DAG pipeline (`PipelineExecutor`); stages dispatch named roster agents (Architect, Coder, Researcher, QA, DevOps, Security, Writer, Reviewer); requires `subagentManager`.
 
 ### Tasks
