@@ -45,6 +45,7 @@ internal fun ProfileList(
   onProviders: () -> Unit = {},
   onRag: () -> Unit = {},
   onSecurity: () -> Unit = {},
+  onManual: () -> Unit = {},
   onBack: () -> Unit,
 ) {
   val theme = ngo.xnet.aiope.feature.chat.theme.LocalThemeState.current
@@ -86,6 +87,12 @@ internal fun ProfileList(
           headlineContent = { Text("Security") },
           supportingContent = { Text("Optional sign-in factors: biometric, security key, TOTP", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
           modifier = Modifier.clickable { onSecurity() },
+        )
+        HorizontalDivider()
+        ListItem(
+          headlineContent = { Text("Manual") },
+          supportingContent = { Text("Browse AIOPE's built-in guide to every feature and setting", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+          modifier = Modifier.clickable { onManual() },
         )
         HorizontalDivider()
         ListItem(

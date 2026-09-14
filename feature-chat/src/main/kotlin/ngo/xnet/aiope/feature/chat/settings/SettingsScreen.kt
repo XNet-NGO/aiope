@@ -33,10 +33,12 @@ fun SettingsScreen(providerStore: ProviderStore, toolStore: ToolStore, chatDao: 
       when (screen) {
         "list" -> ProfileList(
           providerStore, chatDao,
-          onAgent = { screen = "agent" }, onTasks = { screen = "tasks" }, onTools = { screen = "tools" }, onMcp = { screen = "mcp" }, onServers = { screen = "servers" }, onVoice = { screen = "voice" }, onTheme = { screen = "theme" }, onProviders = { screen = "providers" }, onRag = { screen = "rag" }, onSecurity = { screen = "security" }, onBack = onBack,
+          onAgent = { screen = "agent" }, onTasks = { screen = "tasks" }, onTools = { screen = "tools" }, onMcp = { screen = "mcp" }, onServers = { screen = "servers" }, onVoice = { screen = "voice" }, onTheme = { screen = "theme" }, onProviders = { screen = "providers" }, onRag = { screen = "rag" }, onSecurity = { screen = "security" }, onManual = { screen = "manual" }, onBack = onBack,
         )
 
         "voice" -> VoiceSettingsScreen(onBack = { screen = "list" })
+
+        "manual" -> ManualScreen(onBack = { screen = "list" })
 
         "theme" -> ngo.xnet.aiope.feature.chat.theme.ThemeSettingsScreen(onBack = { screen = "list" })
 
