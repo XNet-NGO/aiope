@@ -103,8 +103,8 @@ dependencies {
   implementation("androidx.datastore:datastore-preferences:1.2.1")
 
   // exoplayer for video backgrounds
-  implementation("androidx.media3:media3-exoplayer:1.11.0")
-  implementation("androidx.media3:media3-ui:1.11.0")
+  implementation("androidx.media3:media3-exoplayer:1.11.1")
+  implementation("androidx.media3:media3-ui:1.11.1")
 
   // BouncyCastle for self-signed cert generation (file server HTTPS)
   implementation("org.bouncycastle:bcpkix-jdk18on:1.85")
