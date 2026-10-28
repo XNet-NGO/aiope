@@ -26,6 +26,7 @@ class ProviderStore @Inject constructor(
   private val dao: ChatDao,
 ) {
   init {
+    migrateRemoveGateway()
     if (getAll().isEmpty()) {
       migrateFromPrefs()
       if (getAll().isEmpty()) seedDefault()
@@ -33,6 +34,38 @@ class ProviderStore @Inject constructor(
     seedTaskDefaults()
     ensureLiveModel()
     seedNovitaByok()
+  }
+
+  /**
+   * One-time migration (BYOK): the AIOPE Gateway is deprecated and shut down. Remove any
+   * previously-seeded gateway providers from existing installs, clear active slots that pointed at
+   * them, and drop task-model configs that referenced them, so stale rows don't keep hitting a
+   * dead endpoint. New installs never seed the gateway (see seedDefault), so this is a no-op there.
+   * Guarded by a settings flag so it runs exactly once.
+   */
+  private fun migrateRemoveGateway() = runBlocking(Dispatchers.IO) {
+    val migratedKey = "migrated_remove_gateway_v1"
+    if (dao.getSetting(migratedKey)?.toBooleanStrictOrNull() == true) return@runBlocking
+    val gatewayIds = getAll().filter {
+      it.builtinId == "aiope_gateway" ||
+        it.apiBase.contains("inf.xnet.ngo", ignoreCase = true)
+    }.map { it.id }.toSet()
+    if (gatewayIds.isNotEmpty()) {
+      // Clear active text slot if it pointed at a gateway provider.
+      val activeId = dao.getActiveProvider()?.let { runCatching { ProviderProfile.fromJson(JSONObject(it.json)).id }.getOrNull() }
+      if (activeId in gatewayIds) dao.clearActiveProvider()
+      // Clear active media slot if it pointed at a gateway provider.
+      val activeMediaId = dao.getSetting(KEY_ACTIVE_MEDIA)
+      if (activeMediaId in gatewayIds) dao.upsertSetting(SettingsKvEntity(KEY_ACTIVE_MEDIA, ""))
+      // Drop task-model configs routed to a gateway provider.
+      val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(ctx)
+      for (task in ngo.xnet.aiope.core.network.ModelTask.entries) {
+        if (taskStore.getTaskConfig(task).profileId in gatewayIds) taskStore.clearTaskConfig(task)
+      }
+      // Finally delete the gateway provider rows.
+      gatewayIds.forEach { dao.deleteProvider(it) }
+    }
+    dao.upsertSetting(SettingsKvEntity(migratedKey, "true"))
   }
 
   /**
@@ -88,59 +121,32 @@ class ProviderStore @Inject constructor(
     seed(ngo.xnet.aiope.core.network.ModelTask.IMAGE_GENERATION, "cloudflare/@cf-black-forest-labs-flux-1-schnell")
   }
 
+  /**
+   * BYOK-only: the deprecated AIOPE Gateway is no longer seeded as a default provider. We seed a
+   * set of common OpenAI-compatible providers in a DISABLED, empty-key state so the user can pick
+   * one and paste their own key. No key is shipped and none is active until the user supplies one.
+   * (The Novita BYOK entry is seeded separately in seedNovitaByok.) Model lists are auto-detected
+   * from each provider's live /models endpoint once a key is present.
+   */
   private fun seedDefault() {
-    fun mc(id: String, tools: Boolean? = null, vision: Boolean? = null, audio: Boolean? = null, video: Boolean? = null, ctx: Int = 200_000, reasoning: String? = "auto", compact: Boolean = true) = id to ModelConfig(modelId = id, toolsOverride = tools, visionOverride = vision, audioOverride = audio, videoOverride = video, temperature = 0.6f, reasoningEffort = reasoning, contextTokens = ctx, autoCompact = compact)
-    val default = ProviderProfile(
-      id = "default_gateway",
-      builtinId = "aiope_gateway",
-      label = "AIOPE Gateway",
-      apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
-      apiBase = "https://inf.xnet.ngo/v1",
-      selectedModelId = "google-ai-studio/models-gemma-4-31b-it",
-      isActive = true,
-      modelConfigs = mapOf(
-        mc("cline/minimax-minimax-m2.5", tools = true, ctx = 200_000),
-        mc("zen/minimax-m2.5-free", tools = true, ctx = 200_000),
-        mc("zen/nemotron-3-super-free", tools = true, vision = false, audio = false, video = false, ctx = 1_000_000),
-        mc("zen/big-pickle", tools = true, vision = false, audio = false, video = false),
-        mc("cline/z-ai-glm-5", tools = true, vision = false, audio = false, video = false, ctx = 200_000),
-        mc("google-ai-studio/models-gemma-4-31b-it", tools = true, vision = true, ctx = 256_000),
-        mc("google-ai-studio/models-gemma-4-26b-a4b-it", tools = true, vision = true, ctx = 256_000),
-        mc("pollinations-pollen/llama-scout", tools = true, vision = false, audio = false, video = false, ctx = 327_680),
-        mc("pollinations-pollen/nova-fast", tools = true, vision = false, audio = false, video = false, ctx = 128_000, reasoning = null),
-        mc("pollinations-pollen/flux", tools = false, vision = false, audio = false, video = false, ctx = 0, reasoning = null, compact = false),
-        mc("pollinations-pollen/deepseek", tools = true, vision = false, audio = false, video = false, ctx = 1_000_000),
-        mc("pollinations-pollen/mistral", tools = true, vision = false, audio = false, video = false, ctx = 128_000, reasoning = null),
-        mc("pollinations-pollen/qwen-coder", tools = true, vision = false, audio = false, video = false, ctx = 262_144),
-        mc("openrouter/openrouter-free", vision = true, ctx = 128_000),
-        mc("pollinations/openai", tools = true, vision = false, audio = false, video = false, ctx = 128_000, compact = false),
-        mc("pollinations/openai-fast", tools = true, vision = false, audio = false, video = false, ctx = 128_000),
-        mc("google-ai-studio/gemini-3.1-flash-live-preview", tools = true, audio = true, ctx = 131_072),
-      ),
+    fun byok(id: String, label: String, base: String) = ProviderProfile(
+      id = id,
+      builtinId = "custom",
+      label = label,
+      apiKey = "", // BYOK — user supplies their own key
+      apiBase = base,
+      selectedModelId = "", // chosen by the user after models auto-load
+      isActive = false,
+      modelConfigs = emptyMap(), // detected from the live API
     )
-    save(default)
-    setActive(default.id)
-    fetchModelsAsync(default)
-
-    // Seed a Media Generation provider (gateway) with the one verified image model, and make it
-    // the active media provider so Media mode works out of the box.
-    val media = ProviderProfile(
-      id = "default_gateway_media",
-      builtinId = "aiope_gateway",
-      label = "AIOPE Gateway (Media)",
-      apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
-      apiBase = "https://inf.xnet.ngo/v1",
-      selectedModelId = "cloudflare/@cf-black-forest-labs-flux-1-schnell",
-      category = ProviderCategory.MEDIA,
-      modelConfigs = mapOf(
-        "cloudflare/@cf-black-forest-labs-flux-1-schnell" to ModelConfig(
-          modelId = "cloudflare/@cf-black-forest-labs-flux-1-schnell",
-          toolsOverride = false, reasoningEffort = null, contextTokens = 0, autoCompact = false,
-        ),
-      ),
-    )
-    save(media)
-    setActiveMedia(media.id)
+    // Common OpenAI-compatible endpoints. All disabled; user enables by adding a key.
+    byok("openai_byok", "OpenAI", "https://api.openai.com/v1").let { save(it) }
+    byok("openrouter_byok", "OpenRouter", "https://openrouter.ai/api/v1").let { save(it) }
+    byok("groq_byok", "Groq", "https://api.groq.com/openai/v1").let { save(it) }
+    byok("deepseek_byok", "DeepSeek", "https://api.deepseek.com/v1").let { save(it) }
+    byok("ollama_byok", "Ollama (local)", "http://localhost:11434/v1").let { save(it) }
+    // No provider is set active and no media provider is seeded — the user chooses after adding a
+    // key. Media generation and per-task routing are configured once a BYOK provider is active.
   }
 
   /** One-time migration from SharedPreferences */
@@ -179,8 +185,12 @@ class ProviderStore @Inject constructor(
 
   fun getActive(): ProviderProfile = runBlocking(Dispatchers.IO) {
     dao.getActiveProvider()?.let { runCatching { ProviderProfile.fromJson(JSONObject(it.json)) }.getOrNull() }
-  } ?: getAll().firstOrNull()
-    ?: ProviderProfile(builtinId = "aiope_gateway", label = "AIOPE Gateway", apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY, selectedModelId = "google-ai-studio/models-gemma-4-31b-it")
+  } ?: getAll().firstOrNull { it.isActive }
+    ?: getAll().firstOrNull()
+    // BYOK: no gateway fallback. If the user hasn't configured a provider yet, return an empty
+    // custom profile — inference calls will surface a "configure a provider" error rather than
+    // silently hitting a dead gateway.
+    ?: ProviderProfile(builtinId = "custom", label = "No provider", apiKey = "", apiBase = "", selectedModelId = "")
 
   fun getById(id: String): ProviderProfile? = getAll().firstOrNull { it.id == id }
 

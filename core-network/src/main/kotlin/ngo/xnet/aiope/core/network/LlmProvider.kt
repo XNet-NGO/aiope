@@ -176,40 +176,6 @@ data class BuiltinProvider(
 
 object ProviderTemplates {
   val ALL = listOf(
-    BuiltinProvider(
-      "aiope_gateway",
-      "AIOPE Gateway",
-      "",
-      "https://inf.xnet.ngo/v1",
-      apiKeyHint = "Gateway key",
-      defaultModels = listOf(
-        ModelDef("google-ai-studio/models-gemma-4-31b-it", "Gemma 4 31B IT", 256_000),
-        ModelDef(
-          "cloudflare/@cf-black-forest-labs-flux-1-schnell",
-          "FLUX.1 Schnell",
-          outputModality = "image",
-          supportsTools = false,
-        ),
-        ModelDef(
-          "google/gemini-2.5-flash-native-audio",
-          "Gemini 2.5 Flash (Voice)",
-          contextWindow = 131072,
-          supportsAudio = true,
-          useStreaming = true,
-          audioInputType = "LINEAR_PCM",
-          sampleRate = 16000,
-        ),
-        ModelDef(
-          "google-ai-studio/gemini-3.1-flash-live-preview",
-          "Gemini 3 Flash Live",
-          contextWindow = 131072,
-          supportsAudio = true,
-          useStreaming = true,
-          audioInputType = "LINEAR_PCM",
-          sampleRate = 16000,
-        ),
-      ),
-    ),
     BuiltinProvider("custom", "Custom", "", apiKeyHint = "API key", requiresApiKey = false),
     BuiltinProvider(
       "cloudflare_ai",

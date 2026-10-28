@@ -45,7 +45,7 @@ class AgentExecutor(
 
   private val allToolNames = setOf(
     "search_web", "search_images", "search_location", "fetch_url",
-    "read_file", "list_directory", "query_data", "memory_recall",
+    "read_file", "list_directory", "memory_recall",
     "write_file", "run_sh", "run_proot", "ssh_start", "ssh_exec", "image_generate",
     "analyze_image", "browser_content", "browser_elements",
   )
@@ -57,7 +57,6 @@ class AgentExecutor(
     "fetch_url",
     "read_file",
     "list_directory",
-    "query_data",
     "memory_recall",
   )
 
@@ -136,7 +135,7 @@ class AgentExecutor(
         } else {
           // Extract markdown images from tool results so they render properly
           val images = Regex("""!\[[^\]]*]\([^)]+\)""").findAll(log).map { it.value }.distinct().take(20).toList()
-          val textContent = log.replace(Regex("""\[(search_web|search_images|fetch_url|read_file|list_directory|query_data|ssh_exec|ssh_start)]:"""), "•")
+          val textContent = log.replace(Regex("""\[(search_web|search_images|fetch_url|read_file|list_directory|ssh_exec|ssh_start)]:"""), "•")
           val imageBlock = if (images.isNotEmpty()) images.joinToString("\n") + "\n\n" else ""
           val cleanText = textContent.replace(Regex("""!\[[^\]]*]\([^)]+\)"""), "").replace(Regex("\n{3,}"), "\n\n").trim()
           imageBlock + cleanText.take(3000)

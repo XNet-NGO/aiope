@@ -995,7 +995,7 @@ private fun AgentEditorDialog(
           "Web" to listOf("search_web", "search_images", "search_location", "fetch_url"),
           "Files" to listOf("read_file", "list_directory", "write_file"),
           "Execute" to listOf("run_sh", "run_proot", "ssh_exec"),
-          "Memory" to listOf("memory_recall", "memory_store", "query_data"),
+          "Memory" to listOf("memory_recall", "memory_store"),
           "Media" to listOf("image_generate", "analyze_image"),
           "Browser" to listOf("browser_content", "browser_elements", "browser_click", "browser_fill", "browser_eval"),
         )

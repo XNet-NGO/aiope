@@ -1104,10 +1104,14 @@ $transcript
     try {
       orchestrator.stream(messages, imageBase64s).collect { chunk ->
         chunk.reasoning?.let { r ->
-          if (!isReasoning) {
-            isReasoning = true
-            currentReasoning.clear()
-          }
+          // Keep accumulating into the SAME block even if content was interleaved.
+          // A new reasoning block (= a new "thinking" tab/chip) is only started at a
+          // genuine boundary: a tool call (model thought -> acted -> thinks again) or
+          // the start of a fresh turn after one was finalized. Previously, any content
+          // delta between two reasoning deltas finalized the block, so interleaved
+          // reasoning/content (common with inline <think> models like minimax) spawned
+          // one chip per chunk.
+          isReasoning = true
           currentReasoning.append(r)
         }
         // Handle content replacement (strips tool markup from display)
@@ -1116,19 +1120,19 @@ $transcript
           sb.append(replacement)
         }
         if (chunk.content.isNotEmpty()) {
-          if (isReasoning && currentReasoning.isNotEmpty()) {
-            reasoningBlocks.add(currentReasoning.toString())
-            currentReasoning.clear()
-            isReasoning = false
-          }
+          // Content no longer finalizes the reasoning block; it only marks reasoning as
+          // no longer the active (shimmering) phase. The block is finalized on a tool
+          // call or when the stream is done, so interleaved reasoning keeps appending to
+          // the same block instead of spawning a new chip per chunk.
+          if (chunk.content.isNotBlank()) isReasoning = false
           sb.append(chunk.content)
         }
         chunk.toolCalls?.let { calls ->
-          if (isReasoning && currentReasoning.isNotEmpty()) {
+          if (currentReasoning.isNotEmpty()) {
             reasoningBlocks.add(currentReasoning.toString())
             currentReasoning.clear()
-            isReasoning = false
           }
+          isReasoning = false
           for (c in calls) toolCallsList.add("${c.name}(${c.arguments.entries.joinToString(", ") { "${it.key}=${it.value}" }})")
         }
         chunk.toolResults?.let { results ->
@@ -1139,11 +1143,12 @@ $transcript
         }
         chunk.error?.let { sb.append("\nError: $it") }
         chunk.usage?.let { lastUsage = it }
-        if (chunk.isDone && isReasoning && currentReasoning.isNotEmpty()) {
+        if (chunk.isDone && currentReasoning.isNotEmpty()) {
           reasoningBlocks.add(currentReasoning.toString())
+          currentReasoning.clear()
           isReasoning = false
         }
-        val allReasoning = if (isReasoning && currentReasoning.isNotEmpty()) reasoningBlocks + currentReasoning.toString() else reasoningBlocks.toList()
+        val allReasoning = if (currentReasoning.isNotEmpty()) reasoningBlocks + currentReasoning.toString() else reasoningBlocks.toList()
         val currentLen = sb.length
         val hasNewLine = chunk.content.contains('\n')
         val lineWorth = currentLen - lastUiLength >= charsPerLine
@@ -1169,7 +1174,7 @@ $transcript
       // The UI is throttled during streaming. Flush the latest buffered chunk even
       // when collection fails or is cancelled before the next UI update.
       withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
-        val allReasoning = if (isReasoning && currentReasoning.isNotEmpty()) {
+        val allReasoning = if (currentReasoning.isNotEmpty()) {
           reasoningBlocks + currentReasoning.toString()
         } else {
           reasoningBlocks.toList()
@@ -1276,7 +1281,6 @@ $transcript
     "fetch_url",
     "read_file",
     "list_directory",
-    "query_data",
     "memory_recall",
   )
 

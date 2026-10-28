@@ -68,19 +68,33 @@ object EmbeddingBackend {
     }
 
     /**
+     * Resolve the cloud embedder from the RAG task's configured provider (BYOK). The deprecated
+     * AIOPE Gateway is no longer used; base URL + key come from the provider the user selected for
+     * the RAG task (or the active provider as a fallback). If no provider is configured the
+     * embedder will have a blank base/key and cloud embedding simply fails to the local backend.
+     */
+    private fun resolveCloudEmbedder(ctx: Context): org.xnet.aiope.inference.CloudEmbeddingEngine {
+        val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(ctx)
+        val tc = taskStore.getTaskConfig(ngo.xnet.aiope.core.network.ModelTask.RAG)
+        val providerStore = ngo.xnet.aiope.feature.chat.settings.ProviderStore(
+            ctx, ngo.xnet.aiope.feature.chat.engine.AgentDb.get(ctx).chatDao(),
+        )
+        val provider = tc.profileId?.let { providerStore.getById(it) } ?: providerStore.getActive()
+        val modelId = tc.modelId ?: provider.selectedModelId
+        return org.xnet.aiope.inference.CloudEmbeddingEngine(
+            baseUrl = provider.effectiveApiBase(),
+            apiKey = provider.apiKey,
+            model = modelId,
+        )
+    }
+
+    /**
      * Build a RagEngine wired to the currently-selected backend (local when ready,
      * otherwise the shared cloud embedder). Centralizes the cloud wiring so callers
      * (e.g. the settings toggle) don't have to duplicate it.
      */
     fun buildRagEngine(ctx: Context): org.xnet.aiope.inference.RagEngine {
-        val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(ctx)
-        val tc = taskStore.getTaskConfig(ngo.xnet.aiope.core.network.ModelTask.RAG)
-        val modelId = tc.modelId ?: "google-ai-studio/models-gemini-embedding-2"
-        val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
-            baseUrl = "https://inf.xnet.ngo/v1",
-            apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
-            model = modelId,
-        )
+        val cloudEmbed = resolveCloudEmbedder(ctx)
         val fn = embedFn(ctx) { text -> cloudEmbed.embed(text) }
         return org.xnet.aiope.inference.RagEngine(ctx, fn)
     }
@@ -119,14 +133,7 @@ object EmbeddingBackend {
 
     /** A RagEngine bound to the manual DB, wired to the current embedding backend. */
     fun buildManualRagEngine(ctx: Context): org.xnet.aiope.inference.RagEngine {
-        val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(ctx)
-        val tc = taskStore.getTaskConfig(ngo.xnet.aiope.core.network.ModelTask.RAG)
-        val modelId = tc.modelId ?: "google-ai-studio/models-gemini-embedding-2"
-        val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
-            baseUrl = "https://inf.xnet.ngo/v1",
-            apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
-            model = modelId,
-        )
+        val cloudEmbed = resolveCloudEmbedder(ctx)
         val fn = embedFn(ctx) { text -> cloudEmbed.embed(text) }
         return org.xnet.aiope.inference.RagEngine(ctx, fn, dbName = MANUAL_DB)
     }

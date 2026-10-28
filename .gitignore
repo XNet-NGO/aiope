@@ -67,3 +67,4 @@ daemon/aiope-remote
 # Kotlin build daemon artifacts
 .kotlin/
 *.pre-optA.bak
+*.bak

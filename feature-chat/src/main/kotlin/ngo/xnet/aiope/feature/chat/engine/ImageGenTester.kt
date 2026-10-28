@@ -25,6 +25,10 @@ object ImageGenTester {
     referenceImages: List<ByteArray> = emptyList(),
   ): ByteArray {
     val base = base0.trimEnd('/')
+    // Trim the key to match the chat path (StreamingOrchestrator trims too). A stored key with
+    // stray whitespace/newlines (common when pasted) otherwise authenticates for chat but 401s on
+    // image gen, which does not trim.
+    val apiKey = apiKey.trim()
     val host = java.net.URI(base).host ?: base
     android.util.Log.i(TAG, "route: host=$host base=$base model=$model refs=${referenceImages.size}")
 
@@ -41,25 +45,88 @@ object ImageGenTester {
   private fun dataUrl(bytes: ByteArray): String =
     "data:image/png;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
 
+  /**
+   * Cloudflare FLUX.2 models (klein-4b/9b, dev, pro, max) require a multipart/form-data request
+   * even for a plain text prompt; FLUX.1 (schnell) and other CF image models take flat JSON.
+   * Matching on "flux-2" covers the whole FLUX.2 family while excluding flux-1-schnell.
+   */
+  fun isCloudflareMultipartModel(cfModel: String): Boolean =
+    cfModel.contains("flux-2", ignoreCase = true)
+
   private fun unsupportedImg2Img(provider: String): Nothing =
     throw Exception("Image-to-image is not supported for this $provider model. Use a text prompt, or switch to a model/provider that supports image input.")
 
   private fun openAiImages(base: String, model: String, prompt: String, apiKey: String, referenceImages: List<ByteArray>): ByteArray {
-    if (referenceImages.isNotEmpty()) unsupportedImg2Img("OpenAI-compatible")
-    val url = "$base/images/generations"
+    if (referenceImages.isEmpty()) {
+      // Text-to-image: standard JSON /images/generations.
+      val url = "$base/images/generations"
+      val body = org.json.JSONObject().apply {
+        put("model", model)
+        put("prompt", prompt)
+        put("response_format", "b64_json")
+      }.toString()
+      android.util.Log.i(TAG, "openai POST $url body=$body")
+      val req = okhttp3.Request.Builder().url(url)
+        .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), body))
+        .apply { if (apiKey.isNotBlank()) addHeader("Authorization", "Bearer $apiKey") }.build()
+      return parseOpenAiImageResponse(client.newCall(req).execute(), url, model)
+    }
+
+    // Image-to-image. Prefer the OpenAI-standard /images/edits endpoint (multipart/form-data).
+    // Some OpenAI-compatible providers (e.g. Qwen's compatible-mode) do NOT implement /images/edits
+    // and return 404/405; for those we fall back to /images/generations with the reference image
+    // embedded in the JSON body as a data-URL `image` array (the shape Qwen compatible-mode accepts).
+    val editsUrl = "$base/images/edits"
+    val mb = okhttp3.MultipartBody.Builder().setType(okhttp3.MultipartBody.FORM)
+      .addFormDataPart("model", model)
+      .addFormDataPart("prompt", prompt)
+      .addFormDataPart("response_format", "b64_json")
+    val partName = if (referenceImages.size > 1) "image[]" else "image"
+    referenceImages.forEachIndexed { i, bytes ->
+      mb.addFormDataPart(partName, "image_$i.png", okhttp3.RequestBody.create("image/png".toMediaTypeOrNull(), bytes))
+    }
+    android.util.Log.i(TAG, "openai (edits) POST $editsUrl model=$model refs=${referenceImages.size}")
+    val editsReq = okhttp3.Request.Builder().url(editsUrl).post(mb.build())
+      .apply { if (apiKey.isNotBlank()) addHeader("Authorization", "Bearer $apiKey") }.build()
+    val editsResp = client.newCall(editsReq).execute()
+    if (editsResp.code != 404 && editsResp.code != 405) {
+      return parseOpenAiImageResponse(editsResp, editsUrl, model)
+    }
+    editsResp.close()
+
+    // Fallback: /images/generations with the reference image(s) embedded as data-URLs.
+    val genUrl = "$base/images/generations"
     val body = org.json.JSONObject().apply {
       put("model", model)
       put("prompt", prompt)
       put("response_format", "b64_json")
+      put(
+        "image",
+        org.json.JSONArray().apply { referenceImages.forEach { put(dataUrl(it)) } },
+      )
     }.toString()
-    android.util.Log.i(TAG, "openai POST $url body=$body")
-    val req = okhttp3.Request.Builder().url(url)
+    android.util.Log.i(TAG, "openai (edits 404 -> generations+image) POST $genUrl model=$model refs=${referenceImages.size}")
+    val genReq = okhttp3.Request.Builder().url(genUrl)
       .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), body))
       .apply { if (apiKey.isNotBlank()) addHeader("Authorization", "Bearer $apiKey") }.build()
-    val resp = client.newCall(req).execute()
+    return parseOpenAiImageResponse(client.newCall(genReq).execute(), genUrl, model)
+  }
+
+  /** Parse an OpenAI-compatible image response (handles both {result:{image}} and {data:[{b64_json|url}]}). */
+  private fun parseOpenAiImageResponse(resp: okhttp3.Response, url: String, model: String): ByteArray {
     val respBody = resp.use { it.body?.string() ?: "" }
     android.util.Log.i(TAG, "openai <- ${resp.code} ${respBody.take(200)}")
-    if (!resp.isSuccessful) throw Exception("HTTP ${resp.code} @ $url (model=$model): ${respBody.take(240)}")
+    if (!resp.isSuccessful) {
+      if (resp.code == 401 || resp.code == 403) {
+        throw Exception(
+          "HTTP ${resp.code} @ $url (model=$model): the media provider rejected the API key. " +
+            "Check Settings > Providers (Media): the key must be valid for THIS host and region " +
+            "(e.g. a Qwen 'maas.qwencloudapi.com' key, matching the endpoint's region — a DashScope " +
+            "key or a wrong-region key will 401). Raw: ${respBody.take(200)}",
+        )
+      }
+      throw Exception("HTTP ${resp.code} @ $url (model=$model): ${respBody.take(240)}")
+    }
     val json = org.json.JSONObject(respBody)
     val b64 = json.optJSONObject("result")?.optString("image")
       ?: json.optJSONArray("data")?.optJSONObject(0)?.optString("b64_json") ?: ""
@@ -68,7 +135,6 @@ object ImageGenTester {
   }
 
   private fun cloudflare(base: String, model: String, prompt: String, apiKey: String, referenceImages: List<ByteArray>): ByteArray {
-    if (referenceImages.isNotEmpty()) unsupportedImg2Img("Cloudflare")
     val cfModel = model.removePrefix("cf-image/").removePrefix("cloudflare/")
       .let { if (it.startsWith("@cf/")) it else "@cf/$it" }
     // Build the run URL, tolerating base URLs that already include /ai, /ai/run, or a trailing @cf.
@@ -82,15 +148,42 @@ object ImageGenTester {
       base.endsWith("/v1") -> base.removeSuffix("/v1") + "/ai/run/" + cfModel
       else -> "$base/ai/run/$cfModel"
     }
-    android.util.Log.i(TAG, "cloudflare POST $url")
-    val req = okhttp3.Request.Builder().url(url)
-      .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), org.json.JSONObject().put("prompt", prompt).toString()))
-      .apply { if (apiKey.isNotBlank()) addHeader("Authorization", "Bearer $apiKey") }.build()
+
+    // FLUX.2 family (klein-4b/9b, dev, pro, max) takes MULTIPART form-data input — even for a
+    // plain text prompt. Sending JSON {"prompt":...} to these returns "prompt is required"
+    // (code 3030), because the model reads multipart form fields, not a JSON body. flux-1-schnell
+    // and other CF image models still take flat JSON.
+    val req = if (isCloudflareMultipartModel(cfModel)) {
+      android.util.Log.i(TAG, "cloudflare (multipart) POST $url model=$cfModel refs=${referenceImages.size}")
+      val mb = okhttp3.MultipartBody.Builder().setType(okhttp3.MultipartBody.FORM)
+        .addFormDataPart("prompt", prompt)
+        .addFormDataPart("steps", "4")
+        .addFormDataPart("width", "1024")
+        .addFormDataPart("height", "1024")
+      // Reference images (image-to-image) must be named input_image_0..3 as BINARY parts.
+      referenceImages.take(4).forEachIndexed { i, bytes ->
+        mb.addFormDataPart(
+          "input_image_$i",
+          "input_image_$i.png",
+          okhttp3.RequestBody.create("image/png".toMediaTypeOrNull(), bytes),
+        )
+      }
+      okhttp3.Request.Builder().url(url).post(mb.build())
+        .apply { if (apiKey.isNotBlank()) addHeader("Authorization", "Bearer $apiKey") }.build()
+    } else {
+      if (referenceImages.isNotEmpty()) unsupportedImg2Img("Cloudflare")
+      android.util.Log.i(TAG, "cloudflare (json) POST $url model=$cfModel")
+      okhttp3.Request.Builder().url(url)
+        .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), org.json.JSONObject().put("prompt", prompt).toString()))
+        .apply { if (apiKey.isNotBlank()) addHeader("Authorization", "Bearer $apiKey") }.build()
+    }
+
     val resp = client.newCall(req).execute()
     val respBody = resp.use { it.body?.string() ?: "" }
     android.util.Log.i(TAG, "cloudflare <- ${resp.code} ${respBody.take(200)}")
     if (!resp.isSuccessful) throw Exception("HTTP ${resp.code} @ $url (model=$cfModel): ${respBody.take(240)}")
     val json = org.json.JSONObject(respBody)
+    // FLUX.2 returns {"result":{"image":"<b64>"}}; schnell returns {"result":{"image":"<b64>"}} too.
     val b64 = json.optJSONObject("result")?.optString("image") ?: ""
     return decodeOrFetch(b64, "")
   }

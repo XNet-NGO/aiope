@@ -44,20 +44,7 @@ internal fun RagScreen(onBack: () -> Unit) {
   LaunchedEffect(Unit) {
     withContext(Dispatchers.IO) {
       try {
-        // Resolve RAG embedding model from task config
-        val taskStore = ngo.xnet.aiope.core.network.TaskModelStore(context)
-        val tc = taskStore.getTaskConfig(ngo.xnet.aiope.core.network.ModelTask.RAG)
-        val modelId = tc.modelId ?: "google-ai-studio/models-gemini-embedding-2"
-
-        val cloudEmbed = org.xnet.aiope.inference.CloudEmbeddingEngine(
-          baseUrl = "https://inf.xnet.ngo/v1",
-          apiKey = ngo.xnet.aiope.feature.chat.BuildConfig.GATEWAY_KEY,
-          model = modelId,
-        )
-        val embedFn: (String) -> FloatArray? =
-          ngo.xnet.aiope.feature.chat.engine.EmbeddingBackend.embedFn(context) { text -> cloudEmbed.embed(text) }
-
-        val rag = RagEngine(context, embedFn)
+        val rag = ngo.xnet.aiope.feature.chat.engine.EmbeddingBackend.buildRagEngine(context)
         ragEngine = rag
         documents = rag.listDocuments()
       } catch (e: Exception) {

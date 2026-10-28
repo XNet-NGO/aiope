@@ -35,7 +35,6 @@ Grouping mirrors `ToolToggleScreen`, with each tool cited by its exact registere
 - `search_images` — Image search (same backend, `categories=images`).
 - `fetch_url` — Fetch a URL; extracts text + images as `![alt](url)`; `mode=raw` for raw body; `offset`/`limit` paginate (`fetchLimit` default 30000).
 - `http_request` — Generic HTTP API call (GET/POST/PUT/PATCH/DELETE); returns status, key headers, and body truncated to ~20KB; timeout 1–300s (default 30).
-- `query_data` — Live real-time data feeds via the gateway `/v1/data` endpoint; categories are fetched dynamically (e.g. weather, air_quality, alerts, uv, tides, earthquakes, iss, apod). Location categories use device GPS.
 - `get_location` — Device GPS location (requests location permission; reverse-geocodes).
 - `search_location` — Search a place/address/landmark/business; geocodes addresses, uses gateway `places` / Geoapify for amenities; call `get_location` first for nearby searches.
 - `open_intent` — Open a URI: `https://`, `geo:`, `google.navigation:q=`, `tel:`, `mailto:`, etc.

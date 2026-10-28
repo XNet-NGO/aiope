@@ -38,7 +38,7 @@ enum class AgentMode(val label: String) {
      */
     val CHAT_DEFAULT: Set<String> = setOf(
       "read_file", "list_directory", "get_location", "device_info", "datetime_now",
-      "fetch_url", "query_data", "search_location", "search_web", "search_images",
+      "fetch_url", "search_location", "search_web", "search_images",
       "browser_navigate", "browser_content", "browser_elements", "browser_click",
       "browser_fill", "browser_eval", "browser_back", "browser_scroll",
       "browser_open", "browser_close", "browser_maximize",

@@ -45,7 +45,6 @@ internal fun ToolToggleScreen(toolStore: ToolStore, onBack: () -> Unit) {
       "search_images" to "Image search",
       "fetch_url" to "Fetch web pages",
       "http_request" to "Generic HTTP/API calls",
-      "query_data" to "Live real-time data feeds",
       "get_location" to "GPS location",
       "search_location" to "Search places/addresses",
       "open_intent" to "Open URLs, maps, dialer, apps",

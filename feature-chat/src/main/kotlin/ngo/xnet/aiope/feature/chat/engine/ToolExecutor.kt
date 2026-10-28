@@ -30,7 +30,6 @@ class ToolExecutor(
 ) {
   var lastLocationData: LocationData? = null
   var locationUsedThisTurn = false
-  private var cachedDataCategories: String? = null
   var shellOutputLimit = 12000
   var fetchLimit = 30000
   var fileReadLimit = 50000
@@ -68,7 +67,6 @@ class ToolExecutor(
     td("get_location", "Get the device's current GPS location. Call this FIRST when the user asks about nearby places or 'closest' anything, then use the coordinates with search_location.", """{"type":"object","properties":{}}"""),
     td("open_intent", "Open a URL, app, map, dialer, or navigation intent. Supports https://, geo:, google.navigation:q=, tel:, mailto:, etc.", """{"type":"object","properties":{"uri":{"type":"string","description":"URI to open (https://, geo:, google.navigation:q=, tel:, mailto:, ...)"}},"required":["uri"]}"""),
     td("fetch_url", "Fetch a URL. Returns extracted text and any images as ![alt](url) markdown (include them in your response). mode 'raw' for raw response; offset/limit paginate.", """{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"},"mode":{"type":"string","description":"'raw' or 'text' (default)"},"offset":{"type":"integer","description":"Char offset for pagination"},"limit":{"type":"integer","description":"Max chars to return"}},"required":["url"]}"""),
-    td("query_data", "Query live real-time data. Returns JSON and any images as ![alt](url) markdown (include them in your response). Uses device GPS for location queries. 'extra' = search query / station ID / breed ID per category. Categories: ${fetchDataCategories()}", """{"type":"object","properties":{"category":{"type":"string","description":"Data category"},"extra":{"type":"string","description":"Optional: search query, station ID, or breed ID"}},"required":["category"]}"""),
     td("search_location", "Search for a place, address, landmark, or business/amenity. For nearby searches, call get_location first. Handles addresses, landmarks, cities, and amenity searches.", """{"type":"object","properties":{"query":{"type":"string","description":"What to search for, e.g. 'Eiffel Tower', 'pizza in Boise, ID', 'gas station'"}},"required":["query"]}"""),
     td("search_web", "Search the web for current information, news, or facts. Returns titles, URLs, and snippets. Use for recent events or anything needing up-to-date info.", """{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}"""),
     td("search_images", "Search for images on the web. Returns image URLs with titles. Use when the user asks to find photos, pictures, or images of something.", """{"type":"object","properties":{"query":{"type":"string","description":"Image search query"}},"required":["query"]}"""),
@@ -154,32 +152,6 @@ class ToolExecutor(
         " — scoped storage (Android 10+) blocks other apps' private data on non-rooted devices. Use $sandbox instead."
 
       else -> " — path is outside AIOPE's sandbox ($sandbox); Android may deny access."
-    }
-  }
-
-  private fun fetchDataCategories(): String {
-    cachedDataCategories?.let { return it }
-    val fallback = "air_quality, alerts, apod, asteroids, astronauts, cat, cat_breed, cat_breeds, cme, earth_events, earth_image, earthquakes, earthquakes_significant, epic, fires, geomagnetic, impact_risk, ip_location, iss, nasa_media, nasa_tech, ocean_temp, solar, solar_flares, sunrise_sunset, tides, time, uv, weather, weather_hourly"
-    return try {
-      val p = providerStore.getActive()
-      val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
-      val req = okhttp3.Request.Builder().url("$gwBase/v1/data")
-        .apply { if (p.apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${p.apiKey}") }.build()
-      val body = httpClient.newCall(req).execute().use { it.body?.string() ?: "" }
-      // Endpoint shape varies by gateway; don't throw if "categories" is absent.
-      val cats = org.json.JSONObject(body).optJSONArray("categories")
-      val list = if (cats != null && cats.length() > 0) {
-        (0 until cats.length()).map { cats.getString(it) }
-          .filter { it != "search_web" && it != "image_search" }.joinToString(", ")
-      } else {
-        fallback
-      }
-      cachedDataCategories = list // cache result (or fallback) so we don't refetch every call
-      list
-    } catch (e: Exception) {
-      android.util.Log.w("ToolExec", "fetchDataCategories fell back: ${e.message}")
-      cachedDataCategories = fallback // cache the fallback to stop repeated failing network calls
-      fallback
     }
   }
 
@@ -280,8 +252,6 @@ class ToolExecutor(
       "search_images" -> executeSearchImages(args["query"]?.toString() ?: "")
 
       "fetch_url" -> executeFetchUrl(args)
-
-      "query_data" -> executeQueryData(args)
 
       "browser_navigate" -> getBrowser().navigate(args["url"]?.toString() ?: "")
 
@@ -909,33 +879,6 @@ class ToolExecutor(
     "Error: ${e.message}"
   }
 
-  private suspend fun executeQueryData(args: Map<String, Any?>): String = try {
-    val cat = args["category"]?.toString() ?: ""
-    val extra = args["extra"]?.toString() ?: ""
-    val needsLoc = cat in setOf("weather", "weather_hourly", "alerts", "air_quality", "uv", "solar", "sunrise_sunset", "time")
-    val (lat, lon) = if (needsLoc) {
-      val loc = lastLocationData
-        ?: locationProvider.getLastLocation()?.let { l ->
-          lastLocationData = LocationData(l.latitude, l.longitude, null, null, null, l.accuracy.toDouble())
-          lastLocationData
-        }
-      (loc?.latitude?.toString() ?: "") to (loc?.longitude?.toString() ?: "")
-    } else {
-      "" to ""
-    }
-    val p = providerStore.getActive()
-    val gwBase = p.effectiveApiBase().trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/v1")
-    val enc = java.net.URLEncoder.encode(extra, "UTF-8")
-    val req = okhttp3.Request.Builder().url("$gwBase/v1/data?q=$cat&lat=$lat&lon=$lon&extra=$enc")
-      .apply { if (p.apiKey.isNotBlank()) addHeader("Authorization", "Bearer ${p.apiKey}") }.build()
-    val resp = httpClient.newCall(req).execute()
-    val body = resp.use { if (it.isSuccessful) it.body?.string() ?: "" else "Error: HTTP ${it.code}" }
-    val enriched = resolveDataImages(body)
-    if (enriched.length > fetchLimit) enriched.take(fetchLimit) + "\n...(truncated)" else enriched
-  } catch (e: Exception) {
-    "Error: ${e.message}"
-  }
-
   private suspend fun executeImageGenerate(args: Map<String, Any?>): String {
     val prompt = args["prompt"]?.toString() ?: return "Error: prompt required"
     return try {
@@ -1184,29 +1127,6 @@ class ToolExecutor(
     val fp = features.getJSONObject(0).getJSONObject("properties")
     lastLocationData = LocationData(fp.optDouble("lat", 0.0), fp.optDouble("lon", 0.0))
     return results.joinToString("\n")
-  }
-
-  private fun resolveDataImages(json: String): String = try {
-    val imgs = mutableListOf<String>()
-    extractImageUrls(org.json.JSONTokener(json).nextValue(), imgs)
-    if (imgs.isNotEmpty()) imgs.distinct().take(20).joinToString("\n") + "\n\n" + json else json
-  } catch (e: Exception) {
-    android.util.Log.w("ToolExec", "op failed: ${e.message}")
-    json
-  }
-
-  private fun extractImageUrls(obj: Any?, out: MutableList<String>) {
-    when (obj) {
-      is org.json.JSONObject -> {
-        val imgKeys = setOf("url", "hdurl", "href", "image_url", "img_src", "thumbnail", "preview", "media_url", "src", "image")
-        for (key in obj.keys()) {
-          val v = obj.opt(key)
-          if (v is String && key in imgKeys && v.matches(Regex("^https?://.*\\.(jpg|jpeg|png|gif|webp)(\\?.*)?$", RegexOption.IGNORE_CASE))) out.add("![${obj.optString("title", key)}]($v)") else extractImageUrls(v, out)
-        }
-      }
-
-      is org.json.JSONArray -> for (i in 0 until minOf(obj.length(), 20)) extractImageUrls(obj.opt(i), out)
-    }
   }
 
   private fun parseTime(s: String): Long = try {

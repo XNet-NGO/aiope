@@ -47,7 +47,7 @@ class StreamingOrchestrator(
     private val JSON_MT = "application/json; charset=utf-8".toMediaType()
     private const val MAX_RETRIES = 3
     private val PARALLEL_SAFE = setOf(
-      "read_file", "list_directory", "query_data", "search_web", "search_images",
+      "read_file", "list_directory", "search_web", "search_images",
       "fetch_url", "memory_recall", "get_location", "browser_content", "browser_elements",
       "search_location", "read_calendar", "read_contacts", "read_sms", "clipboard_read",
       "device_info", "analyze_image", "image_generate", "ssh_exec",
@@ -85,6 +85,126 @@ class StreamingOrchestrator(
     private fun backoffMs(attempt: Int): Long {
       val base = (1000L shl (attempt - 1)).coerceAtMost(8000L)
       return base + (0..500).random()
+    }
+
+    /** Per-stream state for the inline <think> tag drainer. */
+    class ThinkTagState(var inThinkTag: Boolean = false, var thinkTagName: String = "think")
+
+    /** True for Google-family models (Gemini + Gemma), which have special tool-call history rules. */
+    fun isGoogleModelName(model: String): Boolean =
+      model.contains("gemini", ignoreCase = true) ||
+        model.contains("gemma", ignoreCase = true) ||
+        model.startsWith("google", ignoreCase = true)
+
+    /** True when a tool call carries a Google thought_signature in its extra_content. */
+    private fun hasThoughtSignature(extraContent: String?): Boolean =
+      extraContent?.let {
+        runCatching { JSONObject(it).optJSONObject("google")?.has("thought_signature") == true }.getOrDefault(false)
+      } == true
+
+    /**
+     * Decide how to record a completed tool round in history for the NEXT request.
+     *
+     * Returns true to use the native OpenAI tool_calls/tool protocol; false to fall back to a plain
+     * assistant+user text turn. Non-Google models always use the native protocol. Google models use
+     * it ONLY when every tool call carries a thought_signature — otherwise Gemini rejects the
+     * resent turn, and Gemma never produces signatures at all, so we must use the plain-text form.
+     * Deleting the exchange instead (the old behavior) lost the tool result and caused infinite
+     * re-call loops with context loss.
+     */
+    fun useNativeToolProtocol(model: String, extraContents: List<String?>): Boolean {
+      if (!isGoogleModelName(model)) return true
+      return extraContents.isNotEmpty() && extraContents.all { hasThoughtSignature(it) }
+    }
+
+    private val OPEN_TAGS = listOf("<thinking>", "<think>", "<thought>")
+    private val CLOSE_TAGS = listOf("</thinking>", "</think>", "</thought>")
+
+    /**
+     * Splits a content delta into (visibleContent, reasoning) for models that inline their
+     * chain-of-thought in `<think>`/`<thinking>`/`<thought>` tags.
+     *
+     * Fully DRAINS [pendingTagBuf] each call: a single delta may open and close several tags
+     * (e.g. "...</think> answer <think>more"), so it loops until only a possible partial trailing
+     * tag remains buffered. [state] carries open/closed status across deltas; [pendingTagBuf] holds
+     * any unresolved partial tag for the next delta. Orphan close tags (a stray `</think>` with no
+     * opener) are dropped rather than rendered. Returns the content and reasoning extracted this call.
+     */
+    fun drainThinkTags(
+      content: String,
+      state: ThinkTagState,
+      pendingTagBuf: StringBuilder,
+    ): Pair<String, String> {
+      pendingTagBuf.append(content)
+      // Longest recognized tag is "</thinking>" (11 chars); hold back a trailing '<' only when it
+      // could still grow into a real open/close tag.
+      val maxTagLen = 12
+      val contentOut = StringBuilder()
+      val reasoningOut = StringBuilder()
+      var draining = true
+      while (draining) {
+        val buf = pendingTagBuf.toString()
+        if (buf.isEmpty()) break
+        if (!state.inThinkTag) {
+          // Find the EARLIEST open tag in the buffer (not just the first match in list order).
+          val match = OPEN_TAGS
+            .mapNotNull { tag -> buf.indexOf(tag).takeIf { it >= 0 }?.let { it to tag } }
+            .minByOrNull { it.first }
+          if (match != null) {
+            val (idx, openTag) = match
+            contentOut.append(buf.substring(0, idx))
+            state.inThinkTag = true
+            state.thinkTagName = openTag.removePrefix("<").removeSuffix(">")
+            pendingTagBuf.clear()
+            pendingTagBuf.append(buf.substring(idx + openTag.length))
+          } else {
+            // No open tag. Drop any ORPHAN close tag so it doesn't render as literal text,
+            // then flush the rest as content, holding back a trailing partial '<...'.
+            val orphan = CLOSE_TAGS
+              .mapNotNull { tag -> buf.indexOf(tag).takeIf { it >= 0 }?.let { it to tag } }
+              .minByOrNull { it.first }
+            if (orphan != null) {
+              val (oidx, otag) = orphan
+              contentOut.append(buf.substring(0, oidx))
+              pendingTagBuf.clear()
+              pendingTagBuf.append(buf.substring(oidx + otag.length))
+            } else {
+              val lastLt = buf.lastIndexOf('<')
+              if (lastLt >= 0 && lastLt > buf.length - maxTagLen) {
+                contentOut.append(buf.substring(0, lastLt))
+                pendingTagBuf.clear()
+                pendingTagBuf.append(buf.substring(lastLt))
+              } else {
+                contentOut.append(buf)
+                pendingTagBuf.clear()
+              }
+              draining = false
+            }
+          }
+        } else {
+          val closeTag = "</${state.thinkTagName}>"
+          val idx = buf.indexOf(closeTag)
+          if (idx >= 0) {
+            reasoningOut.append(buf.substring(0, idx))
+            state.inThinkTag = false
+            pendingTagBuf.clear()
+            pendingTagBuf.append(buf.substring(idx + closeTag.length))
+          } else {
+            // Still inside the tag. Emit reasoning, holding back a trailing partial '</...'.
+            val lastLt = buf.lastIndexOf('<')
+            if (lastLt >= 0 && lastLt > buf.length - (maxTagLen + 1)) {
+              reasoningOut.append(buf.substring(0, lastLt))
+              pendingTagBuf.clear()
+              pendingTagBuf.append(buf.substring(lastLt))
+            } else {
+              reasoningOut.append(buf)
+              pendingTagBuf.clear()
+            }
+            draining = false
+          }
+        }
+      }
+      return contentOut.toString() to reasoningOut.toString()
     }
   }
 
@@ -142,54 +262,19 @@ class StreamingOrchestrator(
         }
       }
 
-      // Sanitize for Gemini ONLY: Google models reject assistant tool_calls that
-      // lack a thought_signature, so we drop such (orphaned, pre-fix) calls + their
-      // results. This MUST NOT run for other providers — models like
-      // openai-gpt-oss never emit a thought_signature, so applying it there strips
-      // every tool call + result each round (msgs never grows), making the model
-      // think the tool never ran and re-call it endlessly.
-      val isGoogleModel = model.contains("gemini", ignoreCase = true) ||
-        model.contains("gemma", ignoreCase = true) ||
-        model.startsWith("google", ignoreCase = true)
-      val toRemove = mutableSetOf<Int>()
-      if (isGoogleModel) {
-      for (i in rawMessages.indices) {
-        val msg = rawMessages[i]
-        if (msg.optString("role") == "assistant" && msg.has("tool_calls")) {
-          val tcs = msg.optJSONArray("tool_calls")
-          if (tcs != null && tcs.length() > 0) {
-            val firstTc = tcs.optJSONObject(0)
-            val hasSignature = firstTc?.optJSONObject("extra_content")?.optJSONObject("google")?.has("thought_signature") == true
-            if (!hasSignature) {
-              // Collect tool_call IDs to also remove matching tool results
-              val ids = mutableSetOf<String>()
-              for (j in 0 until tcs.length()) {
-                tcs.optJSONObject(j)?.optString("id")?.let { ids.add(it) }
-              }
-              toRemove.add(i)
-              // Find matching tool result messages
-              for (k in (i + 1) until rawMessages.size) {
-                val r = rawMessages[k]
-                if (r.optString("role") == "tool" && r.optString("tool_call_id") in ids) {
-                  toRemove.add(k)
-                }
-              }
-            }
-          }
-        }
-      }
-      } // end isGoogleModel guard
-      if (toRemove.isNotEmpty()) {
-        toRemove.sortedDescending().forEach { rawMessages.removeAt(it) }
-      }
+      // NOTE: We deliberately do NOT strip assistant tool_calls that lack a Google
+      // thought_signature. Doing so wiped the call AND its result from history, so the model
+      // never saw the tool output and re-called the same tool forever (context loss + loop).
+      // Gemini rejects native tool_calls sent back without their thought_signature, and Gemma
+      // never produces signatures at all — so for Google models WITHOUT a signature we instead
+      // record the exchange as a plain assistant+user text turn (see the tool-result append
+      // below), which every model accepts and nothing strips.
 
       val body = buildRequestBody(rawMessages)
 
       var toolAcc = mutableMapOf<Int, MutableMap<String, String>>()
       var hasToolCalls = false
-      var inThinkTag = false
-      var thinkTagName = "think"
-      var hasStructuredReasoning = false
+      val tagState = ThinkTagState()
       val pendingTagBuf = StringBuilder()
       val sseErrorRef = java.util.concurrent.atomic.AtomicReference<String?>(null)
       val sseDoneRef = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -261,79 +346,21 @@ class StreamingOrchestrator(
                 var reasoning = delta.optString("reasoning_content", "").let { if (it == "null") "" else it }.ifBlank {
                   delta.optString("reasoning", "").let { if (it == "null") "" else it }
                 }
-                // Track if this model uses structured reasoning (skip tag parsing if so)
-                if (reasoning.isNotEmpty()) hasStructuredReasoning = true
-
-                // Handle <think>/<thought>/<thinking> tags (only for models that don't provide reasoning_content)
-                if (content.isNotEmpty() && !hasStructuredReasoning) {
-                  pendingTagBuf.append(content)
-                  content = ""
-                  // Process buffer
-                  val buf = pendingTagBuf.toString()
-                  if (!inThinkTag) {
-                    val openTag = listOf("<thinking>", "<think>", "<thought>").firstOrNull { buf.contains(it) }
-                    if (openTag != null) {
-                      inThinkTag = true
-                      thinkTagName = openTag.removePrefix("<").removeSuffix(">")
-                      content = buf.substringBefore(openTag)
-                      val afterOpen = buf.substringAfter(openTag)
-                      pendingTagBuf.clear()
-                      pendingTagBuf.append(afterOpen)
-                      // Check if close tag is also in this buffer
-                      val closeTag = "</$thinkTagName>"
-                      val buf2 = pendingTagBuf.toString()
-                      if (buf2.contains(closeTag)) {
-                        reasoning = buf2.substringBefore(closeTag)
-                        val afterClose = buf2.substringAfter(closeTag)
-                        pendingTagBuf.clear()
-                        content += afterClose
-                        inThinkTag = false
-                      } else {
-                        // Emit reasoning up to any trailing partial tag
-                        val lastLt = buf2.lastIndexOf('<')
-                        if (lastLt >= 0 && lastLt > buf2.length - 13) {
-                          reasoning = buf2.substring(0, lastLt)
-                          pendingTagBuf.clear()
-                          pendingTagBuf.append(buf2.substring(lastLt))
-                        } else {
-                          reasoning = buf2
-                          pendingTagBuf.clear()
-                        }
-                      }
-                    } else if (buf.endsWith("<") || (buf.length < 12 && buf.contains("<"))) {
-                      // Might be partial open tag, keep buffering
-                    } else {
-                      // No tag, flush as content
-                      val lastLt = buf.lastIndexOf('<')
-                      if (lastLt >= 0 && lastLt > buf.length - 12) {
-                        content = buf.substring(0, lastLt)
-                        pendingTagBuf.clear()
-                        pendingTagBuf.append(buf.substring(lastLt))
-                      } else {
-                        content = buf
-                        pendingTagBuf.clear()
-                      }
-                    }
+                // ALWAYS strip inline <think>/<thinking>/<thought> tags from content, even for models
+                // that also emit structured reasoning. Some models (e.g. minimax) send a structured
+                // reasoning delta first, then switch to inline <think> tags in the content field — if
+                // we skip tag parsing after seeing structured reasoning, those later tags leak into the
+                // visible answer verbatim (the reported "duped thoughts in the body" bug). The drainer
+                // is a no-op passthrough on tag-free content, so running it unconditionally is safe.
+                // See drainThinkTags + ThinkTagParserTest.
+                if (content.isNotEmpty()) {
+                  val out = drainThinkTags(content, tagState, pendingTagBuf)
+                  content = out.first
+                  // Merge any tag-extracted reasoning with structured reasoning from this same chunk.
+                  reasoning = if (reasoning.isNotEmpty() && out.second.isNotEmpty()) {
+                    reasoning + out.second
                   } else {
-                    // In think tag — look for close tag
-                    val closeTag = "</$thinkTagName>"
-                    if (buf.contains(closeTag)) {
-                      reasoning = buf.substringBefore(closeTag)
-                      content = buf.substringAfter(closeTag)
-                      pendingTagBuf.clear()
-                      inThinkTag = false
-                    } else {
-                      // Emit reasoning but hold back potential partial close tag
-                      val lastLt = buf.lastIndexOf('<')
-                      if (lastLt >= 0 && lastLt > buf.length - 13) {
-                        reasoning = buf.substring(0, lastLt)
-                        pendingTagBuf.clear()
-                        pendingTagBuf.append(buf.substring(lastLt))
-                      } else {
-                        reasoning = buf
-                        pendingTagBuf.clear()
-                      }
-                    }
+                    reasoning.ifEmpty { out.second }
                   }
                 }
 
@@ -460,10 +487,20 @@ class StreamingOrchestrator(
         return@callbackFlow
       }
 
-      // Flush any pending think-tag buffer remnants into contentSoFar
+      // Flush any pending think-tag buffer remnants. If the round ended while still INSIDE a
+      // <think> tag (e.g. the model emitted a tool call mid-thought), the remainder is REASONING,
+      // not content — emit it as reasoning and drop it, so raw <think> text never bleeds into the
+      // visible answer or the stored assistant history. Otherwise it's a held-back partial that
+      // never resolved into a tag — treat it as content.
       if (pendingTagBuf.isNotEmpty()) {
-        contentSoFar.append(pendingTagBuf)
+        val leftover = pendingTagBuf.toString()
         pendingTagBuf.clear()
+        if (tagState.inThinkTag) {
+          if (leftover.isNotBlank()) trySend(ChatStreamChunk(reasoning = leftover))
+          tagState.inThinkTag = false
+        } else {
+          contentSoFar.append(leftover)
+        }
       }
 
       // Execute tool calls
@@ -505,37 +542,76 @@ class StreamingOrchestrator(
         }
         send(ChatStreamChunk(toolResults = results))
 
-        // Append assistant tool_calls + tool results for next round.
-        // Keep any pre-tool commentary the model streamed (e.g. "Let me check...")
+        // Append the completed tool round to history for the next request.
+        //
+        // Preferred form is the native tool_calls/tool protocol. BUT for Google models that did
+        // not return a thought_signature (always true for Gemma; sometimes true for Gemini via an
+        // OpenAI-compat gateway), Gemini rejects a tool_calls turn sent back without the signature.
+        // Rather than DELETE the exchange (which loses the result and loops forever), we record it
+        // as a plain assistant turn + a user message carrying the results — understood by every
+        // model and never rejected.
         val preToolText = contentSoFar.toString().trim()
-        rawMessages.add(
-          JSONObject().apply {
-            put("role", "assistant")
-            put("content", preToolText.ifEmpty { "" })
-            put(
-              "tool_calls",
-              JSONArray().apply {
-                for (c in callInfos) {
-                  val tcObj = JSONObject()
-                    .put("id", c.id)
-                    .put("type", "function")
-                    .put("function", JSONObject().put("name", c.name).put("arguments", JSONObject(c.arguments).toString()))
-                  // Include extra_content (Google thought_signature) if present
-                  c.extraContent?.let { tcObj.put("extra_content", JSONObject(it)) }
-                  put(tcObj)
-                }
-              },
-            )
-          },
-        )
-        for (r in results) {
+        val useNativeProtocol = useNativeToolProtocol(model, callInfos.map { it.extraContent })
+
+        if (useNativeProtocol) {
           rawMessages.add(
             JSONObject().apply {
-              put("role", "tool")
-              put("tool_call_id", r.id)
-              // introspect returns whole manual pages (up to ~19KB) — give it a
-              // larger cap so pages aren't truncated mid-content.
-              put("content", r.result.take(if (r.name == "introspect") 24000 else 16000))
+              put("role", "assistant")
+              put("content", preToolText.ifEmpty { "" })
+              put(
+                "tool_calls",
+                JSONArray().apply {
+                  for (c in callInfos) {
+                    val tcObj = JSONObject()
+                      .put("id", c.id)
+                      .put("type", "function")
+                      .put("function", JSONObject().put("name", c.name).put("arguments", JSONObject(c.arguments).toString()))
+                    // Include extra_content (Google thought_signature) if present
+                    c.extraContent?.let { tcObj.put("extra_content", JSONObject(it)) }
+                    put(tcObj)
+                  }
+                },
+              )
+            },
+          )
+          for (r in results) {
+            rawMessages.add(
+              JSONObject().apply {
+                put("role", "tool")
+                put("tool_call_id", r.id)
+                // introspect returns whole manual pages (up to ~19KB) — give it a
+                // larger cap so pages aren't truncated mid-content.
+                put("content", r.result.take(if (r.name == "introspect") 24000 else 16000))
+              },
+            )
+          }
+        } else {
+          // Plain-text representation for signatureless Google models.
+          val assistantText = buildString {
+            if (preToolText.isNotEmpty()) append(preToolText).append("\n")
+            append("(called ")
+            append(callInfos.joinToString(", ") { "${it.name}(${JSONObject(it.arguments)})" })
+            append(")")
+          }
+          rawMessages.add(
+            JSONObject().apply {
+              put("role", "assistant")
+              put("content", assistantText)
+            },
+          )
+          val resultText = buildString {
+            append("Tool results:\n")
+            for (r in results) {
+              append("\n[").append(r.name).append("]\n")
+              append(r.result.take(if (r.name == "introspect") 24000 else 16000))
+              append("\n")
+            }
+            append("\nUse these results to answer. Do not call the same tool again for the same request.")
+          }
+          rawMessages.add(
+            JSONObject().apply {
+              put("role", "user")
+              put("content", resultText)
             },
           )
         }
@@ -859,7 +935,6 @@ class StreamingOrchestrator(
     "image_generate" -> "prompt"
     "analyze_image" -> "prompt"
     "search_location" -> "query"
-    "query_data" -> "source"
     "schedule_task" -> "prompt"
     "cancel_schedule" -> "task_id"
     "rag_search" -> "query"
